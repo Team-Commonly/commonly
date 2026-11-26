@@ -206,6 +206,36 @@ const DIGEST_WAKE_DEFAULT_MINUTES = 60;
 // many scopes (F634): a few hundred keeps each query well under Mongo's limits.
 const DIGEST_WAKE_INSTALL_CHUNK = 200;
 const DIGEST_WAKE_INSTALL_FIELDS = 'agentName instanceId podId config.digestWake config.heartbeat config.runtime';
+// F668: the pass walks its groups this many at a time and hands the event loop
+// back between chunks, and starts one batched read per turn.
+const DIGEST_WAKE_YIELD_EVERY = 200;
+const digestWakeYield = (): Promise<void> => new Promise((resolve) => { setImmediate(resolve); });
+/**
+ * One read per chunk, all in flight together as before, but each started on
+ * its own event-loop turn so casting and encoding thousands of $or clauses
+ * never runs as one block. Settles like Promise.allSettled; every rejection
+ * is handled the moment its read starts.
+ */
+const readDigestChunks = async <C, R>(
+  chunks: C[], read: (chunk: C) => PromiseLike<R>,
+): Promise<PromiseSettledResult<R>[]> => {
+  const reads: Promise<PromiseSettledResult<R>>[] = [];
+  for (let i = 0; i < chunks.length; i += 1) {
+    // eslint-disable-next-line no-await-in-loop
+    if (i > 0) await digestWakeYield();
+    const chunk = chunks[i];
+    reads.push(Promise.resolve().then(() => read(chunk)).then(
+      (value): PromiseSettledResult<R> => ({ status: 'fulfilled', value }),
+      (reason): PromiseSettledResult<R> => ({ status: 'rejected', reason }),
+    ));
+  }
+  return Promise.all(reads);
+};
+// Promise.all over readDigestChunks: the values, or the first failure.
+const valuesOrThrow = <R>(results: PromiseSettledResult<R>[]): R[] => results.map((result) => {
+  if (result.status === 'rejected') throw result.reason;
+  return result.value;
+});
 
 type DigestWakeScope = { agentName: string; instanceId: string; podId: unknown };
 // One non-digest AgentEvent read by the batched wake checks (F635).
@@ -1530,12 +1560,14 @@ class SchedulerService {
     scopes.forEach((scope) => {
       unique.set(digestInstallKey(scope.agentName, scope.instanceId, scope.podId), scope);
     });
-    const batches = await Promise.all(chunked([...unique.values()], DIGEST_WAKE_INSTALL_CHUNK).map((chunk) => (
-      AgentInstallation.find({
+    const batches = valuesOrThrow(await readDigestChunks(
+      chunked([...unique.values()], DIGEST_WAKE_INSTALL_CHUNK),
+      (chunk) => AgentInstallation.find({
         status: 'active',
         'config.autonomy.enabled': { $ne: false },
         $or: chunk.map(({ agentName, instanceId, podId }) => ({ agentName, instanceId, podId })),
-      }).select(DIGEST_WAKE_INSTALL_FIELDS).sort({ _id: 1 }).lean() as Promise<InstallationDoc[]>)));
+      }).select(DIGEST_WAKE_INSTALL_FIELDS).sort({ _id: 1 }).lean() as PromiseLike<InstallationDoc[]>,
+    ));
     const byKey = new Map<string, InstallationDoc>();
     batches.flat().forEach((doc) => {
       const key = digestInstallKey(doc.agentName, doc.instanceId, doc.podId);
@@ -1574,14 +1606,13 @@ class SchedulerService {
     });
     if (!needSibling.length) return allowed;
     const chunks = chunked([...pairs.entries()], chunkSize);
-    const results = await Promise.allSettled(chunks.map((chunk) => (
-      // A synchronous throw from find() becomes this chunk's rejection.
-      Promise.resolve().then(() => AgentInstallation.find({
-        status: 'active',
-        'config.runtime.runtimeType': { $exists: true },
-        $or: chunk.map(([, pair]) => pair),
-      }).select('agentName instanceId config.runtime').sort({ createdAt: -1, _id: -1 })
-        .lean() as Promise<InstallationDoc[]>))));
+    // A synchronous throw from find() becomes this chunk's rejection.
+    const results = await readDigestChunks(chunks, (chunk) => AgentInstallation.find({
+      status: 'active',
+      'config.runtime.runtimeType': { $exists: true },
+      $or: chunk.map(([, pair]) => pair),
+    }).select('agentName instanceId config.runtime').sort({ createdAt: -1, _id: -1 })
+      .lean() as PromiseLike<InstallationDoc[]>);
     // Each chunk is sorted newest first, and a pair sits in one chunk only,
     // so the first row seen for a pair is its newest.
     const newest = new Map<string, InstallationDoc>();
@@ -1645,6 +1676,16 @@ class SchedulerService {
    * its own window to the rows. Keyed as the per-group `exists` matched
    * (digestInstallKey): the schema lowercases agentName on the query,
    * Mongoose casts podId, instanceId is compared as stored.
+   *
+   * Mongo answers per scope (F668): the reads used to ship every matching row
+   * into Node, thousands a minute with day-long windows, to decide a yes/no
+   * per scope. Now each read groups by scope, so Node gets at most one row per
+   * scope: pending says a pending wake exists; recent carries the newest
+   * delivered/acked deliveredAt and the newest failed updatedAt, as one row
+   * each. A group's window is never earlier than its clause's, so the newest
+   * matching time is inside the group's window exactly when some row is. A
+   * scope a pending wake already holds is not read for recent wakes: the wake
+   * loop never looks at recent rows for a pending scope.
    */
   static async findDigestWakeBlockers(
     entries: Array<{ scope: DigestWakeScope; windowStart: Date }>,
@@ -1657,43 +1698,59 @@ class SchedulerService {
       const existing = unique.get(key);
       if (!existing || windowStart < existing.windowStart) unique.set(key, { scope, windowStart });
     });
-    const reads = chunked([...unique.values()], DIGEST_WAKE_INSTALL_CHUNK).flatMap((chunk) => {
-      const scopeOr = chunk.map(({ scope: { agentName, instanceId, podId } }) => ({ agentName, instanceId, podId }));
-      const recentOr = chunk.map(({ scope: { agentName, instanceId, podId }, windowStart }) => ({
-        agentName,
-        instanceId,
-        podId,
-        deliveryMode: { $ne: 'digest' },
-        $or: [
-          { status: { $in: ['delivered', 'acked'] }, deliveredAt: { $gte: windowStart } },
-          { status: 'failed', updatedAt: { $gte: windowStart } },
-        ],
-      }));
-      return [
-        // A synchronous throw from find() becomes this read's rejection.
-        Promise.resolve().then(() => AgentEvent.find({
-          status: 'pending', deliveryMode: { $ne: 'digest' }, $or: scopeOr,
-        }).select('agentName instanceId podId').lean() as Promise<DigestWakeBlockerRow[]>)
-          .then((rows) => ({ kind: 'pending' as const, rows })),
-        Promise.resolve().then(() => AgentEvent.find({ $or: recentOr })
-          .select('agentName instanceId podId status deliveredAt updatedAt')
-          .lean() as Promise<DigestWakeBlockerRow[]>)
-          .then((rows) => ({ kind: 'recent' as const, rows })),
-      ];
-    });
+    // aggregate() casts nothing, so each $match is cast as find() would cast
+    // it: agentName lowercased by the schema, podId cast to an ObjectId.
+    const castMatch = (filter: Record<string, unknown>) => AgentEvent.find().cast(AgentEvent, filter);
+    const byScope = { agentName: '$agentName', instanceId: '$instanceId', podId: '$podId' };
+    type ScopeId = { agentName: string; instanceId: string; podId: unknown };
+
+    const pendingRows = valuesOrThrow(await readDigestChunks(
+      chunked([...unique.values()], DIGEST_WAKE_INSTALL_CHUNK),
+      (chunk) => AgentEvent.aggregate([
+        { $match: castMatch({
+          status: 'pending',
+          deliveryMode: { $ne: 'digest' },
+          $or: chunk.map(({ scope: { agentName, instanceId, podId } }) => ({ agentName, instanceId, podId })),
+        }) },
+        { $group: { _id: byScope } },
+      ]) as PromiseLike<Array<{ _id: ScopeId }>>,
+    )).flat();
     const pending = new Set<string>();
+    pendingRows.forEach(({ _id }) => pending.add(digestInstallKey(_id.agentName, _id.instanceId, _id.podId)));
+
+    const open = [...unique.entries()].filter(([key]) => !pending.has(key)).map(([, entry]) => entry);
+    const recentRows = valuesOrThrow(await readDigestChunks(
+      chunked(open, DIGEST_WAKE_INSTALL_CHUNK),
+      (chunk) => AgentEvent.aggregate([
+        { $match: castMatch({
+          $or: chunk.map(({ scope: { agentName, instanceId, podId }, windowStart }) => ({
+            agentName,
+            instanceId,
+            podId,
+            deliveryMode: { $ne: 'digest' },
+            $or: [
+              { status: { $in: ['delivered', 'acked'] }, deliveredAt: { $gte: windowStart } },
+              { status: 'failed', updatedAt: { $gte: windowStart } },
+            ],
+          })),
+        }) },
+        { $group: {
+          _id: byScope,
+          deliveredAt: { $max: { $cond: [{ $in: ['$status', ['delivered', 'acked']] }, '$deliveredAt', null] } },
+          failedAt: { $max: { $cond: [{ $eq: ['$status', 'failed'] }, '$updatedAt', null] } },
+        } },
+      ]) as PromiseLike<Array<{ _id: ScopeId; deliveredAt?: Date | null; failedAt?: Date | null }>>,
+    )).flat();
     const recent = new Map<string, DigestWakeBlockerRow[]>();
-    (await Promise.all(reads)).forEach(({ kind, rows }) => {
-      rows.forEach((row) => {
-        const key = digestInstallKey(row.agentName, row.instanceId, row.podId);
-        if (kind === 'pending') {
-          pending.add(key);
-          return;
-        }
-        const list = recent.get(key);
-        if (list) list.push(row);
-        else recent.set(key, [row]);
-      });
+    recentRows.forEach(({ _id, deliveredAt, failedAt }) => {
+      const rows: DigestWakeBlockerRow[] = [];
+      if (deliveredAt != null) rows.push({ ..._id, status: 'delivered', deliveredAt });
+      if (failedAt != null) rows.push({ ..._id, status: 'failed', updatedAt: failedAt });
+      if (!rows.length) return;
+      const key = digestInstallKey(_id.agentName, _id.instanceId, _id.podId);
+      const list = recent.get(key);
+      if (list) list.push(...rows);
+      else recent.set(key, rows);
     });
     return { pending, recent };
   }
@@ -1723,9 +1780,19 @@ class SchedulerService {
       const existing = groups.get(key);
       if (!existing || at < existing.oldestAt) groups.set(key, { scope, oldestAt: at });
     };
-    rawGroups.forEach((row) => addGroup(row._id, new Date(row.oldestAt)));
-    foldedGroups.forEach(({ agentName, instanceId, podId, unreadSince }) => (
-      addGroup({ agentName, instanceId, podId }, new Date(unreadSince))));
+    // F668: thousands of groups are walked in chunks, the event loop handed
+    // back between them; the order, and so every decision, is unchanged.
+    const sources: Array<{ scope: { agentName: string; instanceId: string; podId: unknown }; at: Date }> = [
+      ...rawGroups.map((row) => ({ scope: row._id, at: new Date(row.oldestAt) })),
+      ...foldedGroups.map(({ agentName, instanceId, podId, unreadSince }) => ({
+        scope: { agentName, instanceId, podId }, at: new Date(unreadSince),
+      })),
+    ];
+    for (let i = 0; i < sources.length; i += 1) {
+      // eslint-disable-next-line no-await-in-loop
+      if (i > 0 && i % DIGEST_WAKE_YIELD_EVERY === 0) await digestWakeYield();
+      addGroup(sources[i].scope, sources[i].at);
+    }
     const candidates = [...groups.values()].map(({ scope: rowScope, oldestAt }) => ({
       scope: {
         agentName: rowScope.agentName,
@@ -1755,10 +1822,14 @@ class SchedulerService {
     }
     if (installs) {
       const found = installs;
-      const waitedCandidates = candidates.flatMap(({ scope, oldestAt }) => {
+      const waitedCandidates: Array<{ scope: DigestWakeScope; active: InstallationDoc }> = [];
+      for (let i = 0; i < candidates.length; i += 1) {
+        // eslint-disable-next-line no-await-in-loop
+        if (i > 0 && i % DIGEST_WAKE_YIELD_EVERY === 0) await digestWakeYield();
+        const { scope, oldestAt } = candidates[i];
         const active = found.get(digestInstallKey(scope.agentName, scope.instanceId, scope.podId));
-        return active && waited(active, oldestAt) ? [{ scope, active }] : [];
-      });
+        if (active && waited(active, oldestAt)) waitedCandidates.push({ scope, active });
+      }
       timings.unreadInstalls = elapsedMs(stepAt);
       stepAt = performance.now();
       const allowed = await SchedulerService.allowsDigestWakeBatch(
@@ -1821,7 +1892,10 @@ class SchedulerService {
       || (row.status === 'failed' && atOrAfter(row.updatedAt, windowStart)));
 
     let enqueued = 0;
-    for (const { scope, active } of due) {
+    for (let i = 0; i < due.length; i += 1) {
+      // eslint-disable-next-line no-await-in-loop
+      if (i > 0 && i % DIGEST_WAKE_YIELD_EVERY === 0) await digestWakeYield();
+      const { scope, active } = due[i];
       const windowStart = windowStartOf(active);
       const key = digestInstallKey(scope.agentName, scope.instanceId, scope.podId);
       let pendingWake: unknown;
