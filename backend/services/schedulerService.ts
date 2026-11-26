@@ -2186,14 +2186,24 @@ class SchedulerService {
     // F668: one chunk in flight at a time, yielding between chunks, so a
     // minute with many due seats neither fans out unbounded reads nor holds
     // the loop for the whole batch.
+    // A seat that fails never stops the seats after it: every chunk is
+    // attempted, as when one Promise.all started them all, and the first
+    // failure is raised only once all of them have run.
     const results: Array<{ enqueued: number; skippedPending?: number }> = [];
+    let firstFailure: unknown;
+    let failed = false;
     stepAt = performance.now();
     for (let i = 0; i < due.length; i += HEARTBEAT_DISPATCH_CHUNK) {
       // eslint-disable-next-line no-await-in-loop
       if (i > 0) await yieldToEventLoop();
       // eslint-disable-next-line no-await-in-loop
-      results.push(...await Promise.all(due.slice(i, i + HEARTBEAT_DISPATCH_CHUNK).map(enqueueOne)));
+      const settled = await Promise.allSettled(due.slice(i, i + HEARTBEAT_DISPATCH_CHUNK).map(enqueueOne));
+      for (const outcome of settled) {
+        if (outcome.status === 'fulfilled') results.push(outcome.value);
+        else if (!failed) { failed = true; firstFailure = outcome.reason; }
+      }
     }
+    if (failed) throw firstFailure;
     const enqueued = results.reduce((sum, r) => sum + r.enqueued, 0);
     const skippedPending = results.reduce((sum, r) => sum + (r.skippedPending || 0), 0);
     timings.perInstall = dueCheckMs + elapsedMs(stepAt);

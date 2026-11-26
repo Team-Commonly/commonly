@@ -110,4 +110,19 @@ describe('heartbeat dispatch load (F668)', () => {
     expect(AgentEventService.enqueue).toHaveBeenCalledTimes(N);
     expect(ranBeforeDone).toBe(true);
   });
+
+  it('a seat that fails in the first chunk does not stop the seats in later chunks', async () => {
+    mockFind(installs);
+    AgentEventService.enqueue.mockImplementation(async ({ agentName }) => {
+      if (agentName === 'agent3') throw new Error('enqueue failed');
+      return { _id: 'evt' };
+    });
+
+    await expect(SchedulerService.dispatchAgentHeartbeats({ now: NOW, respectIntervals: false }))
+      .rejects.toThrow('enqueue failed');
+
+    // Every due seat was still attempted, the last chunk included.
+    expect(AgentEventService.enqueue).toHaveBeenCalledTimes(N);
+    expect(AgentEventService.enqueue).toHaveBeenCalledWith(expect.objectContaining({ agentName: `agent${N - 1}` }));
+  });
 });
