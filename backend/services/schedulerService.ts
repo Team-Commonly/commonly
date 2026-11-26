@@ -137,11 +137,33 @@ interface HeartbeatDispatchTimingsMs {
   globalPick?: number;
   perInstall?: number;
   unread?: number;
+  unreadEvents?: number;
+  unreadFold?: number;
+  unreadInstalls?: number;
+  unreadAllowed?: number;
+  unreadChecks?: number;
+  unreadEnqueue?: number;
+}
+
+/**
+ * Milliseconds per step of the unread-digest pass, plus how many groups were
+ * due (F635). `unreadChecks` covers the wake checks and the enqueue loop, so
+ * it includes `unreadEnqueue`, the time spent inside AgentEventService.enqueue.
+ */
+interface UnreadDigestTimings {
+  unreadEvents?: number;
+  unreadFold?: number;
+  unreadInstalls?: number;
+  unreadAllowed?: number;
+  unreadChecks?: number;
+  unreadEnqueue?: number;
+  due?: number;
 }
 
 // The order the cron line prints them in. Fixed, so the line stays greppable.
 const HEARTBEAT_TIMING_KEYS: Array<keyof HeartbeatDispatchTimingsMs> = [
   'total', 'lease', 'schedules', 'heartbeats', 'installs', 'aggregate', 'globalPick', 'perInstall', 'unread',
+  'unreadEvents', 'unreadFold', 'unreadInstalls', 'unreadAllowed', 'unreadChecks', 'unreadEnqueue',
 ];
 
 const elapsedMs = (since: number): number => performance.now() - since;
@@ -160,6 +182,8 @@ interface ScheduledDispatchHeartbeatsResult extends DispatchHeartbeatsResult {
   timingsMs?: HeartbeatDispatchTimingsMs;
   /** Installs that reached the per-install checks. */
   checked?: number;
+  /** Unread-digest groups that passed the install checks (F635). */
+  due?: number;
 }
 
 interface DispatchPodSummaryOptions {
@@ -184,6 +208,11 @@ const DIGEST_WAKE_INSTALL_CHUNK = 200;
 const DIGEST_WAKE_INSTALL_FIELDS = 'agentName instanceId podId config.digestWake config.heartbeat config.runtime';
 
 type DigestWakeScope = { agentName: string; instanceId: string; podId: unknown };
+// One non-digest AgentEvent read by the batched wake checks (F635).
+type DigestWakeBlockerRow = {
+  agentName: string; instanceId: string; podId: unknown;
+  status?: string; deliveredAt?: Date | null; updatedAt?: Date | null;
+};
 
 // How the old per-group findOne matched: the schema lowercases agentName on
 // the query, Mongoose casts podId to an ObjectId (so a string and an ObjectId
@@ -1406,13 +1435,15 @@ class SchedulerService {
     const result = await SchedulerService.dispatchAgentHeartbeats({ ...options, now, timings: steps });
     const heartbeats = elapsedMs(stepAt);
     stepAt = performance.now();
-    const unreadWakes = await SchedulerService.dispatchUnreadDigestHeartbeats(now);
+    const unreadSteps: UnreadDigestTimings = {};
+    const unreadWakes = await SchedulerService.dispatchUnreadDigestHeartbeats(now, unreadSteps);
     const unread = elapsedMs(stepAt);
     return {
       ...result,
       enqueued: result.enqueued + unreadWakes + scheduledWakes,
       skippedByLease: false,
       checked: steps.checked ?? 0,
+      due: unreadSteps.due ?? 0,
       timingsMs: {
         total: elapsedMs(startedAt),
         lease,
@@ -1423,6 +1454,12 @@ class SchedulerService {
         globalPick: steps.globalPick ?? 0,
         perInstall: steps.perInstall ?? 0,
         unread,
+        unreadEvents: unreadSteps.unreadEvents ?? 0,
+        unreadFold: unreadSteps.unreadFold ?? 0,
+        unreadInstalls: unreadSteps.unreadInstalls ?? 0,
+        unreadAllowed: unreadSteps.unreadAllowed ?? 0,
+        unreadChecks: unreadSteps.unreadChecks ?? 0,
+        unreadEnqueue: unreadSteps.unreadEnqueue ?? 0,
       },
     };
   }
@@ -1440,8 +1477,11 @@ class SchedulerService {
     const parts = HEARTBEAT_TIMING_KEYS
       .filter((key) => typeof timings[key] === 'number')
       .map((key) => `${key}=${Math.round(timings[key] as number)}`);
-    const checked = typeof result.checked === 'number' ? `; checked=${result.checked}` : '';
-    return `${line} (ms ${parts.join(' ')}${checked})`;
+    const counts = [
+      typeof result.checked === 'number' ? `checked=${result.checked}` : '',
+      typeof result.due === 'number' ? `due=${result.due}` : '',
+    ].filter(Boolean).join(' ');
+    return `${line} (ms ${parts.join(' ')}${counts ? `; ${counts}` : ''})`;
   }
 
   /**
@@ -1594,10 +1634,78 @@ class SchedulerService {
     return { active, allowed };
   }
 
+  /**
+   * The non-digest wakes for these scopes, read in $or batches before the
+   * wake loop (F635) instead of two `exists` per group: every pending one,
+   * and every delivered, acked or failed one inside the scope's own window.
+   * The recent read is one top-level $or with a clause per scope, each with
+   * its own bound, so every clause can use the scope index and a long wait on
+   * one scope never widens the read for the others. Should two entries share
+   * a scope, its clause takes the earliest window; each group still applies
+   * its own window to the rows. Keyed as the per-group `exists` matched
+   * (digestInstallKey): the schema lowercases agentName on the query,
+   * Mongoose casts podId, instanceId is compared as stored.
+   */
+  static async findDigestWakeBlockers(
+    entries: Array<{ scope: DigestWakeScope; windowStart: Date }>,
+  ): Promise<{
+    pending: Set<string>; recent: Map<string, DigestWakeBlockerRow[]>;
+  }> {
+    const unique = new Map<string, { scope: DigestWakeScope; windowStart: Date }>();
+    entries.forEach(({ scope, windowStart }) => {
+      const key = digestInstallKey(scope.agentName, scope.instanceId, scope.podId);
+      const existing = unique.get(key);
+      if (!existing || windowStart < existing.windowStart) unique.set(key, { scope, windowStart });
+    });
+    const reads = chunked([...unique.values()], DIGEST_WAKE_INSTALL_CHUNK).flatMap((chunk) => {
+      const scopeOr = chunk.map(({ scope: { agentName, instanceId, podId } }) => ({ agentName, instanceId, podId }));
+      const recentOr = chunk.map(({ scope: { agentName, instanceId, podId }, windowStart }) => ({
+        agentName,
+        instanceId,
+        podId,
+        deliveryMode: { $ne: 'digest' },
+        $or: [
+          { status: { $in: ['delivered', 'acked'] }, deliveredAt: { $gte: windowStart } },
+          { status: 'failed', updatedAt: { $gte: windowStart } },
+        ],
+      }));
+      return [
+        // A synchronous throw from find() becomes this read's rejection.
+        Promise.resolve().then(() => AgentEvent.find({
+          status: 'pending', deliveryMode: { $ne: 'digest' }, $or: scopeOr,
+        }).select('agentName instanceId podId').lean() as Promise<DigestWakeBlockerRow[]>)
+          .then((rows) => ({ kind: 'pending' as const, rows })),
+        Promise.resolve().then(() => AgentEvent.find({ $or: recentOr })
+          .select('agentName instanceId podId status deliveredAt updatedAt')
+          .lean() as Promise<DigestWakeBlockerRow[]>)
+          .then((rows) => ({ kind: 'recent' as const, rows })),
+      ];
+    });
+    const pending = new Set<string>();
+    const recent = new Map<string, DigestWakeBlockerRow[]>();
+    (await Promise.all(reads)).forEach(({ kind, rows }) => {
+      rows.forEach((row) => {
+        const key = digestInstallKey(row.agentName, row.instanceId, row.podId);
+        if (kind === 'pending') {
+          pending.add(key);
+          return;
+        }
+        const list = recent.get(key);
+        if (list) list.push(row);
+        else recent.set(key, [row]);
+      });
+    });
+    return { pending, recent };
+  }
+
   /** One slow wake for a pod with unread digest, never for an empty inbox. */
-  static async dispatchUnreadDigestHeartbeats(now: Date = new Date()): Promise<number> {
+  static async dispatchUnreadDigestHeartbeats(
+    now: Date = new Date(),
+    timings: UnreadDigestTimings = {},
+  ): Promise<number> {
     // The default is also the shortest wait, so this query finds every candidate.
     const threshold = new Date(now.getTime() - DIGEST_WAKE_DEFAULT_MINUTES * 60 * 1000);
+    let stepAt = performance.now();
     const rawGroups = await AgentEvent.aggregate([
       { $match: { status: 'pending', deliveryMode: 'digest', createdAt: { $lte: threshold } } },
       { $group: {
@@ -1605,7 +1713,10 @@ class SchedulerService {
         oldestAt: { $min: '$createdAt' },
       } },
     ]) as Array<{ _id: { agentName: string; instanceId: string; podId: unknown }; oldestAt: Date }>;
+    timings.unreadEvents = elapsedMs(stepAt);
+    stepAt = performance.now();
     const foldedGroups = await listDueForWake(threshold);
+    timings.unreadFold = elapsedMs(stepAt);
     const groups = new Map<string, { scope: { agentName: string; instanceId: string; podId: unknown }; oldestAt: Date }>();
     const addGroup = (scope: { agentName: string; instanceId: string; podId: unknown }, at: Date) => {
       const key = `${scope.agentName}:${scope.instanceId}:${scope.podId}`;
@@ -1634,6 +1745,7 @@ class SchedulerService {
     // the old ones, in a cheaper order: none depends on another.
     const due: Array<{ scope: DigestWakeScope; active: InstallationDoc }> = [];
     let installs: Map<string, InstallationDoc> | null = null;
+    stepAt = performance.now();
     try {
       installs = await SchedulerService.findActiveDigestInstalls(candidates.map(({ scope }) => scope));
     } catch (err) {
@@ -1647,12 +1759,15 @@ class SchedulerService {
         const active = found.get(digestInstallKey(scope.agentName, scope.instanceId, scope.podId));
         return active && waited(active, oldestAt) ? [{ scope, active }] : [];
       });
+      timings.unreadInstalls = elapsedMs(stepAt);
+      stepAt = performance.now();
       const allowed = await SchedulerService.allowsDigestWakeBatch(
         [...new Set(waitedCandidates.map(({ active }) => active))],
       );
       waitedCandidates.forEach((candidate) => {
         if (allowed.get(candidate.active) === true) due.push(candidate);
       });
+      timings.unreadAllowed = elapsedMs(stepAt);
     } else {
       // One scope whose lookup throws is skipped this pass; it never holds back
       // the groups after it. Logged once per pass, not once per scope.
@@ -1669,39 +1784,85 @@ class SchedulerService {
           }
         }
       }
+      // The per-group fallback reads each install and its runtime together.
+      timings.unreadInstalls = elapsedMs(stepAt);
+      timings.unreadAllowed = 0;
     }
+    timings.due = due.length;
+
+    // An existing wake will carry the digest. A recent completed wake says the
+    // seat has already had a turn inside this install's wait. Both are read
+    // for every due group at once (F635), each scope bounded by its own
+    // window; each group then applies its own window to those rows, as its
+    // own query did. Groups still go one at a time, in order, and a scope this
+    // pass just woke counts as pending, so two groups that land on one scope
+    // wake it once. (enqueue writes the heartbeat with the default
+    // deliveryMode, 'wake': pending for an external seat, delivered now for a
+    // native one. The old next `exists` found either.)
+    stepAt = performance.now();
+    let enqueueMs = 0;
+    const windowStartOf = (active: InstallationDoc) => new Date(now.getTime() - waitMsOf(active));
+    let blockers: { pending: Set<string>; recent: Map<string, DigestWakeBlockerRow[]> } | null = null;
+    if (due.length) {
+      try {
+        blockers = await SchedulerService.findDigestWakeBlockers(
+          due.map(({ scope, active }) => ({ scope, windowStart: windowStartOf(active) })),
+        );
+      } catch (err) {
+        // Toward over-delivery (review-checklist rule 19): a failed batch falls
+        // back to the old per-group checks for this pass, never drops a wake.
+        logOutboundFailure('[scheduler] digest wake check batch read failed; checking per group this pass:', err);
+      }
+    }
+    const atOrAfter = (at: Date | null | undefined, windowStart: Date) => (
+      at != null && new Date(at).getTime() >= windowStart.getTime());
+    const isRecentWake = (row: DigestWakeBlockerRow, windowStart: Date) => (
+      ((row.status === 'delivered' || row.status === 'acked') && atOrAfter(row.deliveredAt, windowStart))
+      || (row.status === 'failed' && atOrAfter(row.updatedAt, windowStart)));
 
     let enqueued = 0;
     for (const { scope, active } of due) {
-      const windowStart = new Date(now.getTime() - waitMsOf(active));
-      // An existing wake will carry the digest. A recent completed wake says
-      // the seat has already had a turn inside this install's wait. Checked
-      // one group at a time, after the previous enqueue, as before: two groups
-      // that land on one scope still wake it once.
-      // eslint-disable-next-line no-await-in-loop
-      const [pendingWake, recentWake] = await Promise.all([
-        AgentEvent.exists({ ...scope, status: 'pending', deliveryMode: { $ne: 'digest' } }),
-        AgentEvent.exists({ ...scope, deliveryMode: { $ne: 'digest' }, $or: [
-          { status: { $in: ['delivered', 'acked'] }, deliveredAt: { $gte: windowStart } },
-          // AgentEvent timestamps update on every failed transition, including
-          // failures before delivery and failures after an older delivery.
-          { status: 'failed', updatedAt: { $gte: windowStart } },
-        ] }),
-      ]);
+      const windowStart = windowStartOf(active);
+      const key = digestInstallKey(scope.agentName, scope.instanceId, scope.podId);
+      let pendingWake: unknown;
+      let recentWake: unknown;
+      if (blockers) {
+        pendingWake = blockers.pending.has(key);
+        recentWake = (blockers.recent.get(key) || []).some((row) => isRecentWake(row, windowStart));
+      } else {
+        // eslint-disable-next-line no-await-in-loop
+        [pendingWake, recentWake] = await Promise.all([
+          AgentEvent.exists({ ...scope, status: 'pending', deliveryMode: { $ne: 'digest' } }),
+          AgentEvent.exists({ ...scope, deliveryMode: { $ne: 'digest' }, $or: [
+            { status: { $in: ['delivered', 'acked'] }, deliveredAt: { $gte: windowStart } },
+            // AgentEvent timestamps update on every failed transition, including
+            // failures before delivery and failures after an older delivery.
+            { status: 'failed', updatedAt: { $gte: windowStart } },
+          ] }),
+        ]);
+      }
       if (pendingWake || recentWake) continue;
-      // eslint-disable-next-line no-await-in-loop
-      await AgentEventService.enqueue({
-        ...scope,
-        type: 'heartbeat',
-        payload: {
-          trigger: 'unread-digest',
-          podId: String(scope.podId),
-          generatedAt: now.toISOString(),
-          content: '[Unread pod activity is waiting. Read the digest in this inbox batch; respond only if useful.]',
-        },
-      });
+      const enqueueAt = performance.now();
+      try {
+        // eslint-disable-next-line no-await-in-loop
+        await AgentEventService.enqueue({
+          ...scope,
+          type: 'heartbeat',
+          payload: {
+            trigger: 'unread-digest',
+            podId: String(scope.podId),
+            generatedAt: now.toISOString(),
+            content: '[Unread pod activity is waiting. Read the digest in this inbox batch; respond only if useful.]',
+          },
+        });
+      } finally {
+        enqueueMs += elapsedMs(enqueueAt);
+      }
+      blockers?.pending.add(key);
       enqueued += 1;
     }
+    timings.unreadEnqueue = enqueueMs;
+    timings.unreadChecks = elapsedMs(stepAt);
     return enqueued;
   }
 

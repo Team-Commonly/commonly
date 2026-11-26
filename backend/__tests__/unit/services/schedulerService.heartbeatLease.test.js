@@ -91,6 +91,8 @@ describe('SchedulerService automatic heartbeat dispatch lease', () => {
       skippedByLease: false,
       // F633: step timings ride along; the direct dispatch is mocked, so none checked.
       checked: 0,
+      // F635: unread-digest groups that passed the install checks.
+      due: 0,
       timingsMs: expect.any(Object),
     });
   });
