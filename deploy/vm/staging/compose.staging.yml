@@ -6,7 +6,7 @@
 #
 # What this file changes:
 # - Caps on every service. Staging can never starve prod: hard memory and CPU
-#   ceilings (CPU at most 1.0 in total, half of the 2-CPU VM), a quarter of
+#   ceilings (CPU at most 1.2 in total, well under the 2-CPU VM), a quarter of
 #   prod's CPU weight under contention, and a high OOM score so the kernel kills
 #   staging first.
 # - Its own databases: MongoDB as a container here (prod's Mongo is Atlas), and
@@ -67,7 +67,9 @@ services:
   litellm:
     <<: *caps
     mem_limit: 1g
-    cpus: 0.2
+    # 0.4, not 0.2: at 0.2 LiteLLM's boot (schema migrations, then readiness) missed
+    # its healthcheck and failed the staging deploy of 3e54a58a (2026-11-26).
+    cpus: 0.4
 
   # Staging's own tunnel (never prod's). Its ingress (staging.commonly.me and
   # api-staging.commonly.me to this project's frontend and backend) lives in a local
