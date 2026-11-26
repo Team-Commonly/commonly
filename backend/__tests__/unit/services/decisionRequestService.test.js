@@ -46,7 +46,11 @@ const mockTo = jest.fn(() => ({ emit: mockEmit }));
 jest.mock('../../../config/socket', () => ({ getIO: jest.fn(() => ({ to: mockTo })) }));
 
 const mockResolveThreadRoot = jest.fn();
-jest.mock('../../../services/threadRootResolver', () => ({ resolveThreadRoot: (...args) => mockResolveThreadRoot(...args) }));
+// The real shape check (parseThreadRootId) runs; only the PG-backed resolve is stubbed.
+jest.mock('../../../services/threadRootResolver', () => ({
+  ...jest.requireActual('../../../services/threadRootResolver'),
+  resolveThreadRoot: (...args) => mockResolveThreadRoot(...args),
+}));
 
 const {
   requestDecision, chooseDecision, normalizeOptions, normalizeDecisionClass, DecisionRequestError,
@@ -92,7 +96,10 @@ describe('DecisionRequestService', () => {
     const result = await requestDecision(source());
 
     expect(mockPostMessage).toHaveBeenCalledWith(expect.objectContaining({
-      agentName: 'release-agent', instanceId: 'seat-1', podId: 'pod-1', threadRootId: '612',
+      agentName: 'release-agent', instanceId: 'seat-1', podId: 'pod-1',
+      // F644 (supersedes posting into the asked thread): the card a person
+      // must answer always posts top-level, even when threadRootId is sent.
+      threadRootId: null,
       threadIsDeliberate: true,
       metadata: { source: 'decision-request' },
       relayCard: {
@@ -111,8 +118,40 @@ describe('DecisionRequestService', () => {
       agentUserId: 'agent-user-1', agentName: 'release-agent', instanceId: 'seat-1', decisionClass: 'implementation',
       messageId: '700', status: 'pending',
     }));
-    expect(result).toEqual({ decisionId: 'decision-1', messageId: '700', threadRootId: '612', status: 'pending' });
+    expect(mockDecision.create.mock.calls[0][0]).not.toHaveProperty('threadRootId');
+    expect(result).toEqual({
+      decisionId: 'decision-1',
+      messageId: '700',
+      threadRootId: '700',
+      status: 'pending',
+      warnings: [expect.objectContaining({ code: 'decision_card_top_level' })],
+    });
+    expect(result.warnings[0].message).toContain('not posted in thread 612');
+    expect(result.warnings[0].message).toContain('post a one-line pointer to it there');
+    expect(result.warnings[0].message).toContain('threadRootId 700');
   });
+
+  test('a card sent without threadRootId posts top-level with no warning (F644)', async () => {
+    const result = await requestDecision({ ...source(), threadRootId: undefined });
+    expect(mockPostMessage.mock.calls[0][0]).toMatchObject({ threadRootId: null, threadIsDeliberate: true });
+    expect(result).toEqual({ decisionId: 'decision-1', messageId: '700', threadRootId: '700', status: 'pending' });
+  });
+
+  test('a malformed threadRootId is still refused before anything posts (F644)', async () => {
+    await expect(requestDecision({ ...source(), threadRootId: '9'.repeat(40) }))
+      .rejects.toMatchObject({ status: 400 });
+    expect(mockPostMessage).not.toHaveBeenCalled();
+  });
+
+  test.each(['not-a-message', '0', '-5', '12abc'])(
+    'a threadRootId that is not a positive message id (%s) is refused before anything posts (F644)',
+    async (threadRootId) => {
+      await expect(requestDecision({ ...source(), threadRootId }))
+        .rejects.toMatchObject({ status: 400, code: 'thread_root_invalid' });
+      expect(mockPostMessage).not.toHaveBeenCalled();
+      expect(mockDecision.create).not.toHaveBeenCalled();
+    },
+  );
 
   test('rejects malformed choices before it writes the source message', async () => {
     await expect(requestDecision({ ...source(), options: [{ label: 'Only choice' }] }))

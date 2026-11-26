@@ -89,6 +89,7 @@ const DecisionRequestSchema = new Schema<IDecisionRequest>(
     // without it are intentionally invisible to the Activity projection.
     messageId: { type: String, trim: true },
     cardMessageId: { type: String, trim: true },
+    // Kept only for rows stored before F644; new code must not write it to place a card.
     threadRootId: { type: String, trim: true },
     ruling: {
       value: { type: String, trim: true, maxlength: 2000 },

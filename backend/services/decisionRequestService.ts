@@ -58,6 +58,7 @@ interface RequestDecisionOptions {
   title: string;
   question: string;
   options: DecisionOptionInput[];
+  /** Validated but never used for placement: the card posts top-level (F644). */
   threadRootId?: string | null;
   context?: string;
   /** 1 to MAX_DECIDERS human members of the pod; only they may rule. */
@@ -209,6 +210,16 @@ const requirePgReply = async (podId: string, userId: string): Promise<void> => {
   }
 };
 
+// F644: tells an agent that sent threadRootId where its card went, the way
+// F245's thread_root_from_wake does for a plain post. Never a refusal.
+const cardPostedTopLevel = (asked: string, messageId: string) => ({
+  code: 'decision_card_top_level',
+  message: 'A decision card always posts in the main channel, so the person can answer it without opening a thread. '
+    + `It was not posted in thread ${asked}, so that thread does not show it and has one reply fewer. `
+    + 'If people in that thread need to see the card, post a one-line pointer to it there. '
+    + `The ruling arrives as a reply in the card's own thread (threadRootId ${messageId}).`,
+});
+
 /**
  * Store a fork and post the asker's own question into the pod. The source
  * message is created before the row becomes visible in the queue, so every
@@ -224,9 +235,31 @@ export const requestDecision = async (input: RequestDecisionOptions): Promise<Re
   const question = cleanText(input.question, 'question', 1000);
   const options = normalizeOptions(input.options);
   const context = input.context === undefined ? undefined : cleanText(input.context, 'context', 2000);
-  const threadRootId = input.threadRootId === undefined || input.threadRootId === null
+  // F644: still validated, so a malformed value is refused as before, but it
+  // never places the card. See the post below.
+  const askedThreadRootId = input.threadRootId === undefined || input.threadRootId === null
     ? null
     : cleanText(input.threadRootId, 'threadRootId', 32);
+  // The resolver's own shape rule, before anything is written: the card no
+  // longer reaches resolveThreadRoot, so without this 'not-a-message' would
+  // post and the warning would name an id that cannot exist.
+  if (askedThreadRootId) {
+    // eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
+    const { parseThreadRootId } = require('./threadRootResolver');
+    try {
+      await parseThreadRootId(askedThreadRootId);
+    } catch (error) {
+      const refused = error as { name?: string; message: string; code?: string };
+      if (refused?.name === 'ThreadRootError') {
+        throw new DecisionRequestError(refused.message, 400, refused.code || 'thread_root_invalid');
+      }
+      throw new DecisionRequestError(
+        'Decision requests need the message service to be available',
+        503,
+        'message_service_unavailable',
+      );
+    }
+  }
 
   const deciders = await resolveDeciders(podId, input.deciderUserIds);
 
@@ -263,7 +296,12 @@ export const requestDecision = async (input: RequestDecisionOptions): Promise<Re
     content: formatDecisionMessage(title, question, options, context, deciders),
     metadata: { source: 'decision-request' },
     relayCard,
-    threadRootId,
+    // F644: a card a person must answer always posts in the main channel. In
+    // a thread it sat behind the collapsed thread, and a reload collapses it
+    // again, so the pod showed no option buttons. The agent's threadRootId is
+    // not used, and threadIsDeliberate keeps the F245 answer-thread inference
+    // from filing the card in the thread its turn answers.
+    threadRootId: null,
     threadIsDeliberate: true,
     installationConfig: input.installationConfig || null,
   });
@@ -287,7 +325,6 @@ export const requestDecision = async (input: RequestDecisionOptions): Promise<Re
     options,
     status: 'pending',
     messageId,
-    ...(threadRootId ? { threadRootId } : {}),
     ...(deciders ? { deciders } : {}),
   });
   // eslint-disable-next-line global-require
@@ -296,9 +333,10 @@ export const requestDecision = async (input: RequestDecisionOptions): Promise<Re
   return {
     decisionId: String(row._id),
     messageId,
-    threadRootId: threadRootId || messageId,
+    threadRootId: messageId,
     status: row.status,
     ...(deciders ? { deciders } : {}),
+    ...(askedThreadRootId ? { warnings: [cardPostedTopLevel(askedThreadRootId, messageId)] } : {}),
   };
 };
 
