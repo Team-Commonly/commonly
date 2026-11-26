@@ -2762,7 +2762,9 @@ test('the public-hit script sends no identifier and keeps the API base inside it
 const clicksSent = (hrefs, { inHeader = false } = {}) => {
   const listeners = [];
   const sent = [];
-  const script = publicHitScript('https://api.example.test').replace(/^<script[^>]*>|<\/script>$/g, '');
+  // The body between the tag we generate and its close, by position, not by pattern.
+  const tagged = publicHitScript('https://api.example.test');
+  const script = tagged.slice(tagged.indexOf('>') + 1, tagged.lastIndexOf('</script>'));
   const sandbox = {
     navigator: {},
     window: {},
