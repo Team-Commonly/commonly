@@ -39,7 +39,11 @@ The tenth is `AgentTaskRowWakeState` (table `agent_task_row_wake_states`, migrat
 whose read uses `findWhere` with `$in` on `_id`, whose outcome count, stop, un-stop and reset use
 `updateWhere` (the null-equality filters run on Mongo), whose wake stamp is one helper `upsert` per row in
 order, and whose compensation for a stamp that failed part-way uses `updateManyWhere`. Its
-`lastWakeEventId` and `countedEventId` are ObjectIds in Mongo and hex text in Postgres.
+`lastWakeEventId` and `countedEventId` are ObjectIds in Mongo and hex text in Postgres. **Before its step 1,
+step 0 also counts documents with no `createdAt`, and that count must be 0.** In dual, the wake stamp
+decides a first write by a missing `createdAt` and gives a new row its defaults, so a document without
+one would lose its `failures`, `stoppedAt` and outcome on its next stamp. Every document Mongoose wrote
+has `createdAt` (the model has had timestamps from the start), so only a raw insert could be missing it.
 
 **Migration order: `0024` must not be applied before `0023`, nor `0025` before `0024`.** The migration
 runner matches history to the sorted file list by position, so an instance that has run `0024` refuses to
