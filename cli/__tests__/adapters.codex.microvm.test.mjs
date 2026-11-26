@@ -434,6 +434,17 @@ describe('the codex adapter in a microVM', () => {
       expect(resumes(calls[0].turn)).toBe(true);
     });
 
+    test('a sessions tree past the entry cap counts as absent, without walking it all', async () => {
+      const sessions = path.join(home, 'codex-home', 'sessions');
+      for (let i = 0; i < 30; i += 1) fs.mkdirSync(path.join(sessions, `y${String(i).padStart(2, '0')}`), { recursive: true });
+      const day = path.join(sessions, 'y00', '11', '25');
+      fs.mkdirSync(day, { recursive: true });
+      fs.writeFileSync(path.join(day, `rollout-x-${SESSION}.jsonl`), '{}\n');
+      const codexHome = path.join(home, 'codex-home');
+      expect(await codexModule.guestRolloutExists(codexHome, SESSION)).toBe(true);
+      expect(await codexModule.guestRolloutExists(codexHome, SESSION, 10)).toBe(false);
+    });
+
     test('a rollout reached only through a link counts as absent', async () => {
       const elsewhere = fs.mkdtempSync(path.join(os.tmpdir(), 'cli-cmv-rollouts-'));
       try {
@@ -693,8 +704,36 @@ describe('the codex adapter in a microVM', () => {
       expect(fs.readFileSync(path.join(home, 'codex-home', 'AGENTS.override.md'), 'utf8')).toBe('from the guest');
     });
 
-    test('past its seat lock\'s deadline the turn reads no reply and cleans nothing', async () => {
-      const lockedPast = (dir, fn) => fn({ pastDeadline: () => true });
+    test.each([
+      ['before preparing the seat', 0, /before preparing the seat/],
+      ['before writing config.toml', 1, /before writing config\.toml/],
+      ['before booting the VM', 2, /before booting the VM/],
+      ['before reading the reply', 4, /before reading the reply/],
+    ])('a deadline passed %s stops the turn there, with no later HOME step', async (label, okCalls, message) => {
+      fs.mkdirSync(path.join(home, 'codex-home'));
+      fs.writeFileSync(path.join(home, 'codex-home', 'AGENTS.override.md'), 'from the guest');
+      // pastDeadline answers false for the first `okCalls` checks, then true.
+      let checks = 0;
+      const lockedUntil = (dir, fn) => fn({ pastDeadline: () => { checks += 1; return checks > okCalls; } });
+      const { calls, impl } = recorder({ reply: 'late' });
+      await withFlag('1', async () => {
+        await expect(run(impl, { extra: { _startProviderProxy: proxyStub().start, _withSeatLock: lockedUntil } }))
+          .rejects.toThrow(message);
+      });
+      if (okCalls === 0) {
+        // Nothing was prepared: the guest's file is still there.
+        expect(fs.readFileSync(path.join(home, 'codex-home', 'AGENTS.override.md'), 'utf8')).toBe('from the guest');
+      }
+      if (okCalls <= 1) expect(fs.existsSync(path.join(home, 'codex-home', 'config.toml'))).toBe(false);
+      if (okCalls <= 2) expect(calls).toHaveLength(0);
+      else expect(calls).toHaveLength(1);
+    });
+
+    test('past its seat lock\'s deadline after msb exits, the turn reads no reply and cleans nothing', async () => {
+      // The first three checks (prepare, config.toml, boot) pass; the deadline
+      // has passed by the time msb exits.
+      let checks = 0;
+      const lockedPast = (dir, fn) => fn({ pastDeadline: () => { checks += 1; return checks > 3; } });
       const { impl } = recorder({ reply: 'late' });
       await withFlag('1', async () => {
         await expect(run(impl, { extra: { _startProviderProxy: proxyStub().start, _withSeatLock: lockedPast } }))

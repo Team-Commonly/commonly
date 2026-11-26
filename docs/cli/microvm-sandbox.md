@@ -161,9 +161,13 @@ guest never mounts. The file names its holder (pid, a per-take token, and a
 deadline: the turn's timeout plus 15 minutes from the take), and only an
 exclusive create takes it. Age alone never frees it. A waiter reclaims it only
 when the holder's pid is gone, or when the holder's own deadline has passed.
-The holder checks that deadline before every HOME step and touches the HOME no
-more after it, so a live pid past it is a reused pid or a holder that has
-stopped acting. A pid check that fails counts as alive. A lock that names no
+The holder checks that deadline before preparing the HOME, before writing
+`config.toml`, before booting the VM, after msb exits, again after the
+post-exit VM check (which can take minutes) and before the cleanup, and
+touches the HOME no more after it, so a live pid past it is a reused pid or a
+holder that has stopped acting. One window is left: a check passes, then the
+host sleeps past the deadline before the step it guarded runs. That needs a
+suspend landing in that gap of milliseconds plus a guest winning a link race. A pid check that fails counts as alive. A lock that names no
 holder yet (between its create and its write) is left alone for a minute. A
 reclaim re-reads the file under a guard and deletes it only if the same file,
 with the same content and age, is still abandoned. A second turn of the seat
@@ -183,7 +187,9 @@ addon.
 
 Under the lock and after the check, the host also removes replies a killed turn
 left, and checks that the seat's stored thread has its rollout in the guest
-Codex home (walked without following links). A thread from before the seat ran
+Codex home (walked without following links, and at most 20,000 entries: past
+that the thread counts as absent, so a planted tree can't stall the host while
+it holds the lock). A thread from before the seat ran
 in the microVM lives in another Codex home, so the turn starts a new thread
 instead of failing to resume it on every turn.
 

@@ -1669,9 +1669,15 @@ const cleanMicrovmHome = async (home, replyName) => {
 // (sessions/YYYY/MM/DD/*-<id>.jsonl), walked without following any link: a
 // linked folder or file counts as absent. Run under the seat lock, with no VM
 // of the seat running.
-export const guestRolloutExists = async (codexHome, sessionId) => {
+export const GUEST_ROLLOUT_ENTRY_CAP = 20000;
+
+export const guestRolloutExists = async (codexHome, sessionId, cap = GUEST_ROLLOUT_ENTRY_CAP) => {
   if (!sessionId) return false;
   const suffix = `-${sessionId}.jsonl`;
+  // sessions/ is guest-writable: a planted tree of many folders must not stall
+  // the host (which holds the seat lock meanwhile). Past the cap the thread
+  // counts as absent and starts fresh, which only costs this seat its thread.
+  let budget = cap;
   const dirsIn = async (dir) => {
     const info = await lstat(dir).catch(() => null);
     if (!info || info.isSymbolicLink() || !info.isDirectory()) return null;
@@ -1681,7 +1687,10 @@ export const guestRolloutExists = async (codexHome, sessionId) => {
   const walk = async (dir, depth) => {
     const entries = await dirsIn(dir);
     if (!entries) return false;
+    budget -= entries.length;
+    if (budget < 0) return false;
     for (const entry of entries) {
+      if (budget < 0) return false;
       if (entry.isSymbolicLink()) continue;
       if (depth === 3) {
         if (entry.isFile() && entry.name.endsWith(suffix)) return true;
@@ -1761,6 +1770,11 @@ const runMicrovmTurn = async ({
       label: seatLabel, home, platform, env: source, log,
     });
     confirmNoSeatVm();
+    // Past the lock's deadline (a long sleep, say) another turn may already
+    // hold the seat, so every HOME step and the launch check it first.
+    if (pastDeadline()) {
+      throw new Error('the codex turn passed its seat lock\'s deadline before preparing the seat; it leaves the HOME alone');
+    }
     const { codexHome } = await prepareMicrovmCodexHome(home, ctx);
     // A thread stored before this seat ran in the microVM lives in another
     // Codex home; resuming it here would fail every turn, so it starts fresh.
@@ -1780,6 +1794,11 @@ const runMicrovmTurn = async ({
     // confirmNoSeatVm stops that VM before its own HOME steps.
     let killed = false;
     let vmGone = false;
+    const stopIfPastDeadline = (step) => {
+      if (!pastDeadline()) return;
+      killed = true;
+      throw new Error(`the codex turn passed its seat lock's deadline before ${step}; it leaves the HOME alone`);
+    };
     try {
       providerProxy = await (ctx._startProviderProxy || startProviderProxy)({
         provider: { baseURL },
@@ -1800,6 +1819,7 @@ const runMicrovmTurn = async ({
         throw new Error('public Codex agents in the microVM sandbox need a prepared microVM; refusing to run Codex outside it');
       }
       // The MCP entries, with the bridge secret, go in config.toml, not argv.
+      stopIfPastDeadline('writing config.toml');
       await writeGuestFile(codexHome, 'config.toml', microvmGuestCodexConfig(turn.mcpConfig, ctx));
       // Inside the VM, Codex keeps the public permission profile, read-only:
       // the VM is the fence, and the profile keeps the model's shell off the
@@ -1829,6 +1849,7 @@ const runMicrovmTurn = async ({
         throw ctx.signal.reason || new Error('codex spawn cancelled before the process started');
       }
       let ran;
+      stopIfPastDeadline('booting the VM');
       try {
         ran = await runCodex({
           command: host.msb,
@@ -1864,6 +1885,8 @@ const runMicrovmTurn = async ({
       // msb exited on its own, but it only warns when it can't stop its VM, so
       // the reply is read only once no VM of this seat is confirmed alive.
       confirmNoSeatVm();
+      // The check above can take minutes (msb's stop), so the deadline again.
+      stopIfPastDeadline('reading the reply');
       vmGone = true;
       const text = await readMicrovmReply(home, replyName);
       if (!ran.turnCompleted && !text) throw adapterFailure('codex', 'the turn stopped before it finished');
