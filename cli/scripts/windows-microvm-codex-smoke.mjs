@@ -448,7 +448,8 @@ const main = async () => {
         if (left.length) fail(`left in the Codex home for the next turn: ${left.join(', ')}`);
         if (atLaunch.tmp.includes('planted.txt')) fail('a file planted in the Codex home\'s tmp/ reached the next turn');
         if (!atLaunch.entries.includes('sessions')) fail('the seat\'s sessions were cleared, so its thread cannot resume');
-        if (probed.newSessionId && !atLaunch.resumes) fail('the next turn did not resume the seat\'s thread');
+        if (!probed.newSessionId) fail('the probe turn reported no thread id, so resume across the sweep went unchecked');
+        else if (!atLaunch.resumes) fail('the next turn did not resume the seat\'s thread');
       }
       if (!String(next.text).includes('OK from the stub model')) fail(`the next turn did not answer: ${JSON.stringify(next.text)}`);
     }

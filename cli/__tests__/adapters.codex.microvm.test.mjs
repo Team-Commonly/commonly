@@ -565,6 +565,23 @@ describe('the codex adapter in a microVM', () => {
       await refusedBeforeAnything(() => fs.symlinkSync(path.join(outside, 'skills'), path.join(home, 'codex-home', 'skills', 'inner'), 'dir'));
     });
 
+    test('at sessions, the kept folder', async () => {
+      fs.mkdirSync(path.join(home, 'codex-home'));
+      await refusedBeforeAnything(() => fs.symlinkSync(path.join(outside, 'skills'), path.join(home, 'codex-home', 'sessions'), 'dir'));
+    });
+
+    test('a link inside sessions is left in place and never followed; the turn runs', async () => {
+      fs.mkdirSync(path.join(home, 'codex-home', 'sessions'), { recursive: true });
+      const inner = path.join(home, 'codex-home', 'sessions', '2026');
+      fs.symlinkSync(outside, inner, 'dir');
+      const before = fs.readdirSync(outside).sort();
+      const { calls, impl } = recorder();
+      await withFlag('1', () => run(impl, { extra: { _startProviderProxy: proxyStub().start } }));
+      expect(calls).toHaveLength(1);
+      expect(fs.lstatSync(inner).isSymbolicLink()).toBe(true);
+      expect(fs.readdirSync(outside).sort()).toEqual(before);
+    });
+
     test('at the replies folder', async () => {
       await refusedBeforeAnything(() => fs.symlinkSync(outside, path.join(home, 'replies'), 'dir'));
     });

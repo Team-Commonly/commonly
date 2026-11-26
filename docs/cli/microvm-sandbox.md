@@ -130,12 +130,15 @@ turn's own `config.toml`. What stays:
   that database is removed with the rest.
 - `tmp/arg0-linux/`, where Codex links its own binary under helper names at
   each launch, puts only that launch's folder on `PATH`, and prunes stale ones.
-  Its entries are links by design. Everything else in `tmp/` is removed.
+  Its entries are links by design. The host never reads, stats or removes
+  anything inside it, and the model's shell sees it read-only, so it can't
+  plant a helper there. Everything else in `tmp/` is removed.
 
 So a file left anywhere else (`AGENTS.override.md`, a hooks or environments
 file, `skills/`, `memories/`, `history.jsonl`, `log/`, or an extension point a
-later Codex adds) never reaches the next turn. A link anywhere in the Codex home
-outside the helper folder refuses the turn until it is removed. Codex runs with
+later Codex adds) never reaches the next turn. A link in the Codex home outside
+the two kept folders, or in place of either one, refuses the turn until it is
+removed. Links inside `sessions/` are left there and never followed. Codex runs with
 `--ignore-rules`. It does not run with `--ignore-user-config`, since it reads
 that host-written `config.toml`; every other setting rides in `-c` overrides,
 which win over the file.

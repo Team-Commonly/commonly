@@ -1667,6 +1667,9 @@ export const prepareMicrovmCodexHome = async (home, ctx) => {
   await keepOnlyGuestEntries(codexHome, GUEST_CODEX_HOME_KEPT);
   await keepOnlyGuestEntries(await ensureGuestDir(home, [GUEST_CODEX_HOME_NAME, 'tmp']), GUEST_CODEX_TMP_KEPT);
   await ensureGuestDir(home, [GUEST_CODEX_HOME_NAME, 'tmp', 'arg0-linux']);
+  // sessions/ is kept, so it must be a real folder: a link in its place
+  // refuses the turn. Links inside it are never followed (guestRolloutExists).
+  await ensureGuestDir(home, [GUEST_CODEX_HOME_NAME, 'sessions']);
   await writePublicCodexInstructions(codexHome, ctx, guestHomeFileOps);
   return { codexHome, replies };
 };
