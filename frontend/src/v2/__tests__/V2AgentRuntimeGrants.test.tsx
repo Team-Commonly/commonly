@@ -183,6 +183,31 @@ test('with no computer left and an unknown sandbox choice, the line has no flag 
   expect(line).toHaveTextContent('If this computer ran agents without a sandbox, add --unsandboxed to keep that: agents then act with your own access to files and commands, and get no connector grants.');
 });
 
+// F641: the owner runs the shown line in a terminal with settings still open.
+// Coming back to the page reads placement again, so the computer it just set up
+// joins the Run on picker without reopening settings.
+test.each([
+  ['the page becomes visible again', () => fireEvent(document, new Event('visibilitychange'))],
+  ['the window regains focus', () => fireEvent(window, new Event('focus'))],
+])('while the setup line is shown, a newly set-up computer joins Run on when %s', async (_label, comeBack) => {
+  let activeMachines = [];
+  axios.get.mockImplementation((url) => Promise.resolve({ data: url.includes('/agent-binding/placement')
+    ? { boundMachineId: 'old', requestedMachineId: null, boundMachineRevoked: true, boundMachineRevokedReason: 'cli_duplicate_daemons',
+      boundMachineHost: { platform: 'darwin', unsandboxedOptIn: false }, activeMachines } : response }));
+  renderSection();
+  await screen.findByTestId('agent-machine-revoked-setup');
+  expect(screen.queryByLabelText('Run on')).not.toBeInTheDocument();
+  const placementReads = () => axios.get.mock.calls.filter(([url]) => url.includes('/agent-binding/placement')).length;
+  const before = placementReads();
+
+  activeMachines = [{ machineId: 'new', name: 'New Mac' }];
+  comeBack();
+  await waitFor(() => expect(placementReads()).toBe(before + 1));
+  const select = await screen.findByLabelText('Run on');
+  expect(Array.from(select.querySelectorAll('option')).map((option) => option.value)).toEqual(['new']);
+  expect(select).toHaveValue('new');
+});
+
 test('a revoke without a reason keeps the generic line and no connect link', async () => {
   axios.get.mockImplementation((url) => Promise.resolve({ data: url.includes('/agent-binding/placement')
     ? { boundMachineId: 'old', requestedMachineId: null, boundMachineRevoked: true, boundMachineRevokedReason: null,

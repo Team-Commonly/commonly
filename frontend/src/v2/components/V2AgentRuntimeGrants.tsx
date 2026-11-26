@@ -173,6 +173,23 @@ const V2AgentRuntimeBody: React.FC<Props> = ({
   const revokedSetup = placement?.boundMachineRevoked && hasDaemonRevokedReasonText(placement.boundMachineRevokedReason)
     ? revokedComputerSetup(placement.boundMachineHost, browserIsWindows() ? 'windows' : 'unix')
     : null;
+  // F641: the owner runs that line in a terminal with settings still open, so
+  // coming back to the page reads placement again and the new computer joins
+  // the Run on picker. No timer: only focus or the page becoming visible.
+  const showsRevokedSetup = Boolean(revokedSetup);
+  useEffect(() => {
+    if (!showsRevokedSetup) return undefined;
+    const refresh = () => {
+      if (document.visibilityState === 'hidden') return;
+      void loadPlacement().catch(() => {});
+    };
+    window.addEventListener('focus', refresh);
+    document.addEventListener('visibilitychange', refresh);
+    return () => {
+      window.removeEventListener('focus', refresh);
+      document.removeEventListener('visibilitychange', refresh);
+    };
+  }, [showsRevokedSetup, loadPlacement]);
   const machineState = placement && <>
     {placement.boundMachineRevoked && <span role="status">{t('agentManage.runtime.machineRevoked')}</span>}
     {removedMachine && !waitingForMachine && <span role="status">{t('agentManage.runtime.machineRemoved', { name: removedMachine.name })}</span>}

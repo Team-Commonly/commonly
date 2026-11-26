@@ -4,7 +4,7 @@
 // runtimeType 'wrapper' and files a placement request (never a binding); the
 // result panel watches the daemon's per-agent heartbeat state.
 import React from 'react';
-import { render, screen, waitFor, fireEvent, act } from '@testing-library/react';
+import { render, screen, waitFor, fireEvent, act, within } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import V2AgentBYO from '../components/V2AgentBYO';
 import { AuthContext } from '../../context/AuthContext';
@@ -208,6 +208,17 @@ describe('BYO on-my-computer mode', () => {
       asWindowsBrowser();
       const line = await shownLine([machineRow, revokedRow({ platform: 'win32', unsandboxedOptIn: false })]);
       expect(line).toMatch(/^npx\.cmd -y @commonlyai\/cli@latest daemon setup --instance \S+$/);
+    });
+
+    test('Copy in the block copies exactly the shown line, with no --unsandboxed for an opt-out', async () => {
+      Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText: jest.fn().mockResolvedValue(undefined) } });
+      asWindowsBrowser();
+      const line = await shownLine([machineRow, revokedRow({ platform: 'win32', unsandboxedOptIn: false })]);
+      expect(line).not.toContain('--unsandboxed');
+      fireEvent.click(within(screen.getByTestId('byo-add-computer')).getByRole('button', { name: 'Copy' }));
+      await waitFor(() => expect(navigator.clipboard.writeText).toHaveBeenCalledTimes(1));
+      expect(navigator.clipboard.writeText).toHaveBeenCalledWith(line);
+      expect(navigator.clipboard.writeText.mock.calls[0][0]).not.toContain('--unsandboxed');
     });
 
     test('a revoked Windows computer that opted in keeps --unsandboxed', async () => {
