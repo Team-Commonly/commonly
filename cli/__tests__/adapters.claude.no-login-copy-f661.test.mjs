@@ -306,6 +306,18 @@ describe('removeLegacyClaudeLoginCopies (F661)', () => {
   test('the adapter runs it once per seat process', () => {
     expect(typeof claude.removeLegacyLoginCopies).toBe('function');
   });
+
+  // The boot sweep and a turn's preparation can race on one seat's markers:
+  // when the other removed the folder after this one's check, its read is an
+  // empty list, so turn preparation does not reject; any other failure does.
+  test('a markers folder removed between the check and the read counts as cleared', async () => {
+    const gone = Object.assign(new Error('gone'), { code: 'ENOENT' });
+    await expect(claudeModule.readdirIfPresent('/x', async () => { throw gone; })).resolves.toEqual([]);
+    const denied = Object.assign(new Error('denied'), { code: 'EACCES' });
+    await expect(claudeModule.readdirIfPresent('/x', async () => { throw denied; })).rejects.toBe(denied);
+    await expect(claudeModule.readdirIfPresent(path.join(homes, 'bbbb-public.login-turns')))
+      .resolves.toEqual(['12345-0b5e9a4c-1111-4222-8333-944455556666']);
+  });
 });
 
 describe('an unsandboxed Claude seat is unchanged (F661)', () => {

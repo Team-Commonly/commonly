@@ -494,6 +494,19 @@ const LEGACY_TURN_MARKER = /^\d+-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}
 // replace (EBUSY), and `<seat>.login-turns` sits outside its writable bind.
 const legacyCopiesPossible = (platform = process.platform) => platform === 'linux';
 
+// The boot sweep and a turn's preparation can both clear the same seat's
+// markers; when the other one removed the folder between this one's check and
+// its read, the folder is already cleared, so that read is an empty list.
+// Any other read failure still rejects.
+export const readdirIfPresent = async (path, read = readdir) => {
+  try {
+    return await read(path);
+  } catch (err) {
+    if (err?.code === 'ENOENT') return [];
+    throw err;
+  }
+};
+
 const removeLegacyLoginTurns = async (statePath) => {
   const turns = `${statePath}${LEGACY_LOGIN_TURNS}`;
   const stat = await statOrNull(turns);
@@ -505,7 +518,7 @@ const removeLegacyLoginTurns = async (statePath) => {
   }
   // Its markers were empty files named `<pid>-<uuid>`; anything else in it is
   // left, and so is the folder.
-  for (const name of await readdir(turns)) {
+  for (const name of await readdirIfPresent(turns)) {
     if (!LEGACY_TURN_MARKER.test(name)) continue;
     const entry = join(turns, name);
     const entryStat = await statOrNull(entry);
