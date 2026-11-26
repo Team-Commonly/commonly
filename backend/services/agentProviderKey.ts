@@ -3,7 +3,9 @@ import { Request, Response } from 'express';
 import User from '../models/User';
 import Machine from '../models/Machine';
 import ConnectorSecret from '../models/ConnectorSecret';
-import AgentProviderKey from '../models/AgentProviderKey';
+import {
+  findProviderKey, clearProviderKey, bumpProviderKeyGeneration, commitProviderKey, markProviderKeyUsed,
+} from '../repositories/agentProviderKeyRepository';
 import * as secrets from './connectorSecrets';
 import { AGENT_PROVIDER_KEY } from './connectorSecretKinds';
 import { projectSeatEnvironments, seatEnvironmentKey } from './seatEnvironmentProjection';
@@ -48,17 +50,14 @@ export const manageProviderKey = async (req: Request, res: Response): Promise<Re
   const target = owner ? await context(owner, agentName, instanceId) : null;
   if (!target) return res.status(403).json({ code: 'owned_machine_identity_required' });
   const filter = { agentUserId: target.bot._id, ownerUserId: owner };
-  let row = await AgentProviderKey.findOne(filter);
-  if (req.method === 'GET') return res.json(metadata(row));
+  if (req.method === 'GET') return res.json(metadata(await findProviderKey(filter)));
   if (req.method === 'DELETE') {
-    if (row) {
-      const removed = await AgentProviderKey.findOneAndUpdate(filter, {
-        $inc: { generation: 1 }, $set: { secretRef: null, setAt: null, setBy: null, lastUsedAt: null },
-      }, { new: false });
-      // The atomic pre-image names exactly the removed generation. Each set
-      // owns an immutable secret, so delayed cleanup cannot delete its successor.
-      if (removed?.secretRef) await ConnectorSecret.deleteOne({ _id: removed.secretRef });
-    }
+    // Decided on Mongo whatever the read store: a remove never trusts a
+    // Postgres read that may not show the binding yet. No binding, no write.
+    const removed = await clearProviderKey(filter);
+    // The atomic pre-image names exactly the removed generation. Each set
+    // owns an immutable secret, so delayed cleanup cannot delete its successor.
+    if (removed?.secretRef) await ConnectorSecret.deleteOne({ _id: removed.secretRef });
     return res.json(metadata(null));
   }
   if (!target.capability.available) return res.status(422).json({ code: 'own_key_requires_confined_provider' });
@@ -68,18 +67,16 @@ export const manageProviderKey = async (req: Request, res: Response): Promise<Re
   const provider = target.seat.environment?.provider as { id: string; baseURL: string };
   // A row owns its encrypted secret independently of installation projections.
   // A destination change requires an explicit new set, never reusing an old key.
-  row = await AgentProviderKey.findOneAndUpdate(filter, {
-    $inc: { generation: 1 }, $setOnInsert: { providerId: provider.id, baseURL: provider.baseURL },
-  }, { upsert: true, new: true, setDefaultsOnInsert: true });
-  const generation = row!.generation;
-  const previousRef = row!.secretRef;
+  const started = await bumpProviderKeyGeneration(filter, { providerId: provider.id, baseURL: provider.baseURL });
+  const { generation } = started;
+  const previousRef = started.secretRef;
   // Immutable material per generation: overwriting the old secret before
   // committing its new destination would expose a new key under an old binding.
   const ref = await secrets.put(String(new Types.ObjectId()), AGENT_PROVIDER_KEY, req.body.key.trim(), generation);
-  row = await AgentProviderKey.findOneAndUpdate({ ...filter, generation }, { $set: {
+  const row = await commitProviderKey(filter, generation, {
     secretRef: ref, providerId: provider.id, baseURL: provider.baseURL,
     setAt: new Date(), setBy: owner, lastUsedAt: null,
-  } }, { new: true });
+  });
   if (!row) { await secrets.revoke(ref); return res.status(409).json({ code: 'provider_key_changed' }); }
   await secrets.revoke(previousRef || undefined);
   return res.json(metadata(row));
@@ -99,7 +96,7 @@ export const launchProviderKey = async (req: Request, res: Response): Promise<Re
   const target = await machineRunnerContext(req);
   const machine = (req as any).machine;
   if (!target) return res.status(403).json({ code: 'machine_runner_required' });
-  const row = await AgentProviderKey.findOne({ agentUserId: target.bot._id, ownerUserId: machine.ownerUserId });
+  const row = await findProviderKey({ agentUserId: target.bot._id, ownerUserId: machine.ownerUserId });
   if (!row?.secretRef) return res.json({ set: false });
   const provider = target.seat.environment?.provider as { id?: string; baseURL?: string } | undefined;
   if (!target.capability.available || req.body?.harness !== 'opencode'
@@ -109,9 +106,7 @@ export const launchProviderKey = async (req: Request, res: Response): Promise<Re
   }
   if (req.body?.metadataOnly === true) return res.json({ set: true });
   const key = await secrets.get(row.secretRef);
-  const used = await AgentProviderKey.updateOne({ _id: row._id, secretRef: row.secretRef, generation: row.generation },
-    { $set: { lastUsedAt: new Date() } });
-  if (!used.matchedCount) return res.status(409).json({ code: 'provider_key_changed' });
+  if (!await markProviderKeyUsed(row, new Date())) return res.status(409).json({ code: 'provider_key_changed' });
   // Only the authenticated machine daemon can resolve material. Seat bearers
   // can reach model children during mint fallback and are never sufficient.
   // No config/owner read or model-child credential can resolve the material.

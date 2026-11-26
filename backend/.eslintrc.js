@@ -102,6 +102,9 @@ module.exports = {
           }, {
             group: ['**/models/AgentTaskRowWakeState', '**/models/AgentTaskRowWakeState.*'],
             message: 'Use repositories/agentTaskRowWakeStateRepository.',
+          }, {
+            group: ['**/models/AgentProviderKey', '**/models/AgentProviderKey.*'],
+            message: 'Use repositories/agentProviderKeyRepository.',
           }],
         }],
         'no-restricted-modules': ['error', {
@@ -116,6 +119,7 @@ module.exports = {
             '**/models/DiscordSummaryHistory', '**/models/DiscordSummaryHistory.*',
             '**/models/NeedsYouEmail', '**/models/NeedsYouEmail.*',
             '**/models/AgentTaskRowWakeState', '**/models/AgentTaskRowWakeState.*',
+            '**/models/AgentProviderKey', '**/models/AgentProviderKey.*',
           ],
         }],
       },
