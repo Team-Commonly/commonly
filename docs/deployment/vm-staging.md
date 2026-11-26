@@ -111,6 +111,26 @@ and nothing more.
    ```
    Re-install `/usr/local/sbin/commonly-staging-ci` whenever `ci-entry.sh` changes.
    It runs from that copy, not the checkout.
-5. **Only one connector may serve a tunnel's hostnames.** Two connectors on one
+5. Install the staging slice, which every staging container joins through
+   `cgroup_parent` (added 2026-11-26):
+   ```bash
+   printf '[Unit]\nDescription=Commonly staging stack\nBefore=slices.target\n\n[Slice]\nCPUWeight=10\n' \
+     > /etc/systemd/system/staging.slice
+   systemctl daemon-reload && systemctl start staging.slice
+   ```
+   It sits at the top level, beside `system.slice` (weight 100), which holds prod's
+   containers. Two traps, both verified on the VM:
+   - **Install it before the first `up`.** With the unit missing, Docker's systemd
+     driver still places containers in a slice of that name, but systemd creates it
+     with the default weight of 100. That removes the protection without any error.
+   - **Keep the name free of dashes.** systemd reads `a-b.slice` as a child of
+     `a.slice`. A first try named `commonly-staging.slice` landed under an implicit
+     `commonly.slice` at weight 100, a top-level peer of all of `system.slice`. That
+     would have made staging stronger, not weaker.
+
+   To check, start staging and read `/sys/fs/cgroup/staging.slice/cpu.weight`, which
+   should be 10, and confirm the staging scopes are listed under that directory.
+   The `cpu.weight` file can be missing while the slice is empty.
+6. **Only one connector may serve a tunnel's hostnames.** Two connectors on one
    tunnel split the traffic between them, so a smoke may hit either. Stop any other
    staging connector before the first VM `up`.

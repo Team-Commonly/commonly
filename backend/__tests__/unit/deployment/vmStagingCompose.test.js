@@ -38,6 +38,8 @@ describe('staging on the prod VM', () => {
       expect([name, svc.mem_limit]).toEqual([name, expect.anything()]);
       expect([name, svc.cpus]).toEqual([name, expect.anything()]);
       expect([name, svc.cpu_shares]).toEqual([name, 256]);
+      // One low-weight slice for the whole stack (the unit is on the VM, docs/deployment/vm-staging.md).
+      expect([name, svc.cgroup_parent]).toEqual([name, 'staging.slice']);
       expect([name, svc.oom_score_adj > 0]).toEqual([name, true]);
       // Nothing comes back after a VM or Docker restart, and every log is capped on prod's disk.
       expect([name, svc.restart]).toEqual([name, 'no']);

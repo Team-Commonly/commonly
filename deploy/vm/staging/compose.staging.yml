@@ -19,6 +19,14 @@
 # down again (volumes kept).
 x-staging-caps: &caps
   cpu_shares: 256
+  # Every staging container runs in one top-level systemd slice weighted 10,
+  # beside system.slice (weight 100, which holds prod's containers), so the whole
+  # staging stack competes as weight 10 rather than one 10 per container. The
+  # slice unit lives on the VM (docs/deployment/vm-staging.md). No dash in the
+  # name: systemd reads "a-b.slice" as a child of "a.slice". On 2026-11-26 the
+  # staging scopes at weight 10 each still left prod's backend waiting on CPU
+  # for 9.9 s in a 20 s window.
+  cgroup_parent: staging.slice
   oom_score_adj: 500
   # Never comes back by itself: a VM or Docker restart leaves staging down.
   restart: "no"
