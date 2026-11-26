@@ -256,7 +256,7 @@ describe('F634 — the unread-digest wake pass batches its install reads', () =>
     expect(installQueries).toBeLessThanOrEqual(4);
   });
 
-  it('holds the groups whose sibling batch fails, logs once, and still wakes the rest', async () => {
+  it('holds the groups whose sibling batch and per-group lookup both fail, logs once, wakes the rest', async () => {
     const own = { agentName: 'ownrt', instanceId: 'default', podId: oid() };
     await install(own, { runtime: { runtimeType: 'native' } });
     await digestEvent(own);
@@ -275,11 +275,81 @@ describe('F634 — the unread-digest wake pass batches its install reads', () =>
       if (isBatchSiblingRead(filter)) return rejectingQuery('sibling read down');
       return originalFind.call(this, filter, ...rest);
     });
+    const originalFindOne = AgentInstallation.findOne;
+    jest.spyOn(AgentInstallation, 'findOne').mockImplementation(function findOne(filter, ...rest) {
+      if (filter && String(filter.agentName).startsWith('nort')) throw new Error('per-group lookup down');
+      return originalFindOne.call(this, filter, ...rest);
+    });
 
     expect(await SchedulerService.dispatchUnreadDigestHeartbeats(NOW)).toBe(1);
     expect(AgentEventService.enqueue).toHaveBeenCalledTimes(1);
     expect(AgentEventService.enqueue.mock.calls[0][0]).toEqual(expect.objectContaining(own));
     const logged = warnSpy.mock.calls.filter((c) => String(c[1]).includes('digest wake runtime lookup failed'));
+    expect(logged).toHaveLength(1);
+  });
+
+  it('a failed sibling chunk falls back per group for that chunk only; good chunks keep their decision', async () => {
+    // Two identities with a hosted sibling, one with a native sibling, one
+    // with no sibling. Chunk size 1 puts each identity in its own chunk.
+    const sib = async (agentName, runtimeType) => {
+      if (runtimeType) await install({ agentName, podId: oid() }, { runtime: { runtimeType } });
+      return { agentName, instanceId: 'default', podId: oid() };
+    };
+    const goodHosted = await sib('goodhosted', 'hosted');
+    const goodNative = await sib('goodnative', 'webhook');
+    const failHosted = await sib('failhosted', 'hosted');
+    const failNative = await sib('failnative', 'native');
+    const failBoth = await sib('failboth', 'native');
+    const warnSpy = jest.spyOn(console, 'warn').mockImplementation(() => {});
+    const failing = new Set(['failhosted', 'failnative', 'failboth']);
+    const originalFind = AgentInstallation.find;
+    jest.spyOn(AgentInstallation, 'find').mockImplementation(function find(filter, ...rest) {
+      if (isBatchSiblingRead(filter) && filter.$or.some(({ agentName }) => failing.has(agentName))) {
+        return rejectingQuery('sibling chunk down');
+      }
+      return originalFind.call(this, filter, ...rest);
+    });
+    const originalFindOne = AgentInstallation.findOne;
+    jest.spyOn(AgentInstallation, 'findOne').mockImplementation(function findOne(filter, ...rest) {
+      if (filter && filter.agentName === 'failboth') throw new Error('per-group lookup down');
+      return originalFindOne.call(this, filter, ...rest);
+    });
+
+    const installs = [goodHosted, goodNative, failHosted, failNative, failBoth];
+    const allowed = await SchedulerService.allowsDigestWakeBatch(installs, 1);
+
+    expect(installs.map((i) => allowed.get(i))).toEqual([false, true, false, true, false]);
+    // Per-group reads only for the failed chunks, never for the good ones.
+    const perGroup = AgentInstallation.findOne.mock.calls.map(([f]) => f.agentName).sort();
+    expect(perGroup).toEqual(['failboth', 'failhosted', 'failnative']);
+    const logged = warnSpy.mock.calls.filter((c) => String(c[1]).includes('digest wake runtime lookup failed'));
+    expect(logged).toHaveLength(1);
+  });
+
+  it('in the per-group fallback, one scope whose lookup throws never holds back the others', async () => {
+    const ok = { agentName: 'okseat', instanceId: 'default', podId: oid() };
+    const bad = { agentName: 'badseat', instanceId: 'default', podId: oid() };
+    const bad2 = { agentName: 'badseat2', instanceId: 'default', podId: oid() };
+    await Promise.all([ok, bad, bad2].map(async (scope) => {
+      await install(scope, null);
+      await digestEvent(scope);
+    }));
+    const errorSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
+    const originalFind = AgentInstallation.find;
+    jest.spyOn(AgentInstallation, 'find').mockImplementation(function find(filter, ...rest) {
+      if (isBatchInstallRead(filter)) return rejectingQuery('batch read down');
+      return originalFind.call(this, filter, ...rest);
+    });
+    const originalFindOne = AgentInstallation.findOne;
+    jest.spyOn(AgentInstallation, 'findOne').mockImplementation(function findOne(filter, ...rest) {
+      if (filter && String(filter.agentName).startsWith('badseat')) throw new Error('lookup down');
+      return originalFindOne.call(this, filter, ...rest);
+    });
+
+    expect(await SchedulerService.dispatchUnreadDigestHeartbeats(NOW)).toBe(1);
+    expect(AgentEventService.enqueue).toHaveBeenCalledTimes(1);
+    expect(AgentEventService.enqueue.mock.calls[0][0]).toEqual(expect.objectContaining(ok));
+    const logged = errorSpy.mock.calls.filter((c) => String(c[1]).includes('digest wake per-group lookup failed'));
     expect(logged).toHaveLength(1);
   });
 

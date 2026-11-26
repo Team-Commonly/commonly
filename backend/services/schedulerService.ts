@@ -1507,10 +1507,15 @@ class SchedulerService {
   /**
    * allowsDigestWake for many installs, with the sibling reads batched (F634):
    * the same rule and the same sibling, the identity's newest active row with
-   * a runtimeType. A failed sibling read holds those installs' wakes for this
-   * tick, as a failed allowsDigestWake always has, and logs once.
+   * a runtimeType. When a sibling chunk fails, only that chunk's installs fall
+   * back to allowsDigestWake one by one, and the failure logs once; an install
+   * is held only if its own lookup fails too, as a failed allowsDigestWake
+   * always was. Chunks that succeeded keep their decisions.
    */
-  static async allowsDigestWakeBatch(installs: InstallationDoc[]): Promise<Map<InstallationDoc, boolean>> {
+  static async allowsDigestWakeBatch(
+    installs: InstallationDoc[],
+    chunkSize: number = DIGEST_WAKE_INSTALL_CHUNK,
+  ): Promise<Map<InstallationDoc, boolean>> {
     const allowed = new Map<InstallationDoc, boolean>();
     const needSibling: Array<{ install: InstallationDoc; key: string }> = [];
     const pairs = new Map<string, { agentName: string; instanceId: string }>();
@@ -1528,30 +1533,44 @@ class SchedulerService {
       }
     });
     if (!needSibling.length) return allowed;
-    try {
-      const batches = await Promise.all(chunked([...pairs.values()], DIGEST_WAKE_INSTALL_CHUNK).map((chunk) => (
-        AgentInstallation.find({
-          status: 'active',
-          'config.runtime.runtimeType': { $exists: true },
-          $or: chunk,
-        }).select('agentName instanceId config.runtime').sort({ createdAt: -1, _id: -1 })
-          .lean() as Promise<InstallationDoc[]>)));
-      // Each chunk is sorted newest first, and a pair sits in one chunk only,
-      // so the first row seen for a pair is its newest.
-      const newest = new Map<string, InstallationDoc>();
-      batches.flat().forEach((doc) => {
-        const key = digestIdentityKey(doc.agentName, doc.instanceId);
-        if (!newest.has(key)) newest.set(key, doc);
-      });
-      needSibling.forEach(({ install, key }) => {
-        allowed.set(install, !isHostedInstallation(newest.get(key) ?? null));
-      });
-    } catch (err) {
-      // Holds rather than spend an owner's turn it may not owe; the digest
-      // stays unread and the next tick reads again.
-      warnOutboundFailure('[scheduler] digest wake runtime lookup failed; holding these wakes this tick:', err);
-      needSibling.forEach(({ install }) => allowed.set(install, false));
+    const chunks = chunked([...pairs.entries()], chunkSize);
+    const results = await Promise.allSettled(chunks.map((chunk) => (
+      // A synchronous throw from find() becomes this chunk's rejection.
+      Promise.resolve().then(() => AgentInstallation.find({
+        status: 'active',
+        'config.runtime.runtimeType': { $exists: true },
+        $or: chunk.map(([, pair]) => pair),
+      }).select('agentName instanceId config.runtime').sort({ createdAt: -1, _id: -1 })
+        .lean() as Promise<InstallationDoc[]>))));
+    // Each chunk is sorted newest first, and a pair sits in one chunk only,
+    // so the first row seen for a pair is its newest.
+    const newest = new Map<string, InstallationDoc>();
+    const failedKeys = new Set<string>();
+    let firstError: unknown = null;
+    results.forEach((result, i) => {
+      if (result.status === 'fulfilled') {
+        result.value.forEach((doc) => {
+          const key = digestIdentityKey(doc.agentName, doc.instanceId);
+          if (!newest.has(key)) newest.set(key, doc);
+        });
+      } else {
+        firstError ??= result.reason;
+        chunks[i].forEach(([key]) => failedKeys.add(key));
+      }
+    });
+    if (failedKeys.size) {
+      warnOutboundFailure('[scheduler] digest wake runtime lookup failed; checking those groups one by one:',
+        firstError);
     }
+    await Promise.all(needSibling.map(async ({ install, key }) => {
+      if (!failedKeys.has(key)) {
+        allowed.set(install, !isHostedInstallation(newest.get(key) ?? null));
+        return;
+      }
+      // A failed lookup holds this wake for one tick rather than spend an
+      // owner's turn it may not owe; the digest stays unread.
+      allowed.set(install, await SchedulerService.allowsDigestWake(install).catch(() => false));
+    }));
     return allowed;
   }
 
@@ -1635,10 +1654,20 @@ class SchedulerService {
         if (allowed.get(candidate.active) === true) due.push(candidate);
       });
     } else {
+      // One scope whose lookup throws is skipped this pass; it never holds back
+      // the groups after it. Logged once per pass, not once per scope.
+      let lookupFailureLogged = false;
       for (const { scope, oldestAt } of candidates) {
-        // eslint-disable-next-line no-await-in-loop
-        const { active, allowed } = await SchedulerService.lookupDigestInstallPerGroup(scope);
-        if (active && allowed && waited(active, oldestAt)) due.push({ scope, active });
+        try {
+          // eslint-disable-next-line no-await-in-loop
+          const { active, allowed } = await SchedulerService.lookupDigestInstallPerGroup(scope);
+          if (active && allowed && waited(active, oldestAt)) due.push({ scope, active });
+        } catch (err) {
+          if (!lookupFailureLogged) {
+            logOutboundFailure('[scheduler] digest wake per-group lookup failed; skipping that group this pass:', err);
+            lookupFailureLogged = true;
+          }
+        }
       }
     }
 
