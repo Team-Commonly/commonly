@@ -1059,6 +1059,19 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     expect(v2).toMatch(/\.v2-root button\.v2-verification-banner__dismiss \{[\s\S]*?width: 44px;/);
   });
 
+  // The Discord card sits in the shell's banner row. Without an explicit row 1
+  // it would be auto-placed, and the app below would lose its full-height row.
+  test('the Discord card takes the banner row, wraps its text and keeps a 44px dismiss', () => {
+    const css = read('../components/V2DiscordCard.css');
+    const card = ruleBody(css, '.v2-discord-card');
+    expect(card).toContain('grid-row: 1');
+    expect(card).toContain('min-width: 0');
+    expect(ruleBody(css, '.v2-discord-card__text')).toContain('overflow-wrap: anywhere');
+    expect(css).toMatch(/\.v2-root button\.v2-discord-card__dismiss \{[\s\S]*?width: 44px;[\s\S]*?height: 44px;/);
+    const phone = css.slice(css.indexOf('@media (max-width: 760px)'));
+    expect(phone).toMatch(/grid-template-areas:[\s\S]*?"glyph text dismiss"[\s\S]*?"\. join join"/);
+  });
+
 
 
 

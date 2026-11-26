@@ -11,6 +11,7 @@ import { useEmailReturn } from './hooks/useEmailReturn';
 import RegistrationInviteRequired from '../components/RegistrationInviteRequired';
 import VerifyEmail from '../components/VerifyEmail';
 import V2EmailVerificationBanner from './components/V2EmailVerificationBanner';
+import V2DiscordCard from './components/V2DiscordCard';
 import ProtectedRoute from '../components/ProtectedRoute';
 import '@fontsource-variable/bricolage-grotesque/opsz.css';
 import '@fontsource/ibm-plex-sans/400.css';
@@ -126,6 +127,7 @@ const V2Boot: React.FC = () => (
 const V2AuthenticatedShell: React.FC<{ children: React.ReactNode }> = ({ children }) => (
   <div className="v2-authenticated-shell">
     <V2EmailVerificationBanner />
+    <V2DiscordCard />
     <div className="v2-authenticated-shell__content">{children}</div>
   </div>
 );

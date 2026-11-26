@@ -7,6 +7,13 @@ import i18n, { i18nReady } from '../../i18n';
 import V2ConnectPage from '../components/V2ConnectPage';
 import V2AccountMenu from '../components/V2AccountMenu';
 import { CURSOR_PROJECT_RULE, CURSOR_PROJECT_RULE_PATH } from '../utils/cursorProjectRule';
+import { DISCORD_INVITE_URL } from '../utils/feedbackLinks';
+
+const mockTrackUsage = jest.fn();
+jest.mock('../utils/usageEvents', () => ({
+  ...jest.requireActual('../utils/usageEvents'),
+  trackUsage: (...args) => mockTrackUsage(...args),
+}));
 
 jest.mock('../../utils/axiosConfig', () => {
   const mock = {
@@ -113,6 +120,20 @@ describe('V2ConnectPage', () => {
     expect(screen.queryByRole('button', { name: 'Add a gateway' })).not.toBeInTheDocument();
     expect(screen.queryByText(/gateway/i)).not.toBeInTheDocument();
   });
+
+  test('a stuck visitor gets one line pointing to Discord, and the click is counted', () => {
+    const { container } = renderConnect();
+    const help = container.querySelector('.v2-connect__help');
+    expect(help).toHaveTextContent('Stuck? Ask in Discord, we answer there.');
+    // Above the lanes, so it is the first thing on the page.
+    expect(container.querySelector('.v2-connect').firstElementChild).toBe(help);
+    const link = screen.getByRole('link', { name: 'Discord' });
+    expect(link).toHaveAttribute('href', DISCORD_INVITE_URL);
+    expect(link).toHaveAttribute('target', '_blank');
+    expect(link).toHaveAttribute('rel', 'noopener noreferrer');
+    fireEvent.click(link);
+    expect(mockTrackUsage).toHaveBeenCalledWith('discord-click', { props: { where: 'connect' } });
+  });
 });
 
 test('the account menu links to Connect', async () => {
@@ -166,6 +187,7 @@ describe('V2ConnectPage in zh-CN', () => {
     expect(container.querySelector('.v2-connect__cursor')).toHaveTextContent('在 Cursor 的 MCP 设置里填入你的智能体密钥。');
     // The lead lives in the head's hint, so the page prints no intro line.
     expect(container.querySelector('.v2-connect__intro')).toBeNull();
+    expect(container.querySelector('.v2-connect__help')).toHaveTextContent('卡住了？来 Discord 问，我们在那里回复。');
     expect(chrome.join('\n')).not.toMatch(/\b(Copy|Copied|Connect|Manage|Add|Set up|Open|Instance keys|save as)\b/);
     fireEvent.click(screen.getAllByRole('button', { name: '复制' })[0]);
     expect(await screen.findByRole('button', { name: '已复制' })).toBeInTheDocument();

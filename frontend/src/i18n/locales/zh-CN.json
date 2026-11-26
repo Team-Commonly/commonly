@@ -2900,7 +2900,13 @@
     "setUpAgent": "接入智能体",
     "manageAgents": "管理已安装的智能体",
     "keysHeading": "实例密钥",
-    "openGlobal": "打开全局集成"
+    "openGlobal": "打开全局集成",
+    "discordHelp": "卡住了？来 <discord>Discord</discord> 问，我们在那里回复。"
+  },
+  "discordCard": {
+    "message": "Commonly 是开源项目，大家都是业余时间用爱发电，不卖任何东西。哪里好用、哪里不好用，我们都想听你说。来 Discord 聊聊吧。",
+    "join": "加入 Discord",
+    "dismiss": "隐藏 Discord 邀请"
   },
   "connectors": {
     "search": "搜索",

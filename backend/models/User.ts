@@ -266,6 +266,9 @@ export interface IUser extends Document {
     /** First "invite a teammate" card mounted, and first dismissed. */
     inviteCardShownAt?: Date;
     inviteCardDismissedAt?: Date;
+    /** The shell's Discord card: first shown, and dismissed or joined (never shown again after). */
+    discordCardShownAt?: Date;
+    discordCardDismissedAt?: Date;
     /** First Bring your own start mounted in a thread. */
     byoOfferShownAt?: Date;
     /** First render of Scout's welcome, with a start open, in a pod they created. */
@@ -572,6 +575,8 @@ const userSchema = new Schema<IUser>({
     byoDaemonRegisteredAt: { type: Date },
     inviteCardShownAt: { type: Date },
     inviteCardDismissedAt: { type: Date },
+    discordCardShownAt: { type: Date },
+    discordCardDismissedAt: { type: Date },
     byoOfferShownAt: { type: Date },
     welcomeShownAt: { type: Date },
     welcomeHostedClickAt: { type: Date },

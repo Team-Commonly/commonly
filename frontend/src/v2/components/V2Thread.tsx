@@ -55,6 +55,7 @@ import {
 import { agentConnectLink, agentKeyOf } from '../utils/agentConnectLink';
 import { addressDraftToPod, mentionHandleFor } from '../utils/agentMentionHandle';
 import { trackUsage, trackUsageOnce } from '../utils/usageEvents';
+import { noteOwnPost } from '../utils/ownPost';
 
 // The connect start's label, as SCOUT_STARTS sends it (id connect-agent)
 // (backend/config/native-agents/scout.ts). A click posts exactly this text.
@@ -2005,6 +2006,7 @@ const V2Thread: React.FC<V2ThreadProps> = ({ detail, podsState, firstRunVisible 
       );
       if (created) {
         rememberSentMessage(sendPodId, created);
+        noteOwnPost();
         // A fact that a first message went out from the welcome; its words stay in chat.
         if (welcomeShown) trackUsageOnce(`first-message-sent:${sendPodId}`, 'first-message-sent', { podId: sendPodId });
         // A direct-room post is not evidence that the agent is alive or
