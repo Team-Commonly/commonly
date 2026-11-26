@@ -180,10 +180,12 @@ guest never mounts. The file names its holder (pid, a per-take token, and a
 deadline: the turn's timeout plus 15 minutes from the take), and only an
 exclusive create takes it. Age alone never frees it. A waiter reclaims it only
 when the holder's pid is gone, or when the holder's own deadline has passed.
-The holder checks that deadline before every host step under the HOME: before
-preparing it, before writing `config.toml`, before booting the VM, after msb
-exits, after the post-exit VM check (which can take minutes), and inside the
-reply read and the cleanup before each folder check, read and removal. Once it
+The holder checks that deadline before each stage of its work under the HOME:
+before preparing it, before writing `config.toml`, before booting the VM,
+after msb exits, after the post-exit VM check (which can take minutes), and
+inside the reply read and the cleanup before each folder check, read and
+removal. A folder check's own path-by-path checks run on that one deadline
+check. Once it
 has passed, the holder stops and touches the HOME no more, so a live pid past
 it is a reused pid or a holder that has stopped acting. This narrows the
 window and does not remove it: a check passes, then the holder stalls (a

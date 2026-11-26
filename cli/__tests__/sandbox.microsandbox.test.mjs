@@ -381,6 +381,33 @@ describe('withInstallLock', () => {
     expect(existsSync(lock())).toBe(false);
   });
 
+  // Windows refuses to move a file another handle holds (an antivirus scan,
+  // say): removeIfJudged answers 'busy', and the waiter waits within waitMs.
+  test.each([
+    ['an abandoned lock Windows will not move', (path) => path.endsWith('.install.lock')],
+    ['a stale guard Windows will not move', (path) => path.endsWith('.guard')],
+  ])('%s: the waiter polls and gives up at its deadline, without spinning', async (label, isTarget) => {
+    writeFileSync(lock(), '4242 crashed\n');
+    // A guard left by a dead holder whose own deadline has long passed.
+    writeFileSync(join(root, '.install.lock.guard'), `4243 tok ${Date.now() - 60 * 1000}\n`);
+    let busyAnswers = 0;
+    const remove = jest.fn(async (path, isJudged) => {
+      if (isTarget(path)) {
+        busyAnswers += 1;
+        if (busyAnswers > 500) throw new Error('spinning on a busy file');
+        return 'busy';
+      }
+      return removeIfJudged(path, isJudged);
+    });
+    const fn = jest.fn(async () => 'ran');
+    await expect(withInstallLock(root, fn, {
+      waitMs: 120, pollMs: 20, pidAlive: (pid) => pid !== 4242 && pid !== 4243, _remove: remove,
+    })).rejects.toThrow(/still installing/);
+    expect(fn).not.toHaveBeenCalled();
+    expect(busyAnswers).toBeGreaterThan(0);
+    expect(busyAnswers).toBeLessThan(50);
+  });
+
   test('a lock naming no process is judged by its age', async () => {
     writeFileSync(lock(), 'not a pid\n');
     await expect(withInstallLock(root, async () => {}, { waitMs: 50, pollMs: 10 })).rejects.toThrow(/still installing/);

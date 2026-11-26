@@ -732,7 +732,7 @@ export const removeIfJudged = async (path, isJudged, { io = { rename, stat, read
  * removes nothing. Past `until` (when given), a waiter stops with `busy()`.
  */
 const withLockGuard = async (guard, fn, {
-  now, pidAlive = defaultPidAlive, until = Infinity, busy = () => new Error(`${guard} is held`),
+  now, pidAlive = defaultPidAlive, until = Infinity, busy = () => new Error(`${guard} is held`), remove = removeIfJudged,
 }) => {
   const token = randomBytes(8).toString('hex');
   let mine;
@@ -754,7 +754,14 @@ const withLockGuard = async (guard, fn, {
         now, pidAlive, graceMs: LOCK_GUARD_HOLD_MS,
       })) {
         // eslint-disable-next-line no-await-in-loop
-        await removeIfJudged(guard, (c, st) => c === content && st?.ino === held.ino);
+        const removal = await remove(guard, (c, st) => c === content && st?.ino === held.ino);
+        // Windows wouldn't move it now (another handle on it): wait like a
+        // live holder, within `until`, rather than spin on it.
+        if (removal === 'busy') {
+          if (now() > until) throw busy();
+          // eslint-disable-next-line no-await-in-loop
+          await new Promise((resolve) => { setTimeout(resolve, 20); });
+        }
       } else if (now() > until) {
         throw busy();
       } else {
@@ -768,7 +775,7 @@ const withLockGuard = async (guard, fn, {
     return await fn(stillMine);
   } finally {
     // Past its deadline the guard may be another's already: leave it.
-    if (stillMine()) await removeIfJudged(guard, (c) => c === mine).catch(() => {});
+    if (stillMine()) await remove(guard, (c) => c === mine).catch(() => {});
   }
 };
 
@@ -787,12 +794,13 @@ const withLockGuard = async (guard, fn, {
  * all, so an unreadable lock is never left behind.
  */
 export const withInstallLock = (root, fn, {
-  waitMs = INSTALL_LOCK_STALE_MS, pollMs = 500, now = Date.now, pidAlive = defaultPidAlive,
+  waitMs = INSTALL_LOCK_STALE_MS, pollMs = 500, now = Date.now, pidAlive = defaultPidAlive, _remove,
 } = {}) => withFileLock(root, '.install.lock', fn, {
   waitMs,
   pollMs,
   now,
   pidAlive,
+  ...(_remove ? { remove: _remove } : {}),
   abandoned: (content, mtimeMs) => lockAbandoned(content, mtimeMs, { now, pidAlive }),
   busy: (lock) => new Error(`another turn is still installing the microVM sandbox (${lock}); try again shortly`),
 });
@@ -808,6 +816,7 @@ export const withInstallLock = (root, fn, {
 // empty file) is never applied to the replacement.
 const withFileLock = async (root, name, fn, {
   waitMs, pollMs = 500, now = Date.now, busy, abandoned, suffix = () => '', pidAlive = defaultPidAlive,
+  remove = removeIfJudged,
 }) => {
   await mkdir(root, { recursive: true });
   const lock = join(root, name);
@@ -837,12 +846,20 @@ const withFileLock = async (root, name, fn, {
         const isJudged = (content, held) => content === seen.content && held?.ino === seen.held.ino
           && held.mtimeMs === seen.held.mtimeMs && abandoned(content, held.mtimeMs);
         // eslint-disable-next-line no-await-in-loop
-        await withLockGuard(guard, async (stillMine) => {
+        const removal = await withLockGuard(guard, async (stillMine) => {
           const again = await observe();
-          if (again && isJudged(again.content, again.held) && stillMine()) await removeIfJudged(lock, isJudged);
+          if (again && isJudged(again.content, again.held) && stillMine()) return remove(lock, isJudged);
+          return 'kept';
         }, {
-          now, pidAlive, until: deadline, busy: () => busy(lock),
+          now, pidAlive, until: deadline, busy: () => busy(lock), remove,
         });
+        // Windows wouldn't move the abandoned lock now (another handle on it):
+        // wait and judge it again, within `waitMs`, rather than spin on it.
+        if (removal === 'busy') {
+          if (now() > deadline) throw busy(lock);
+          // eslint-disable-next-line no-await-in-loop
+          await new Promise((resolve) => { setTimeout(resolve, pollMs); });
+        }
       } else if (now() > deadline) {
         throw busy(lock);
       } else {
@@ -856,8 +873,8 @@ const withFileLock = async (root, name, fn, {
   } finally {
     await withLockGuard(guard, async (stillMine) => {
       // Our own lock, or one that can't be read at all (never left behind).
-      if (stillMine()) await removeIfJudged(lock, (content) => content === mine || content === null);
-    }, { now, pidAlive }).catch(() => {});
+      if (stillMine()) await remove(lock, (content) => content === mine || content === null);
+    }, { now, pidAlive, remove }).catch(() => {});
   }
 };
 
