@@ -95,6 +95,19 @@ describe('ACP client: requests and responses', () => {
     conn.close('done');
   });
 
+  test('responses that arrive out of order each settle their own request', async () => {
+    const { agentOut, conn, sentMessages } = memoryPair();
+    const a = conn.request('a');
+    const b = conn.request('b');
+    await tick();
+    const idOf = (method) => sentMessages().find((m) => m.method === method).id;
+    agentOut.write(`${JSON.stringify({ jsonrpc: '2.0', id: idOf('b'), result: { which: 'b' } })}\n`);
+    await expect(b).resolves.toEqual({ which: 'b' });
+    agentOut.write(`${JSON.stringify({ jsonrpc: '2.0', id: idOf('a'), result: { which: 'a' } })}\n`);
+    await expect(a).resolves.toEqual({ which: 'a' });
+    conn.close('done');
+  });
+
   test('notify sends a message with no id', async () => {
     const { conn } = startAgent();
     conn.notify('session/cancel', { sessionId: 's1' });
