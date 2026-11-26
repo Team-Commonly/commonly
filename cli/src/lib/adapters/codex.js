@@ -1484,6 +1484,16 @@ const GUEST_CODEX_HOME = `${GUEST_HOME}/${GUEST_CODEX_HOME_NAME}`;
 const GUEST_REPLIES_NAME = 'replies';
 // Beyond the profile's minimal set, the model's shell reads the helper folder
 // and the agents volume (Codex's own binary; mounted read-only, no secrets).
+// Who enforces what for that shell: Codex's Linux sandbox (bwrap, 0.172.0
+// linux-sandbox/src/bwrap.rs) starts a restricted-read profile from an empty
+// `--tmpfs /` and `--ro-bind`s only these readable roots. So the rest of the
+// Codex home (config.toml included) is absent from its view, and a write
+// outside the writable roots (none for a read-only seat) lands in that
+// private tmpfs and is gone when the command exits: measured on the Windows
+// runner, a shell write to the Codex home "succeeds" and never reaches the
+// seat HOME. The workspace mount is read-only in the VM as well, and the VM
+// has no network but the fence. Codex itself runs outside bwrap and writes
+// its home freely, hence the per-turn allowlist (GUEST_CODEX_HOME_KEPT).
 const GUEST_CODEX_HELPER_READS = Object.freeze([`${GUEST_CODEX_HOME}/tmp/arg0-linux`, '/opt/agents']);
 
 // The key the host proxy holds. Codex's own name for an exec key first.
@@ -1551,13 +1561,31 @@ export const microvmHostMcpConfig = (servers, ctx = {}) => {
   return { config: { mcpServers }, unavailable };
 };
 
-// What Codex loads from its home besides AGENTS.md: cleared before every turn
-// (config.toml is then written fresh by the host), so nothing a turn leaves in
-// its home extends the next one.
-export const GUEST_CODEX_HOME_LOADED = Object.freeze([
-  'AGENTS.override.md', 'config.toml', 'managed_config.toml', 'hooks.json', 'skills', 'prompts', 'rules', 'hooks',
-  'plugins', 'environments.toml',
-]);
+// What survives in the guest Codex home from one turn to the next. Before
+// every turn the host removes everything else (then writes AGENTS.md and
+// config.toml fresh), so no file a turn leaves there (AGENTS.override.md,
+// config or hooks files, skills, memories/, history.jsonl, a state database,
+// or an extension point a later Codex adds) reaches the next turn.
+// - sessions: the seat's rollouts. `exec resume <id>` finds a thread by
+//   scanning this folder's file names when the state database has no row
+//   (rollout/src/list.rs, 0.172.0), and the database is cleared with the rest.
+//   What is in it is the seat's own conversation (docs: Known limits).
+// - tmp/arg0-linux: where Codex links its own binary under helper names at
+//   every launch and puts only that launch's folder on PATH; it prunes stale
+//   ones itself. The profile's read rule names it, and its entries are links
+//   by design, which the no-follow remover would refuse. Everything else in
+//   tmp/ is removed.
+export const GUEST_CODEX_HOME_KEPT = Object.freeze(['sessions', 'tmp']);
+const GUEST_CODEX_TMP_KEPT = Object.freeze(['arg0-linux']);
+
+// Removes every entry of `dir` not in `kept`, by the no-follow rules: a link
+// is refused, never followed or removed.
+const keepOnlyGuestEntries = async (dir, kept) => {
+  for (const name of await readdir(dir)) {
+    // eslint-disable-next-line no-await-in-loop
+    if (!kept.includes(name)) await removeGuestEntry(dir, name);
+  }
+};
 
 // The reply is posted to a pod: more than this is cut, and says so.
 export const MICROVM_REPLY_MAX_BYTES = 256 * 1024;
@@ -1623,8 +1651,9 @@ const guestHomeFileOps = {
 
 /**
  * The seat HOME, readied for a turn while no VM of it runs. Every folder is
- * checked for links on the way down, the extension points Codex loads are
- * cleared, and the skills are rewritten.
+ * checked for links on the way down, everything in the Codex home but its
+ * sessions and its arg0 helper folder is removed (GUEST_CODEX_HOME_KEPT), and
+ * AGENTS.md is rewritten from the skills.
  */
 export const prepareMicrovmCodexHome = async (home, ctx) => {
   await mkdir(dirname(home), { recursive: true, mode: 0o700 });
@@ -1635,10 +1664,9 @@ export const prepareMicrovmCodexHome = async (home, ctx) => {
   // under the seat lock with no VM of the seat running: no turn is active.
   await removeGuestEntry(home, GUEST_REPLIES_NAME);
   const replies = await ensureGuestDir(home, [GUEST_REPLIES_NAME]);
-  for (const name of GUEST_CODEX_HOME_LOADED) {
-    // eslint-disable-next-line no-await-in-loop
-    await removeGuestEntry(codexHome, name);
-  }
+  await keepOnlyGuestEntries(codexHome, GUEST_CODEX_HOME_KEPT);
+  await keepOnlyGuestEntries(await ensureGuestDir(home, [GUEST_CODEX_HOME_NAME, 'tmp']), GUEST_CODEX_TMP_KEPT);
+  await ensureGuestDir(home, [GUEST_CODEX_HOME_NAME, 'tmp', 'arg0-linux']);
   await writePublicCodexInstructions(codexHome, ctx, guestHomeFileOps);
   return { codexHome, replies };
 };

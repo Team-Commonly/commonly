@@ -62,9 +62,12 @@ const listenOn = (port, body) => new Promise((resolve, reject) => {
 });
 
 // The tool-call probe (step 4b). The command runs through Codex's own shell
-// tool, so under the public permission profile inside the guest: the
-// workspace reads, and a workspace write, a Codex-home write, a read of the
-// config.toml that carries the bridge secret, and a network call all fail.
+// tool, so inside Codex's Linux sandbox (bwrap) in the guest. The workspace
+// reads; a workspace write fails (read-only mount and profile); config.toml,
+// which carries the bridge secret, is unreadable (bwrap binds only the
+// profile's readable roots into an empty tmpfs); the network is unreachable
+// (the VM's fence and the profile). A write to the Codex home "succeeds" into
+// that private tmpfs; step 4b checks it never reaches the seat HOME.
 const TOOL_PROBE_MARKER = 'RUN_TOOL_PROBE';
 const TOOL_CALL_ID = 'call_ci_probe';
 const TOOL_PROBE_INPUT = 'PROBE_INPUT_OK';
@@ -72,6 +75,7 @@ const TOOL_PROBE_SCRIPT = [
   'cat /workspace/probe-input.txt; echo',
   'if echo x > /workspace/tool-planted 2>/dev/null; then echo WS_WRITE=written; else echo WS_WRITE=refused; fi',
   'if echo x > /home/seat/codex-home/tool-planted 2>/dev/null; then echo HOME_WRITE=written; else echo HOME_WRITE=refused; fi',
+  'echo HOME_FS=$(stat -f -c %T /home/seat/codex-home 2>/dev/null || echo unknown)',
   'if cat /home/seat/codex-home/config.toml >/dev/null 2>&1; then echo SECRET_READ=read; else echo SECRET_READ=refused; fi',
   "node -e \"const r=require('https').get('https://example.com/',{timeout:5000},()=>{console.log('NET=reached');process.exit(0)});"
     + "r.on('timeout',()=>{console.log('NET=blocked');process.exit(0)});r.on('error',()=>{console.log('NET=blocked');process.exit(0)})\"",
@@ -118,8 +122,13 @@ const stubUpstream = (req, res) => {
     if (path.endsWith('/responses')) {
       let body = {};
       try { body = JSON.parse(raw || '{}'); } catch { /* not json */ }
-      const input = JSON.stringify(body.input || '');
-      const toolOutput = (Array.isArray(body.input) ? body.input : [])
+      // Judged from this turn's user message on: a resumed thread carries the
+      // earlier probe and its output in its history.
+      const items = Array.isArray(body.input) ? body.input : [body.input];
+      let from = items.length - 1;
+      while (from > 0 && items[from]?.role !== 'user') from -= 1;
+      const input = JSON.stringify(items[from] ?? '');
+      const toolOutput = items.slice(from + 1)
         .find((entry) => entry?.call_id === TOOL_CALL_ID && String(entry?.type || '').endsWith('_output'));
       let item;
       if (input.includes(TOOL_PROBE_MARKER) && !toolOutput) {
@@ -340,13 +349,14 @@ const main = async () => {
     }
     if (!result.newSessionId) fail('the turn reported no thread id');
 
-    step('4b. a Codex shell call inside the guest runs under the read-only, no-network profile');
+    step('4b. a Codex shell call inside the guest: what it reads, and that nothing it writes persists');
     {
       const toolHome = join(scratch, 'tool-home');
+      const toolCodexHome = join(toolHome, 'codex-home');
       mkdirSync(toolHome);
       writeFileSync(join(workspace, 'probe-input.txt'), TOOL_PROBE_INPUT);
       let configAtSpawn = false;
-      const probed = await codex.spawn(`${TOOL_PROBE_MARKER}: run the probe.`, {
+      const toolTurn = (prompt, extra = {}) => codex.spawn(prompt, {
         agentName: 'ci-codex-tool',
         sessionId: null,
         cwd: workspace,
@@ -361,8 +371,11 @@ const main = async () => {
         environment: { model: 'spike-model', sandbox: { trust: 'public' }, mcp: [] },
         _microvmHome: toolHome,
         _prepareMicrovmHost: (options) => prepareMicrovmHost({ ...options, root }),
+        ...extra,
+      });
+      const probed = await toolTurn(`${TOOL_PROBE_MARKER}: run the probe.`, {
         _spawnImpl: (cmd, args, opts) => {
-          configAtSpawn = existsSync(join(toolHome, 'codex-home', 'config.toml'));
+          configAtSpawn = existsSync(join(toolCodexHome, 'config.toml'));
           return spawn(cmd, args, opts);
         },
       }).catch((error) => { fail(`the tool-call turn failed: ${error?.message || error}`); return { text: '' }; });
@@ -372,15 +385,72 @@ const main = async () => {
       if (toolProbe.unusable) throw new Error(`inconclusive: Codex offered no shell tool this stub knows (${JSON.stringify(toolProbe.offered)})`);
       if (toolProbe.output === null) fail('Codex never returned the shell call\'s output to the model');
       const out = String(toolProbe.output || '');
+      // Profile reads (bwrap binds only the readable roots into an empty tmpfs):
       if (!out.includes(TOOL_PROBE_INPUT)) fail('the shell could not read the workspace (the positive control)');
-      if (!out.includes('WS_WRITE=refused')) fail('the shell wrote into the workspace');
-      if (!out.includes('HOME_WRITE=refused')) fail('the shell wrote into the Codex home');
       if (!configAtSpawn) fail('no config.toml was in the Codex home when the turn started, so the read check proves nothing');
       if (!out.includes('SECRET_READ=refused')) fail('the shell read the config.toml that carries the bridge secret');
+      // Mount and profile writes:
+      if (!out.includes('WS_WRITE=refused')) fail('the shell wrote into the workspace');
+      // VM network:
       if (!out.includes('NET=blocked')) fail('the shell reached the internet');
+      // A write to the Codex home lands in bwrap's private tmpfs, which the
+      // shell sees as "written"; it must never reach the seat HOME.
+      const homeWrite = /HOME_WRITE=(\w+)/.exec(out)?.[1] || 'unknown';
+      const homeFs = /HOME_FS=(\S+)/.exec(out)?.[1] || 'unknown';
+      console.log(`the shell's write to the Codex home: ${homeWrite}, on ${homeFs} as the shell sees it`);
       if (existsSync(join(workspace, 'tool-planted'))) fail('a file the shell wrote is in the workspace');
-      if (existsSync(join(toolHome, 'codex-home', 'tool-planted'))) fail('a file the shell wrote is in the Codex home');
+      if (existsSync(join(toolCodexHome, 'tool-planted'))) fail('a file the shell wrote reached the seat HOME\'s Codex home');
+      // Positive control: Codex itself (outside bwrap) does write its home, so
+      // the host view above is the guest's real one.
+      const rollouts = [];
+      const walk = (dir, depth) => {
+        for (const entry of readdirSync(dir, { withFileTypes: true })) {
+          if (entry.isDirectory() && depth < 3) walk(join(dir, entry.name), depth + 1);
+          else if (entry.isFile() && entry.name.endsWith('.jsonl')) rollouts.push(entry.name);
+        }
+      };
+      if (existsSync(join(toolCodexHome, 'sessions'))) walk(join(toolCodexHome, 'sessions'), 0);
+      console.log(`rollouts Codex wrote: ${JSON.stringify(rollouts)}`);
+      if (!rollouts.length) fail('Codex left no rollout in its home, so the host view of that home proves nothing');
       rmSync(join(workspace, 'probe-input.txt'), { force: true });
+
+      // The next turn of the seat: anything left in the Codex home outside
+      // sessions/ and tmp/arg0-linux (what Codex, which runs outside bwrap,
+      // could have written there) is gone by the time msb launches. A guest
+      // shell check would prove nothing here (its view of the home is bwrap's
+      // empty tmpfs), so the check reads the seat HOME at the launch itself.
+      const planted = ['memories', 'log', 'history.jsonl', 'future-extension.toml', 'AGENTS.override.md'];
+      for (const name of planted) {
+        if (name.includes('.')) writeFileSync(join(toolCodexHome, name), 'planted');
+        else {
+          mkdirSync(join(toolCodexHome, name), { recursive: true });
+          writeFileSync(join(toolCodexHome, name, 'planted.md'), 'planted');
+        }
+      }
+      writeFileSync(join(toolCodexHome, 'tmp', 'planted.txt'), 'planted');
+      let atLaunch = null;
+      toolProbe.output = null;
+      const next = await toolTurn('Reply with OK.', {
+        sessionId: probed.newSessionId || null,
+        _spawnImpl: (cmd, args, opts) => {
+          atLaunch = {
+            entries: readdirSync(toolCodexHome).sort(),
+            tmp: readdirSync(join(toolCodexHome, 'tmp')).sort(),
+            resumes: args.includes('resume'),
+          };
+          return spawn(cmd, args, opts);
+        },
+      }).catch((error) => { fail(`the turn after the planting failed: ${error?.message || error}`); return { text: '' }; });
+      console.log(`the next turn's Codex home at launch: ${JSON.stringify(atLaunch)}`);
+      if (!atLaunch) fail('the next turn never launched msb');
+      else {
+        const left = planted.filter((name) => atLaunch.entries.includes(name));
+        if (left.length) fail(`left in the Codex home for the next turn: ${left.join(', ')}`);
+        if (atLaunch.tmp.includes('planted.txt')) fail('a file planted in the Codex home\'s tmp/ reached the next turn');
+        if (!atLaunch.entries.includes('sessions')) fail('the seat\'s sessions were cleared, so its thread cannot resume');
+        if (probed.newSessionId && !atLaunch.resumes) fail('the next turn did not resume the seat\'s thread');
+      }
+      if (!String(next.text).includes('OK from the stub model')) fail(`the next turn did not answer: ${JSON.stringify(next.text)}`);
     }
 
     step('5. the same fence, probed from inside the guest');

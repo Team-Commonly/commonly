@@ -99,30 +99,46 @@ including the grant broker, is refused, as for Claude.
 profile, `read-only`, with the network off, just as on macOS and Linux. It is
 never given `danger-full-access` or `--dangerously-bypass-approvals-and-sandbox`.
 The VM is the fence that holds against the host. The profile is a second layer
-inside it, and it guards the one thing the VM leaves writable, the seat HOME.
-That HOME keeps Codex's sessions, and Codex loads `AGENTS.md` and skills from
-its Codex home. With full access, a prompt-injected shell could leave
-instructions there for every later turn. Under the profile, the model's shell
-can read only the system's minimal set, the workspace, Codex's arg0 helper
-folder and the agents volume, and it can't write the seat HOME. The Codex home,
-where the secret-bearing `config.toml` sits, is outside that read set. What the
-profile does not hide is `/proc`: if a later change put the secret back in argv,
-the model's shell could read it there. The turn folder holds the per-turn proxy
-token, which reaches only the proxy and only for this turn. The spike showed Codex's
-sandbox runs in the guest, since the guest kernel allows user namespaces. If a
-later Codex or guest image can't start it, shell commands fail and the turn
-reports it. Nothing falls back to full access. The guest's Codex home is
-`/home/seat/codex-home`, not `~/.codex`, because the profile denies `~/.codex`
-whole and the arg0 helper lives in the Codex home.
+inside it, guarding the one thing the VM leaves writable, the seat HOME, which
+keeps Codex's sessions and from which Codex loads `AGENTS.md` and skills. Which
+layer stops what, for the model's shell (measured by the Windows smoke, step 4b):
 
-**Nothing a turn writes persists into the next.** Before every turn the host
-clears what Codex would load from its home (`AGENTS.override.md`, `config.toml`,
-`managed_config.toml`, `environments.toml`, `hooks.json`, and the `skills`,
-`prompts`, `rules`, `hooks` and `plugins` folders), rewrites `AGENTS.md` from the seat's declared
-skills, and then writes the turn's own `config.toml`. Codex runs with
+| What the shell tries | Stopped by |
+| --- | --- |
+| Writing the workspace | The read-only mount, and the profile (no writable root) |
+| Reaching the network | The VM's fence (`--no-net` plus the two host ports), and the profile |
+| Reading `config.toml` (the bridge secret) or anything else in the Codex home | The profile's reads. Codex's Linux sandbox (bwrap) starts from an empty `tmpfs /` and binds in, read-only, only the system's minimal set, the workspace, Codex's arg0 helper folder and the agents volume |
+| Writing the Codex home or the seat HOME | The profile's writes, by the same means. The shell's view of `/home/seat/codex-home` is that private tmpfs, so a write there appears to succeed but lands in memory and is gone when the command exits. It never reaches the seat HOME |
+
+Codex itself runs outside bwrap and writes its home (sessions, memories, logs,
+state databases), so the host clears that home to an allowlist before every
+turn (below). What the profile does not hide is `/proc`: if a later change put
+the secret back in argv, the model's shell could read it there. The turn folder
+holds the per-turn proxy token, which reaches only the proxy and only for this
+turn. Codex's sandbox runs in the guest, since the guest kernel allows user
+namespaces. If a later Codex or guest image can't start it, shell commands fail
+and the turn reports it. Nothing falls back to full access. The guest's Codex
+home is `/home/seat/codex-home`, not `~/.codex`, because the profile denies
+`~/.codex` whole and the arg0 helper lives in the Codex home.
+
+**Nothing in the Codex home but the seat's sessions persists into the next
+turn.** Before every turn the host removes every entry of the Codex home except
+two, then rewrites `AGENTS.md` from the seat's declared skills and writes the
+turn's own `config.toml`. What stays:
+- `sessions/`, the seat's rollouts. `codex exec resume <id>` finds a thread by
+  scanning this folder's file names when its state database has no row, and
+  that database is removed with the rest.
+- `tmp/arg0-linux/`, where Codex links its own binary under helper names at
+  each launch, puts only that launch's folder on `PATH`, and prunes stale ones.
+  Its entries are links by design. Everything else in `tmp/` is removed.
+
+So a file left anywhere else (`AGENTS.override.md`, a hooks or environments
+file, `skills/`, `memories/`, `history.jsonl`, `log/`, or an extension point a
+later Codex adds) never reaches the next turn. A link anywhere in the Codex home
+outside the helper folder refuses the turn until it is removed. Codex runs with
 `--ignore-rules`. It does not run with `--ignore-user-config`, since it reads
 that host-written `config.toml`; every other setting rides in `-c` overrides,
-which win over the file. Sessions stay, so a thread resumes.
+which win over the file.
 
 **No host operation follows a link in the seat HOME.** The HOME is the guest's to
 write, so a turn could leave a symbolic link or a Windows junction where a
@@ -207,6 +223,15 @@ instead of failing to resume it on every turn.
 
 ## Known limits
 
+- The files in `sessions/` are the seat's own conversation, and are kept as
+  they are. Codex writes them outside bwrap, so the model's shell can't change
+  them, but anything that could write the seat HOME could plant or rewrite the
+  stored thread's rollout. A resumed thread would then carry that history, and
+  whatever Codex restores from it, as if the seat had said it: the same reach a
+  prompt injection in the pod already has. It could not change the profile,
+  the network fence, the MCP servers, the model or the config, since those come
+  from `-c` overrides and the host-written `config.toml`, nor make the host
+  follow a link (the rollout check walks without following links).
 - Read-only seats only. Write and web grants need a walk of their own (a
   read-only `.git` mounted over a writable workspace, and a fenced web route).
 - DNS stays open (`allow@dns`), so a guest can leak data through lookups. The
@@ -256,7 +281,9 @@ instead of failing to resume it on every turn.
   another seat's VM neither blocks nor is stopped. Two concurrent turns of one
   seat: the second waits at the lock without touching the HOME, or refuses. An
   orphaned `msb.exe` is swept before the VM check, and a failed sweep refuses;
-  a stale reply is removed; a stored thread with no guest rollout starts fresh.
+  a stale reply is removed; a stored thread with no guest rollout starts fresh;
+  everything in the Codex home but `sessions/` and `tmp/arg0-linux/` is cleared,
+  and a link there refuses the turn.
   `sandbox.microsandbox.test.mjs` covers the lock itself: a dead holder's lock
   is reclaimed, and so is one past its holder's deadline; a live holder's is
   never taken on age; an empty lock waits out its grace period; a lock replaced
@@ -287,8 +314,11 @@ instead of failing to resume it on every turn.
   outlived `msb.exe`.
 - The Codex smoke also has the stub model ask for one shell command through
   Codex's own shell tool in the guest. That command must read a workspace file,
-  and must fail to write the workspace or the Codex home, to read the
-  `config.toml` that carries the bridge secret (present when the turn started),
-  and to reach the internet. Finally a stand-in orphan, a copy of node named
+  and must fail to write the workspace, to read the `config.toml` that carries
+  the bridge secret (present when the turn started), and to reach the internet.
+  Its write to the Codex home must not reach the seat HOME, while Codex's own
+  rollout must (the positive control). Files then planted in that home outside
+  `sessions/` and the helper folder must be gone when the next turn launches
+  msb, and that turn must resume the thread and answer. Finally a stand-in orphan, a copy of node named
   `msb.exe` whose command line carries a seat's label and HOME, must be killed
   before that seat's next turn reaches its VM check, and that turn must answer.

@@ -34,7 +34,7 @@ const microsandbox = await import('../src/lib/sandbox/microsandbox.js');
 const codexModule = await import('../src/lib/adapters/codex.js');
 
 const codex = codexModule.default;
-const { GUEST_CODEX_HOME_LOADED, MICROVM_REPLY_MAX_BYTES, microvmGuestCodexConfig } = codexModule;
+const { GUEST_CODEX_HOME_KEPT, MICROVM_REPLY_MAX_BYTES, microvmGuestCodexConfig } = codexModule;
 const {
   GUEST_CODEX, GUEST_HOST, GUEST_TURN_DIR, MICROVM_FLAG_ENV, microvmSeatHome, startMicrovmTurn,
 } = microsandbox;
@@ -382,15 +382,22 @@ describe('the codex adapter in a microVM', () => {
     fs.mkdirSync(path.join(codexHome, 'skills', 'evil'), { recursive: true });
     fs.writeFileSync(path.join(codexHome, 'skills', 'evil', 'SKILL.md'), 'planted');
     // An independent list: what Codex 0.172.0 loads from its home without
-    // --ignore-user-config, each planted, each expected gone.
+    // --ignore-user-config, plus what it writes there itself (memories,
+    // history, logs, state databases) and a name no Codex uses yet. Only the
+    // seat's sessions and Codex's arg0 helper folder survive.
     const planted = [
       'AGENTS.override.md', 'managed_config.toml', 'environments.toml', 'hooks.json',
       'prompts', 'rules', 'hooks', 'plugins',
+      'memories', 'history.jsonl', 'log', 'state_5.sqlite', 'session_index.jsonl', 'future-extension.toml',
     ];
     for (const name of planted) {
       if (name.includes('.')) fs.writeFileSync(path.join(codexHome, name), 'planted = "x"');
       else fs.mkdirSync(path.join(codexHome, name));
     }
+    fs.writeFileSync(path.join(codexHome, 'memories-placeholder'), 'x');
+    fs.mkdirSync(path.join(codexHome, 'tmp', 'arg0-linux', 'codex-arg0old'), { recursive: true });
+    fs.writeFileSync(path.join(codexHome, 'tmp', 'arg0-linux', 'codex-arg0old', 'helper'), 'codex own');
+    fs.writeFileSync(path.join(codexHome, 'tmp', 'planted.txt'), 'planted');
     fs.writeFileSync(path.join(codexHome, 'config.toml'), 'model = "planted"');
     fs.mkdirSync(path.join(codexHome, 'sessions'));
     fs.writeFileSync(path.join(codexHome, 'sessions', 'keep.jsonl'), '{}');
@@ -408,11 +415,33 @@ describe('the codex adapter in a microVM', () => {
       },
     });
     await withFlag('1', () => run(impl, { extra: { _startProviderProxy: proxyStub().start } }));
-    for (const name of [...planted, 'skills']) expect(seen[0]).not.toContain(name);
+    // AGENTS.md is written only when the seat declares skills; this one has none.
+    expect(seen[0]).toEqual(['config.toml', 'sessions', 'tmp']);
     expect(configDuring).not.toContain('planted');
-    expect(seen[0]).toEqual(expect.arrayContaining(['config.toml', 'sessions', 'tmp']));
+    expect(fs.readdirSync(path.join(codexHome, 'tmp'))).toEqual(['arg0-linux']);
+    expect(fs.existsSync(path.join(codexHome, 'tmp', 'arg0-linux', 'codex-arg0old', 'helper'))).toBe(true);
     expect(fs.existsSync(path.join(codexHome, 'sessions', 'keep.jsonl'))).toBe(true);
-    expect(GUEST_CODEX_HOME_LOADED).toEqual(expect.arrayContaining([...planted, 'config.toml', 'skills']));
+    expect(GUEST_CODEX_HOME_KEPT).toEqual(['sessions', 'tmp']);
+  });
+
+  test('a link left anywhere in the Codex home but the helper folder refuses the turn and is left as it was', async () => {
+    const codexHome = path.join(home, 'codex-home');
+    const elsewhere = fs.mkdtempSync(path.join(os.tmpdir(), 'cli-cmv-elsewhere-'));
+    try {
+      fs.writeFileSync(path.join(elsewhere, 'victim.txt'), 'host file');
+      fs.mkdirSync(codexHome);
+      fs.symlinkSync(elsewhere, path.join(codexHome, 'memories'), 'dir');
+      const { calls, impl } = recorder();
+      await withFlag('1', async () => {
+        await expect(run(impl, { extra: { _startProviderProxy: proxyStub().start } }))
+          .rejects.toMatchObject({ code: 'guest_path_refused' });
+      });
+      expect(calls).toHaveLength(0);
+      expect(fs.lstatSync(path.join(codexHome, 'memories')).isSymbolicLink()).toBe(true);
+      expect(fs.readdirSync(elsewhere)).toEqual(['victim.txt']);
+    } finally {
+      fs.rmSync(elsewhere, { recursive: true, force: true });
+    }
   });
 
   describe('a thread stored before the seat ran in the microVM', () => {
@@ -540,22 +569,26 @@ describe('the codex adapter in a microVM', () => {
       await refusedBeforeAnything(() => fs.symlinkSync(outside, path.join(home, 'replies'), 'dir'));
     });
 
-    test('a staged name planted at the old guessable path is never written through', async () => {
+    // The allowlist sweep meets the link first and refuses it; writeGuestFile's
+    // own handling of that name is in sandbox.guest-home.test.mjs.
+    test('a staged name planted at the old guessable path is refused, never written through', async () => {
       fs.mkdirSync(path.join(home, 'codex-home'), { recursive: true });
       const skill = path.join(scratch, 'a-skill');
       fs.mkdirSync(skill);
       fs.writeFileSync(path.join(skill, 'SKILL.md'), '---\nname: a-skill\n---\n# a skill\n');
       const guessed = path.join(home, 'codex-home', `AGENTS.md.${process.pid}.tmp`);
       fs.symlinkSync(path.join(outside, 'victim.txt'), guessed);
-      const { impl } = recorder();
-      await withFlag('1', () => codex.spawn('hi', {
-        agentName: 'cmv-seat', cwd, runtimeToken: SEAT_TOKEN, instanceUrl: 'http://127.0.0.1:9',
-        env: { PATH: process.env.PATH, CODEX_HOME: operatorHome, CODEX_API_KEY: HOST_KEY },
-        environment: { model: 'test-model', sandbox: { trust: 'public' }, mcp: [], skills: { claude: [skill] } },
-        _platform: 'win32', _spawnImpl: impl, _turnReap: false, _probeWhp: () => ({ available: true }),
-        _prepareMicrovmHost: async () => ({ msb: MSB }), _microvmHome: home, _startProviderProxy: proxyStub().start,
-      }));
-      expect(fs.readFileSync(path.join(home, 'codex-home', 'AGENTS.md'), 'utf8')).toContain('# a skill');
+      const { calls, impl } = recorder();
+      await withFlag('1', async () => {
+        await expect(codex.spawn('hi', {
+          agentName: 'cmv-seat', cwd, runtimeToken: SEAT_TOKEN, instanceUrl: 'http://127.0.0.1:9',
+          env: { PATH: process.env.PATH, CODEX_HOME: operatorHome, CODEX_API_KEY: HOST_KEY },
+          environment: { model: 'test-model', sandbox: { trust: 'public' }, mcp: [], skills: { claude: [skill] } },
+          _platform: 'win32', _spawnImpl: impl, _turnReap: false, _probeWhp: () => ({ available: true }),
+          _prepareMicrovmHost: async () => ({ msb: MSB }), _microvmHome: home, _startProviderProxy: proxyStub().start,
+        })).rejects.toMatchObject({ code: 'guest_path_refused' });
+      });
+      expect(calls).toHaveLength(0);
       expect(fs.lstatSync(guessed).isSymbolicLink()).toBe(true);
       untouched();
     });
