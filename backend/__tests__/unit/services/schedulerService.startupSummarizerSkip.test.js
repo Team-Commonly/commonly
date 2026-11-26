@@ -135,7 +135,7 @@ describe('scheduler: startup summarizer tops up per install', () => {
   it('the hourly cron sends to every install right after a sweep', async () => {
     setRecentRows(ALL_COVERED);
     scheduler.start();
-    const hourly = cron.schedule.mock.results.map((r) => r.value).find((j) => j.expression === '0 * * * *');
+    const hourly = cron.schedule.mock.results.map((r) => r.value).find((j) => j.expression === scheduler.SPREAD_JOB_SCHEDULES.summarizer);
     await hourly.fn();
     expect(requestedPods()).toEqual(['p1', 'p2', 'p3', SHARED_POD, SHARED_POD].sort());
     expect(AgentEvent.find).not.toHaveBeenCalled();

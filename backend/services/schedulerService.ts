@@ -223,6 +223,11 @@ const digestInstallKey = (agentName: unknown, instanceId: unknown, podId: unknow
 const digestIdentityKey = (agentName: unknown, instanceId: unknown): string => (
   `${String(agentName ?? '').toLowerCase()}:${String(instanceId)}`);
 
+// F668: heartbeat dispatch walks its installs, and enqueues the due ones, this
+// many at a time, handing the event loop back between chunks.
+const HEARTBEAT_DISPATCH_CHUNK = 100;
+const yieldToEventLoop = (): Promise<void> => new Promise((resolve) => { setImmediate(resolve); });
+
 const chunked = <T>(items: T[], size: number): T[][] => {
   const chunks: T[][] = [];
   for (let i = 0; i < items.length; i += size) chunks.push(items.slice(i, i + size));
@@ -253,6 +258,34 @@ export const FIVE_MINUTE_PASS_SCHEDULES = {
   onboardingSilence: everyFiveMinutesFrom(1),
   stalledConnect: everyFiveMinutesFrom(2),
   installableReconcile: everyFiveMinutesFrom(3),
+} as const;
+
+// F668: the sparse jobs (hourly, every 10 or every 15 minutes) each own their
+// minutes. On 2026-11-26 the prod event loop stalled 3–4 s at 15:00:12 and
+// 15:00:22: the hourly summarizer, the social-feed sync, agent-event GC and
+// the spend alarm all started on :00, beside the per-minute heartbeat dispatch
+// and the */5 passes. Each keeps its frequency; only its phase moved.
+//
+//   :01         daily digest (stays: catches 08:00 local, incl. half-hour zones)
+//   :04, :14, … kernel work sweep (stays)
+//   :06, :16, … external social-feed sync (was */10)
+//   :08, :18, … agent-event GC (was */10)
+//   :09         hourly summarizer (was :00); the summary window is the last
+//               60 minutes from when it runs, so no reader needs :00
+//   :10, :25, … spend alarm (was */15; also clears :15/:45, the even-hour
+//               themed-autonomy and auto-join minutes, and 03:30 pg-mirror)
+//   :17         missed-mention sweep (stays) · :39 registry drift (stays)
+//
+// Minutes ending in 9 are the only ones no five-minute pass touches; the
+// summarizer takes :09. The two ten-minute jobs share a minute with one
+// five-minute pass each (onboarding-silence, installable-reconcile), never
+// with each other or with kernel-sweep. schedulerService.cronMinutes.test.js
+// pins the table.
+export const SPREAD_JOB_SCHEDULES = {
+  summarizer: '9 * * * *',
+  externalFeed: '6,16,26,36,46,56 * * * *',
+  agentEventGc: '8,18,28,38,48,58 * * * *',
+  spendAlarm: '10,25,40,55 * * * *',
 } as const;
 
 // Cron jobs are process-local. Keep one module-private owner so a second
@@ -286,7 +319,7 @@ class SchedulerService {
     console.log('Starting summarizer scheduler...');
 
     const summarizerJob: CronJob = cron.schedule(
-      '0 * * * *',
+      SPREAD_JOB_SCHEDULES.summarizer,
       async () => {
         console.log('Running hourly summarizer...');
         try {
@@ -299,7 +332,7 @@ class SchedulerService {
     );
 
     const externalFeedJob: CronJob = cron.schedule(
-      '*/10 * * * *',
+      SPREAD_JOB_SCHEDULES.externalFeed,
       async () => {
         console.log('Syncing external social feeds...');
         try {
@@ -312,7 +345,7 @@ class SchedulerService {
     );
 
     const agentEventGcJob: CronJob = cron.schedule(
-      '*/10 * * * *',
+      SPREAD_JOB_SCHEDULES.agentEventGc,
       async () => {
         console.log('Running agent event garbage collection...');
         try {
@@ -767,7 +800,7 @@ class SchedulerService {
     // `alarm: user_spend` line per user past SPEND_ALARM_USD_PER_DAY ($2).
     // Reports only; the run ceilings enforce (services/spendAlarmService.ts).
     const spendAlarmJob: CronJob = cron.schedule(
-      '*/15 * * * *',
+      SPREAD_JOB_SCHEDULES.spendAlarm,
       async () => {
         try {
           // eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
@@ -859,7 +892,7 @@ class SchedulerService {
     activeScheduler = this;
 
     console.log('Scheduler started successfully');
-    console.log('- Summarizer runs every hour');
+    console.log('- Summarizer runs every hour at :09');
     console.log('- Cleanup runs daily at 2 AM UTC');
     console.log('- External feeds sync every 10 minutes');
     console.log('- Agent event GC runs every 10 minutes');
@@ -1873,9 +1906,16 @@ class SchedulerService {
       trigger = 'scheduled-hourly', respectIntervals = false, now = new Date(), timings = {},
     } = options;
 
+    // F668: ask Mongo only for opted-in installs. Every other row was loaded,
+    // decoded and walked each minute only to be dropped by the opt-in check
+    // below (which stays, as the contract). Autonomy is deliberately not in
+    // the filter: a global agent's dedupe picks its first opted-in install
+    // before the autonomy check, and filtering autonomy here would change
+    // which sibling wins.
     let stepAt = performance.now();
     const installations: InstallationDoc[] = await AgentInstallation.find({
       status: 'active',
+      'config.heartbeat.enabled': true,
     }).select('agentName instanceId podId config.autonomy config.heartbeat').lean();
     timings.installs = elapsedMs(stepAt);
 
@@ -1886,11 +1926,17 @@ class SchedulerService {
     const lastHeartbeatByKey = new Map<string, Date>();
     stepAt = performance.now();
     if (respectIntervals) {
+      // Only the opted-in agents' heartbeats can decide anything below. Both
+      // spellings, because the event schema lowercases agentName on write.
+      const agentNames = [...new Set(installations.flatMap((inst) => {
+        const name = String(inst?.agentName || '');
+        return [name, name.toLowerCase()];
+      }))];
       const latestHeartbeats: Array<{
         _id: { agentName?: string; instanceId?: string; podId?: string };
         lastCreatedAt: Date;
       }> = await AgentEvent.aggregate([
-        { $match: { type: 'heartbeat' } },
+        { $match: { type: 'heartbeat', agentName: { $in: agentNames } } },
         {
           $group: {
             _id: { agentName: '$agentName', instanceId: '$instanceId', podId: '$podId' },
@@ -1938,10 +1984,63 @@ class SchedulerService {
       }
     }
 
+    // F668: decide who is due first, from what is already in memory, and only
+    // then do the per-pod reads (the global pod pick, the pending check, the
+    // activity hint) for those. A minute where nothing is due now ends here.
+    let checked = 0;
+    let skippedByInterval = 0;
+    const due: Array<{ installation: InstallationDoc; isGlobal: boolean }> = [];
+    stepAt = performance.now();
+    const nowMinutes = Math.floor(now.getTime() / 60000);
+    for (let i = 0; i < toProcess.length; i += 1) {
+      // eslint-disable-next-line no-await-in-loop
+      if (i > 0 && i % HEARTBEAT_DISPATCH_CHUNK === 0) await yieldToEventLoop();
+      const { installation, isGlobal } = toProcess[i];
+      // Opt-in, not opt-out. `undefined` must NOT fire: an install that never
+      // expressed an opinion about heartbeats does not get one. The previous
+      // `=== false` check made every agent anyone installed wake on a timer
+      // forever unless someone found and set a field they never see — 166 of
+      // 245 active installs across 48 owners were ticking hourly on that
+      // default alone, spending each owner's own model quota to run a
+      // heartbeat with no content behind it (#800).
+      if (installation?.config?.heartbeat?.enabled !== true) continue;
+      if (installation?.config?.autonomy?.enabled === false) continue;
+      checked += 1;
+
+      if (respectIntervals) {
+        const { agentName, podId, instanceId = 'default' } = installation || {};
+        const key = isGlobal
+          ? `${agentName}:${instanceId}`
+          : `${agentName}:${instanceId}:${String(podId)}`;
+        const lastCreatedAt = isGlobal
+          ? lastHeartbeatByAgentKey.get(key)
+          : lastHeartbeatByKey.get(key);
+        const intervalMinutes = SchedulerService.resolveHeartbeatIntervalMinutes(installation);
+
+        if (lastCreatedAt) {
+          const lastMinutes = Math.floor(lastCreatedAt.getTime() / 60000);
+          const ageMinutes = nowMinutes - lastMinutes;
+          if (ageMinutes < intervalMinutes) {
+            skippedByInterval += 1;
+            continue;
+          }
+        } else {
+          const staggerOffset = SchedulerService.resolveHeartbeatStaggerOffset(key, intervalMinutes);
+          const minuteWithinInterval = nowMinutes % intervalMinutes;
+          if (minuteWithinInterval !== staggerOffset) {
+            skippedByInterval += 1;
+            continue;
+          }
+        }
+      }
+      due.push({ installation, isGlobal });
+    }
+    const dueCheckMs = elapsedMs(stepAt);
+
     const globalHeartbeatPodMap = new Map<string, string>();
     const globalKeys = [...new Set(
-      toProcess
-        .filter(({ isGlobal }) => isGlobal)
+      due
+        .filter(({ isGlobal, installation }) => isGlobal && installation?.config?.heartbeat?.fixedPod !== true)
         .map(({ installation }) => {
           const { agentName, instanceId = 'default' } = installation;
           return `${agentName}:${instanceId}`;
@@ -1960,7 +2059,6 @@ class SchedulerService {
         };
       });
 
-      // eslint-disable-next-line no-await-in-loop
       const globalInstalls: Array<{ agentName: string; instanceId?: string; podId: unknown }> = await AgentInstallation.find({
         $or: orClauses,
         podId: { $exists: true, $ne: null },
@@ -1977,7 +2075,6 @@ class SchedulerService {
 
       if (allGlobalPodIds.length > 0) {
         const since = new Date(now.getTime() - hintWindowMs);
-        // eslint-disable-next-line no-await-in-loop
         const [podActivity, recentPostActivity]: [
           Array<{ podId: string; lastAt: string }>,
           Array<{ _id: unknown; lastAt: Date }>
@@ -1993,6 +2090,12 @@ class SchedulerService {
         const postActivityMap = new Map<string, Date>(
           recentPostActivity.map((p) => [String(p._id), p.lastAt]),
         );
+        // A Map, not podActivity.find per pod: that was keys × pods × rows.
+        // First row wins, as find did.
+        const msgActivityMap = new Map<string, string>();
+        podActivity.forEach((p) => {
+          if (!msgActivityMap.has(p.podId)) msgActivityMap.set(p.podId, p.lastAt);
+        });
 
         const POST_BOOST_MS = 3 * 60 * 60 * 1000;
 
@@ -2001,8 +2104,8 @@ class SchedulerService {
           let bestAt: Date | null = null;
 
           for (const pid of podIdSet) {
-            const msgPod = podActivity.find((p) => p.podId === pid);
-            const msgAt = msgPod ? new Date(msgPod.lastAt) : null;
+            const msgLastAt = msgActivityMap.get(pid);
+            const msgAt = msgLastAt !== undefined ? new Date(msgLastAt) : null;
             const postRaw = postActivityMap.has(pid) ? new Date(postActivityMap.get(pid)!) : null;
             const postAt = postRaw ? new Date(postRaw.getTime() + POST_BOOST_MS) : null;
             const podBestAt = msgAt && postAt ? (msgAt > postAt ? msgAt : postAt) : (msgAt || postAt);
@@ -2024,116 +2127,87 @@ class SchedulerService {
 
     timings.globalPick = elapsedMs(stepAt);
 
-    let checked = 0;
-    stepAt = performance.now();
-    const enqueueResults = await Promise.all(
-      toProcess.map(async ({ installation, isGlobal }) => {
-        // Opt-in, not opt-out. `undefined` must NOT fire: an install that never
-        // expressed an opinion about heartbeats does not get one. The previous
-        // `=== false` check made every agent anyone installed wake on a timer
-        // forever unless someone found and set a field they never see — 166 of
-        // 245 active installs across 48 owners were ticking hourly on that
-        // default alone, spending each owner's own model quota to run a
-        // heartbeat with no content behind it (#800).
-        const heartbeatEnabled = installation?.config?.heartbeat?.enabled;
-        if (heartbeatEnabled !== true) return { enqueued: 0, skippedByInterval: 0 };
-        const autonomyEnabled = installation?.config?.autonomy?.enabled;
-        if (autonomyEnabled === false) return { enqueued: 0, skippedByInterval: 0 };
-        checked += 1;
+    const enqueueOne = async (
+      { installation, isGlobal }: { installation: InstallationDoc; isGlobal: boolean },
+    ): Promise<{ enqueued: number; skippedPending?: number }> => {
+      const {
+        agentName,
+        podId,
+        instanceId = 'default',
+      } = installation || {};
 
-        const {
-          agentName,
-          podId,
-          instanceId = 'default',
-        } = installation || {};
+      const useFixedPod = installation?.config?.heartbeat?.fixedPod === true;
+      const heartbeatPodId = isGlobal && !useFixedPod
+        ? (globalHeartbeatPodMap.get(`${agentName}:${instanceId}`) || podId)
+        : podId;
 
-        if (respectIntervals) {
-          const key = isGlobal
-            ? `${agentName}:${instanceId}`
-            : `${agentName}:${instanceId}:${String(podId)}`;
-          const lastCreatedAt = isGlobal
-            ? lastHeartbeatByAgentKey.get(key)
-            : lastHeartbeatByKey.get(key);
-          const intervalMinutes = SchedulerService.resolveHeartbeatIntervalMinutes(installation);
-          const nowMinutes = Math.floor(now.getTime() / 60000);
+      // A seat with no listener never drains its queue, so each interval
+      // used to add another heartbeat: one dead seat had 168 queued and
+      // still read as activity (2026-10-14). One undelivered heartbeat says
+      // everything the next would; skip until the seat picks it up.
+      const alreadyPending = await AgentEvent.exists({
+        agentName: String(agentName || '').toLowerCase(),
+        instanceId,
+        podId: heartbeatPodId,
+        type: 'heartbeat',
+        status: 'pending',
+      });
+      if (alreadyPending) return { enqueued: 0, skippedPending: 1 };
 
-          if (lastCreatedAt) {
-            const lastMinutes = Math.floor(lastCreatedAt.getTime() / 60000);
-            const ageMinutes = nowMinutes - lastMinutes;
-            if (ageMinutes < intervalMinutes) {
-              return { enqueued: 0, skippedByInterval: 1 };
-            }
-          } else {
-            const staggerOffset = SchedulerService.resolveHeartbeatStaggerOffset(key, intervalMinutes);
-            const minuteWithinInterval = nowMinutes % intervalMinutes;
-            if (minuteWithinInterval !== staggerOffset) {
-              return { enqueued: 0, skippedByInterval: 1 };
-            }
-          }
-        }
+      const activityHint = await SchedulerService.buildHeartbeatActivityHint({ podId: heartbeatPodId, now });
 
-        const useFixedPod = installation?.config?.heartbeat?.fixedPod === true;
-        const heartbeatPodId = isGlobal && !useFixedPod
-          ? (globalHeartbeatPodMap.get(`${agentName}:${instanceId}`) || podId)
-          : podId;
-
-        // A seat with no listener never drains its queue, so each interval
-        // used to add another heartbeat: one dead seat had 168 queued and
-        // still read as activity (2026-10-14). One undelivered heartbeat says
-        // everything the next would; skip until the seat picks it up.
-        const alreadyPending = await AgentEvent.exists({
-          agentName: String(agentName || '').toLowerCase(),
-          instanceId,
-          podId: heartbeatPodId,
-          type: 'heartbeat',
-          status: 'pending',
-        });
-        if (alreadyPending) return { enqueued: 0, skippedByInterval: 0, skippedPending: 1 };
-
-        const activityHint = await SchedulerService.buildHeartbeatActivityHint({ podId: heartbeatPodId, now });
-
-        await AgentEventService.enqueue({
-          agentName,
-          instanceId,
-          podId: heartbeatPodId,
-          type: 'heartbeat',
-          payload: {
-            trigger,
-            generatedAt: new Date().toISOString(),
-            podId: String(heartbeatPodId),
-            activityHint,
-            policy: {
-              noFetchWhenIdle: true,
-              silentOnReadFailure: true,
-            },
-            // ADR-012 §10.3: inline HEARTBEAT cue. Parallel to the §9 DM
-            // frame — narrative directive at the start of payload.content
-            // beats structured metadata for behavior steering. Lives in
-            // services/heartbeatCue.ts with its own test: it is a contract
-            // with every agent, and it already drifted once from the
-            // HEARTBEAT.md trailer in registry/presets.ts at real cost
-            // (PR #295, 2026-05-04 — see that module's header).
-            content: buildHeartbeatContent(heartbeatPodId),
+      await AgentEventService.enqueue({
+        agentName,
+        instanceId,
+        podId: heartbeatPodId,
+        type: 'heartbeat',
+        payload: {
+          trigger,
+          generatedAt: new Date().toISOString(),
+          podId: String(heartbeatPodId),
+          activityHint,
+          policy: {
+            noFetchWhenIdle: true,
+            silentOnReadFailure: true,
           },
-        });
-        return { enqueued: 1, skippedByInterval: 0 };
-      }),
-    );
-    timings.perInstall = elapsedMs(stepAt);
-    timings.checked = checked;
+          // ADR-012 §10.3: inline HEARTBEAT cue. Parallel to the §9 DM
+          // frame — narrative directive at the start of payload.content
+          // beats structured metadata for behavior steering. Lives in
+          // services/heartbeatCue.ts with its own test: it is a contract
+          // with every agent, and it already drifted once from the
+          // HEARTBEAT.md trailer in registry/presets.ts at real cost
+          // (PR #295, 2026-05-04 — see that module's header).
+          content: buildHeartbeatContent(heartbeatPodId),
+        },
+      });
+      return { enqueued: 1 };
+    };
 
-    const enqueued = enqueueResults.reduce(
-      (sum, value) => sum + ((value as { enqueued?: number })?.enqueued || 0),
-      0,
-    );
-    const skippedByInterval = enqueueResults.reduce(
-      (sum, value) => sum + ((value as { skippedByInterval?: number })?.skippedByInterval || 0),
-      0,
-    );
-    const skippedPending = enqueueResults.reduce(
-      (sum, value) => sum + ((value as { skippedPending?: number })?.skippedPending || 0),
-      0,
-    );
+    // F668: one chunk in flight at a time, yielding between chunks, so a
+    // minute with many due seats neither fans out unbounded reads nor holds
+    // the loop for the whole batch.
+    // A seat that fails never stops the seats after it: every chunk is
+    // attempted, as when one Promise.all started them all, and the first
+    // failure is raised only once all of them have run.
+    const results: Array<{ enqueued: number; skippedPending?: number }> = [];
+    let firstFailure: unknown;
+    let failed = false;
+    stepAt = performance.now();
+    for (let i = 0; i < due.length; i += HEARTBEAT_DISPATCH_CHUNK) {
+      // eslint-disable-next-line no-await-in-loop
+      if (i > 0) await yieldToEventLoop();
+      // eslint-disable-next-line no-await-in-loop
+      const settled = await Promise.allSettled(due.slice(i, i + HEARTBEAT_DISPATCH_CHUNK).map(enqueueOne));
+      for (const outcome of settled) {
+        if (outcome.status === 'fulfilled') results.push(outcome.value);
+        else if (!failed) { failed = true; firstFailure = outcome.reason; }
+      }
+    }
+    if (failed) throw firstFailure;
+    const enqueued = results.reduce((sum, r) => sum + r.enqueued, 0);
+    const skippedPending = results.reduce((sum, r) => sum + (r.skippedPending || 0), 0);
+    timings.perInstall = dueCheckMs + elapsedMs(stepAt);
+    timings.checked = checked;
 
     return {
       scanned: toProcess.length,
