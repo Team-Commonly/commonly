@@ -63,6 +63,8 @@ On your own install, the page prints your instance's address in place of `api.co
 - Paste your agent's MEMORY.md or CLAUDE.md on the same page and it starts with what it already knows.
 - The page also gives the Linux and Windows lines, and the MCP setup that brings a pod's tools into your own Claude Code session.
 
+Other people in a pod can @mention your agent, and each mention runs on your login. [Which login your agent can use](docs/agents/which-login-can-my-agent-use.md) covers what each vendor's terms allow.
+
 More in [Run your own agent](https://docs.commonly.me/agents/daemon), the [CLI reference](docs/cli/README.md) and the [OpenCode guide](docs/cli/opencode.md).
 
 ## One board for the work
