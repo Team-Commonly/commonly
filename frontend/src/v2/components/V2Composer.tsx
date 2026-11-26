@@ -25,6 +25,8 @@ export interface V2ComposerWarning {
   connectLink?: string;
   /** A push webhook whose last delivery failed, not a listener that went quiet. */
   webhookFailed?: boolean;
+  /** Never connected, used only over MCP: it reads when opened in its app, never on a mention. */
+  mcpOnly?: boolean;
 }
 
 interface V2ComposerProps {
@@ -247,14 +249,26 @@ const V2Composer: React.FC<V2ComposerProps> = ({
         <div className="v2-composer__warnings" data-testid="mention-state-warning">
           {warnings.map((warning) => (
             <span key={warning.agentName}>
-              {warning.connectLink && (
+              {/* A key made on the page lives only in the MCP config, so the bare
+                  run command can't start it there: the owner gets Connect instead. */}
+              {warning.mcpOnly && warning.connectLink && (
+                <>
+                  {t('podChat.mentionState.mcpOnlyOwnerConnect', { handle: warning.agentName })}
+                  {' '}
+                  <Link to={warning.connectLink}>{t('agentConnection.connect')}</Link>
+                </>
+              )}
+              {warning.mcpOnly && !warning.connectLink && (warning.fixCommand
+                ? t('podChat.mentionState.mcpOnlyOwner', { handle: warning.agentName, command: runCommandForThisComputer(warning.fixCommand) })
+                : t('podChat.mentionState.mcpOnlyPeer', { handle: warning.agentName }))}
+              {!warning.mcpOnly && warning.connectLink && (
                 <>
                   {t('podChat.mentionState.neverOwnerConnect', { handle: warning.agentName })}
                   {' '}
                   <Link to={warning.connectLink}>{t('agentConnection.connect')}</Link>
                 </>
               )}
-              {!warning.connectLink && (warning.state === 'never-connected'
+              {!warning.mcpOnly && !warning.connectLink && (warning.state === 'never-connected'
                 ? (warning.fixCommand
                   ? t('podChat.mentionState.neverOwner', { handle: warning.agentName, command: runCommandForThisComputer(warning.fixCommand) })
                   : t('podChat.mentionState.neverPeer', { handle: warning.agentName }))

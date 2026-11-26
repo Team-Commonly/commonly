@@ -19,6 +19,8 @@ interface MentionAgentState {
   noSavedKey?: boolean;
   /** A push webhook's last delivery failed: it is not a listener that went quiet. */
   deliveryError?: unknown;
+  /** Used only over MCP: it reads when opened in its app and never hears a mention. */
+  mcpOnly?: boolean;
 }
 
 interface MentionItem extends V2ComposerMention {
@@ -88,7 +90,7 @@ export const useV2ThreadMentions = ({
       const reach = row?.state;
       const webhookFailed = Boolean(row?.deliveryError);
       const subtitle = reach === 'never-connected'
-        ? t('podChat.mentionState.typeaheadNever', { handle: value })
+        ? t(row?.mcpOnly ? 'podChat.mentionState.typeaheadMcpOnly' : 'podChat.mentionState.typeaheadNever', { handle: value })
         : reach === 'gone-dark'
           ? t(webhookFailed ? 'podChat.mentionState.typeaheadWebhook' : 'podChat.mentionState.typeaheadDark', { handle: value })
           : t('podChat.mentions.agentSubtitle', { handle: value });
@@ -168,6 +170,7 @@ export const useV2ThreadMentions = ({
         fixCommand: state.fixCommand,
         ...(connectLink ? { connectLink } : {}),
         ...(state.deliveryError ? { webhookFailed: true } : {}),
+        ...(state.state === 'never-connected' && state.mcpOnly ? { mcpOnly: true } : {}),
       });
       return rows;
     }, []);

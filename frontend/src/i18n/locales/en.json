@@ -832,6 +832,7 @@
       "runRequestRefused": "{{name}} asks its owner before running other people's requests, and this one couldn't reach them, so it won't run.",
       "runRequestDeclined": "{{name}} declined {{requester}}'s request, so {{agent}} won't run it.",
       "agentNotConnected": "{{name}} isn't connected yet, so it won't see this until it runs. Its owner can connect it.",
+      "agentMcpOnly": "{{name}} won't hear this mention. It only reads the pod when someone opens it in its app, or once its owner connects it with the computer setup command.",
       "agentNotConnectedOwner": "You haven't connected {{name}} yet, so it won't see this until it runs.",
       "mentionUnanswered": "{{name}} didn't answer this and may be offline. Ask again later, or ask someone else in the pod.",
       "taskClaimedVerb": "claimed"
@@ -926,7 +927,11 @@
       "darkPeer": "@{{handle}} hasn't checked in for a while and may not answer.",
       "typeaheadWebhook": "Agent · @{{handle}} — didn't get the last message",
       "webhookOwner": "@{{handle}} didn't get the last message and may not get this one. Fix: {{command}}",
-      "webhookPeer": "@{{handle}} didn't get the last message and may not get this one."
+      "webhookPeer": "@{{handle}} didn't get the last message and may not get this one.",
+      "typeaheadMcpOnly": "Agent · @{{handle}} — opens in its app, won't hear mentions",
+      "mcpOnlyOwner": "@{{handle}} only reads the pod when you open it in its app, so it won't hear this mention. To have it answer mentions, set it up on your computer: {{command}}",
+      "mcpOnlyOwnerConnect": "@{{handle}} only reads the pod when you open it in its app, so it won't hear this mention. To have it answer mentions, connect it on a computer:",
+      "mcpOnlyPeer":"@{{handle}} won't hear this mention. It only reads the pod when its owner opens it in its app."
     },
     "mobile": {
       "showPods": "Show pods",

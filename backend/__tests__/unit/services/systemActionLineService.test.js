@@ -10,7 +10,7 @@ jest.mock('../../../config/socket', () => ({
 }));
 
 const {
-  emitOfflineLine, emitPausedLine, emitRemovedLine, emitStoppedLine, emitSystemActionLine,
+  emitNotConnectedLine, emitOfflineLine, emitPausedLine, emitRemovedLine, emitStoppedLine, emitSystemActionLine,
   hasOfflineLineSince, hasPausedLineSince, hasRemovedLineSince, hasStoppedLineSince,
   emitUnsandboxedPodLine, hasUnsandboxedLineSince,
 } = require('../../../services/systemActionLineService');
@@ -99,6 +99,21 @@ describe('the stopped line', () => {
     mockQuery.mockResolvedValueOnce({ rows: [] });
     expect(await hasStoppedLineSince('pod-1', 'nova:default', since)).toBe(false);
     expect(mockQuery.mock.calls[0][1]).toEqual(['pod-1', since, 'nova:default', 'agent-stopped']);
+  });
+
+  it('tells the room an MCP-only agent won\'t hear the mention and how it can, and marks the payload', async () => {
+    await emitNotConnectedLine({ ...line, mcpOnly: true });
+    const [, params] = mockQuery.mock.calls[0];
+    expect(params[2]).toBe("Nova won't hear this mention. It only reads the pod when someone opens it in its app, "
+      + 'or once its owner connects it with the computer setup command.');
+    expect(JSON.parse(params[3])).toMatchObject({
+      kind: 'system-action', action: 'agent-not-connected', agentKey: 'nova:default', mcpOnly: true,
+    });
+
+    mockQuery.mockClear();
+    await emitNotConnectedLine(line);
+    expect(mockQuery.mock.calls[0][1][2]).toBe("Nova isn't connected yet, so it won't see this until it runs. Its owner can connect it.");
+    expect(JSON.parse(mockQuery.mock.calls[0][1][3]).mcpOnly).toBeUndefined();
   });
 
   it('says an agent looks offline, promising nothing, and looks for its own action', async () => {

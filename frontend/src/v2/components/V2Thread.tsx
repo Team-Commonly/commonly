@@ -112,6 +112,8 @@ interface AgentStateRow {
   deliveryError?: { at: string; kind: 'http' | 'timeout' | 'network' | 'refused'; status?: number };
   /** F515: why a never-connected agent's first run stopped, as the code it reported. */
   listenReason?: { reason: string; harness: string | null };
+  /** Never connected, but its key was used over MCP: it reads when opened in its app, never on a mention. */
+  mcpOnly?: boolean;
 }
 const REACH_IS_ACTIVE = new Set<AgentReachState>(['listening', 'reachable']);
 

@@ -835,7 +835,7 @@ router.get('/:podId/agent-states', agentStatesRateLimit, auth, async (req: AuthR
     }));
     const agentUsers = await User.find({ isBot: true, $or: identityFilters })
       .select('botMetadata.agentName botMetadata.instanceId botMetadata.machineId agentRuntimeTokens.lastListenedAt '
-        + 'botMetadata.harnessMissing botMetadata.listenBlocked')
+        + 'agentRuntimeTokens.lastMcpSeenAt botMetadata.harnessMissing botMetadata.listenBlocked')
       .lean();
     const userTokensByIdentity = new Map<string, Array<{ lastListenedAt?: Date }>>();
     const machineByIdentity = new Map<string, unknown>();

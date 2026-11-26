@@ -56,3 +56,131 @@ describe('pending events past the window', () => {
     expect((listed || []).map((e) => String(e._id))).not.toContain(String(old));
   });
 });
+
+// An agent that never listens (a key never used, or one used only over MCP)
+// leaves a person's mention to wait out the window. It expires with the
+// unanswered line, and an MCP-only agent's first_contact is retired too.
+describe('expiry for an agent that never listens', () => {
+  const User = require('../../models/User');
+  const unanswered = require('../../services/unansweredMentionService');
+
+  beforeAll(async () => { await setupMongoDb(); });
+  afterAll(async () => { await closeMongoDb(); });
+  beforeEach(async () => {
+    await clearMongoDb();
+    jest.spyOn(console, 'warn').mockImplementation(() => {});
+  });
+  afterEach(() => jest.restoreAllMocks());
+
+  const bot = (agentName, tokens) => User.create({
+    username: `${agentName}-bot`,
+    email: `${agentName}@agents.test`,
+    password: 'x'.repeat(12),
+    isBot: true,
+    botMetadata: { agentName, instanceId: 'default' },
+    agentRuntimeTokens: tokens,
+  });
+  const eventFor = async (agentName, type, ageMs) => {
+    const row = await AgentEvent.create({
+      agentName, instanceId: 'default', podId: POD, type, payload: {},
+    });
+    const at = new Date(Date.now() - ageMs);
+    await AgentEvent.collection.updateOne({ _id: row._id }, { $set: { createdAt: at, updatedAt: at } });
+    return row._id;
+  };
+
+  test('a person\'s mention that expires unclaimed gets the unanswered line and is marked told', async () => {
+    const note = jest.spyOn(unanswered, 'noteUnansweredMention').mockResolvedValue(true);
+    const old = await event('chat.mention', 8 * DAY);
+
+    const result = await AgentEventService.garbageCollect({});
+
+    expect(note).toHaveBeenCalledTimes(1);
+    expect(String(note.mock.calls[0][0]._id)).toBe(String(old));
+    const row = await AgentEvent.findById(old).lean();
+    expect(row.status).toBe('expired');
+    expect(row.unansweredNoticeAt).toBeInstanceOf(Date);
+    expect(result.expiredPending).toBe(1);
+  });
+
+  test('a row whose person was already told gets no second line; no line owed means no mark', async () => {
+    const note = jest.spyOn(unanswered, 'noteUnansweredMention').mockResolvedValue(false);
+    const told = await event('chat.mention', 8 * DAY);
+    await AgentEvent.collection.updateOne({ _id: told }, { $set: { unansweredNoticeAt: new Date() } });
+    const silent = await event('dm.message', 8 * DAY);
+    const heartbeat = await event('heartbeat', 8 * DAY);
+
+    const result = await AgentEventService.garbageCollect({});
+
+    expect(note.mock.calls.map(([row]) => String(row._id))).toEqual([String(silent)]);
+    expect(await statusOf(told)).toBe('expired');
+    expect(await statusOf(heartbeat)).toBe('expired');
+    expect((await AgentEvent.findById(silent).lean()).unansweredNoticeAt).toBeFalsy();
+    expect(result.expiredPending).toBe(3);
+  });
+
+  test('a person\'s row past the batch waits for the next pass instead of expiring in silence; a kernel wake owes no line', async () => {
+    const note = jest.spyOn(unanswered, 'noteUnansweredMention').mockResolvedValue(true);
+    const rows = [];
+    for (let i = 0; i < 51; i += 1) {
+      // eslint-disable-next-line no-await-in-loop
+      rows.push(await event('chat.mention', 8 * DAY + (51 - i) * 1000));
+    }
+    const kernel = await AgentEvent.create({
+      agentName: 'maya', instanceId: 'default', podId: POD, type: 'chat.mention', payload: { triggerAuthor: 'kernel' },
+    });
+    const at = new Date(Date.now() - 9 * DAY);
+    await AgentEvent.collection.updateOne({ _id: kernel._id }, { $set: { createdAt: at, updatedAt: at } });
+
+    await AgentEventService.garbageCollect({});
+
+    expect(note).toHaveBeenCalledTimes(50);
+    expect(await statusOf(rows[50])).toBe('pending');
+    expect(await statusOf(kernel._id)).toBe('expired');
+    expect(note.mock.calls.map(([row]) => String(row._id))).not.toContain(String(kernel._id));
+
+    await AgentEventService.garbageCollect({});
+    expect(await statusOf(rows[50])).toBe('expired');
+    expect(note).toHaveBeenCalledTimes(51);
+  });
+
+  test('a failed line still expires the row', async () => {
+    jest.spyOn(unanswered, 'noteUnansweredMention').mockRejectedValue(new Error('pg down'));
+    const old = await event('thread.mention', 8 * DAY);
+    await AgentEventService.garbageCollect({});
+    expect(await statusOf(old)).toBe('expired');
+  });
+
+  test('an MCP-only agent\'s old first_contact expires; a never-used or listened key keeps it pending', async () => {
+    const seen = new Date(Date.now() - DAY);
+    await bot('desk', [{ tokenHash: 'a', lastUsedAt: seen, lastMcpSeenAt: seen }]);
+    await bot('fresh', [{ tokenHash: 'b' }]);
+    await bot('both', [{ tokenHash: 'c', lastMcpSeenAt: seen, lastListenedAt: seen }]);
+    const mcpOnly = await eventFor('desk', 'first_contact', 8 * DAY);
+    const recentMcpOnly = await eventFor('desk', 'first_contact', 2 * DAY);
+    const neverUsed = await eventFor('fresh', 'first_contact', 8 * DAY);
+    const listened = await eventFor('both', 'first_contact', 8 * DAY);
+
+    await AgentEventService.garbageCollect({});
+
+    expect(await statusOf(mcpOnly)).toBe('expired');
+    expect(await statusOf(recentMcpOnly)).toBe('pending');
+    expect(await statusOf(neverUsed)).toBe('pending');
+    expect(await statusOf(listened)).toBe('pending');
+  });
+
+  test('older first_contacts that stay pending never crowd out an MCP-only one', async () => {
+    const seen = new Date(Date.now() - DAY);
+    await bot('desk', [{ tokenHash: 'a', lastMcpSeenAt: seen }]);
+    for (let i = 0; i < 60; i += 1) {
+      // eslint-disable-next-line no-await-in-loop
+      await eventFor(`idle-${i}`, 'first_contact', 20 * DAY);
+    }
+    const mcpOnly = await eventFor('desk', 'first_contact', 8 * DAY);
+
+    await AgentEventService.garbageCollect({});
+
+    expect(await statusOf(mcpOnly)).toBe('expired');
+    expect(await AgentEvent.countDocuments({ type: 'first_contact', status: 'pending' })).toBe(60);
+  });
+});
