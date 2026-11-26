@@ -420,6 +420,36 @@ duplicate check and the invitation's read are `findPageMongo` (each decides a
 write), and the response re-read is `findById`. `pg` refuses the writes and the
 list until step 4, before any write.
 
+## Postgres-only table: hand_backs
+
+`hand_backs` (`0029`, ADR-037 Phase 1) is new state, so it has no Mongo
+model, no store mode and no dual-write phase (ADR-034 D4). Mongo keeps only
+the two `DecisionRequest` cards a record drives. The columns:
+
+- `id`, a server-made UUID;
+- `pod_id`, `thread_root_id`, `task_id`;
+- the author: `author_agent_user_id`, `agent_name`, `instance_id`;
+- the agent's two owner sources, each null when it isn't a person:
+  `owner_installed_by`, `owner_user_id`;
+- JSONB `asked`, carrying the server-derived requester and its provenance;
+- `reviewer_user_id`;
+- JSONB `plan`, `plan_decision_id` and JSONB `plan_ruling`;
+- JSONB `next`;
+- the three JSONB result fields: `changed`, `checked`, `unverified`;
+- `handback_decision_id` and JSONB `handback_ruling`;
+- `supersedes`, `status` and JSONB `withdrawn_by`;
+- timestamps `created_at`, `updated_at`, `plan_ruled_at`, `handed_back_at`,
+  `ruled_at` and `withdrawn_at`;
+- `received_enqueued_at`, set once after `handback.received` is queued.
+
+Indexes: `(pod_id, created_at DESC)` and `(status)`.
+
+Only `repositories/handBackRepository.ts` reads and writes it, and every state
+change there is a compare-and-set on `status`. Card ids attach with
+`… decision_id IS NULL` whatever the status. `received_enqueued_at` is set
+with `WHERE received_enqueued_at IS NULL`. `0029` must be applied after
+`0028`, never before it.
+
 For the next aggregate, expose its domain operations, keep Mongoose queries
 inside its repository, and return plain values. Do not expose `find`, `save`,
 `populate`, or a generic query builder. Extract without changing storage first,

@@ -192,6 +192,8 @@ const {
 } = require('../services/agentMemoryService');
 const AgentAskService = require('../services/agentAskService');
 const DecisionRequestService = require('../services/decisionRequestService');
+const HandBackService = require('../services/handBackService');
+const HandBackRepository = require('../repositories/handBackRepository');
 const DMService = require('../services/dmService');
 const { isHostedRoomRefusal } = require('../services/hostedRoomRefusal');
 const ChatSummarizerService = require('../services/chatSummarizerService');
@@ -4862,6 +4864,84 @@ router.post('/decisions', phase4RateLimit, agentRuntimeAuth, async (req: any, re
     }
     logOutboundFailure('POST /decisions error:', error);
     return res.status(500).json({ message: 'Failed to request a decision' });
+  }
+});
+
+/**
+ * ADR-037 (F654) hand-backs: CAP convenience routes. Identity is the runtime
+ * token's `req.agentUser._id`, never a body field; the service enforces the
+ * reviewer and requester rules before anything is posted.
+ */
+const handBackAuthor = (req: any, podId: string) => {
+  const installation = resolveInstallationForPod(req.agentInstallations, req.agentInstallation, podId);
+  return {
+    agentUserId: String(req.agentUser._id),
+    agentName: String(installation.agentName).toLowerCase(),
+    instanceId: String(installation.instanceId || 'default').toLowerCase(),
+    displayName: installation.displayName,
+    installationConfig: installation.config || null,
+  };
+};
+const handBackPodScope = (req: any) => (podId: string): boolean => (
+  ensurePodMatch(req.agentInstallations || req.agentInstallation, podId, req.agentAuthorizedPodIds)
+);
+const handBackFailure = (res: any, error: any, label: string) => {
+  if (error instanceof HandBackService.HandBackError
+    || error instanceof DecisionRequestService.DecisionRequestError) {
+    return res.status(error.status).json({ message: error.message, code: error.code, ...(error.detail || {}) });
+  }
+  if (error?.code === 'hand_back_store_unavailable') {
+    return res.status(503).json({ message: 'Hand-backs need PostgreSQL', code: error.code });
+  }
+  logOutboundFailure(`${label} error:`, error);
+  return res.status(500).json({ message: 'Failed to process the hand-back' });
+};
+
+// POST /pods/:podId/hand-backs: send a plan to one named reviewer (commonly_send_plan).
+router.post('/pods/:podId/hand-backs', phase4RateLimit, agentRuntimeAuth, async (req: any, res: any) => {
+  try {
+    const { podId } = req.params;
+    if (!handBackPodScope(req)(podId)) {
+      return res.status(403).json({ message: 'Agent token not authorized for this pod' });
+    }
+    const installation = resolveInstallationForPod(req.agentInstallations, req.agentInstallation, podId);
+    if (!req.agentUser?._id || !installation?.agentName) {
+      return res.status(403).json({ message: 'Could not resolve agent identity' });
+    }
+    const result = await HandBackService.sendPlan({ author: handBackAuthor(req, podId), podId, body: req.body || {} });
+    return res.status(201).json(result);
+  } catch (error: any) {
+    return handBackFailure(res, error, 'POST /pods/:podId/hand-backs');
+  }
+});
+
+// POST /hand-backs/:id/hand-back: report the finished work (commonly_hand_back).
+router.post('/hand-backs/:id/hand-back', phase4RateLimit, agentRuntimeAuth, async (req: any, res: any) => {
+  try {
+    if (!req.agentUser?._id) return res.status(403).json({ message: 'Could not resolve agent identity' });
+    const record = await HandBackRepository.findById(String(req.params.id || ''));
+    if (!record || !handBackPodScope(req)(record.podId)) {
+      return res.status(404).json({ message: 'Hand-back not found', code: 'hand_back_not_found' });
+    }
+    const result = await HandBackService.handBack({
+      author: handBackAuthor(req, record.podId),
+      authorizedPod: handBackPodScope(req),
+      id: record.id,
+      body: req.body || {},
+    });
+    return res.json(result);
+  } catch (error: any) {
+    return handBackFailure(res, error, 'POST /hand-backs/:id/hand-back');
+  }
+});
+
+// GET /hand-backs/:id: the full record, for any agent installed in its pod (commonly_get_hand_back).
+router.get('/hand-backs/:id', phase4RateLimit, agentRuntimeAuth, async (req: any, res: any) => {
+  try {
+    const record = await HandBackService.getForAgent(String(req.params.id || ''), handBackPodScope(req));
+    return res.json({ handBack: record });
+  } catch (error: any) {
+    return handBackFailure(res, error, 'GET /hand-backs/:id');
   }
 });
 

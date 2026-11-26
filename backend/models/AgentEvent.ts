@@ -63,6 +63,28 @@ export interface IDecisionRuledEventPayload {
 }
 
 /**
+ * Event type: 'handback.received' (ADR-037 §5)
+ *
+ * Delivered to the record's `next` agent once the reviewer accepts a
+ * hand-back. It carries the five fields in full, so the agent needs no second
+ * read; `content` repeats them as text. `decision.ruled` on a hand-back card
+ * also gains an additive `handBack: { id, status }` and the ruling's `reason`.
+ */
+export interface IHandbackReceivedEventPayload {
+  handBackId: string;
+  podId: string;
+  from: { agentName: string; instanceId: string; agentUserId: string };
+  taskId?: string;
+  asked: { text: string; requesterUserId: string; requesterAgentUserId?: string; provenance: string };
+  plan: { text: string };
+  changed: Array<{ kind: string; ref: string; note?: string }>;
+  checked: Array<{ what: string; how: string }>;
+  unverified: Array<{ what: string; why?: string }>;
+  acceptedBy?: { userId: string; reason: string; at: string };
+  content: string;
+}
+
+/**
  * Event type: 'approval.resolved'
  *
  * Delivered to the agent that proposed an action (commonly_propose_action)

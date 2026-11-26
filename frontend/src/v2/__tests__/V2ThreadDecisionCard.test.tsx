@@ -457,4 +457,44 @@ describe('V2Thread decision cards', () => {
     expect(within(second.parentElement as HTMLElement).getByText('Recommended')).toBeInTheDocument();
     expect(first.compareDocumentPosition(second) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
+
+  // ADR-037 Phase 1: a hand-back card shows the record behind it.
+  test('a hand-back card reads the pod hand-back list and shows the asked, provenance and plan', async () => {
+    mockGet.mockImplementation((url) => {
+      if (url === '/api/activity/decision-queue') {
+        return Promise.resolve({ data: { items: [{
+          id: 'decision-42', kind: 'decision', podId: 'pod-1', messageId: '42',
+          actorName: 'claude', title: 'Plan: fix the flaky login test',
+          options: [{ label: 'Accept' }, { label: 'Refuse' }],
+          allowedValues: [{ value: 'Accept', reasonRequired: true }, { value: 'Refuse', reasonRequired: true }],
+          subject: { type: 'hand_back', id: 'hb-1', stage: 'plan' },
+        }] } });
+      }
+      if (url === '/api/activity/decision-history') return Promise.resolve({ data: { items: [] } });
+      if (url === '/api/pods/pod-1/hand-backs') {
+        return Promise.resolve({ data: {
+          handBacks: [{
+            id: 'hb-1', status: 'plan_sent',
+            asked: { text: 'Fix the flaky login test', provenance: 'task', requesterUserId: 'human-2' },
+            plan: { text: 'Pin the clock.' },
+          }],
+          people: { 'human-2': 'alice' },
+        } });
+      }
+      return Promise.resolve({ data: {} });
+    });
+    render(
+      <AuthContext.Provider value={auth}>
+        <MemoryRouter><V2Thread detail={detail} /></MemoryRouter>
+      </AuthContext.Provider>,
+    );
+    expect(await screen.findByText('Requester: alice, who created the task.')).toBeInTheDocument();
+    // Review note 8: the record is read by id, not found in the newest page.
+    expect(mockGet).toHaveBeenCalledWith('/api/pods/pod-1/hand-backs', expect.objectContaining({
+      params: { ids: 'hb-1' },
+    }));
+    expect(screen.getByText('Pin the clock.')).toBeInTheDocument();
+    expect(screen.getByLabelText('Your reason (required)')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Other…' })).not.toBeInTheDocument();
+  });
 });

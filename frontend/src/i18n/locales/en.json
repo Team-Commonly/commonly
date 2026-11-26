@@ -447,7 +447,26 @@
       "sendOther": "Send ruling",
       "ruled": "{{by}} ruled: {{value}}",
       "ruledShort": "ruled",
-      "actionFailed": "That ruling could not be saved. Try again."
+      "actionFailed": "That ruling could not be saved. Try again.",
+      "reasonLabel": "Your reason (required)",
+      "reasonPlaceholder": "Say why. The agent reads this.",
+      "reasonRequired": "Write a reason first.",
+      "valueNotAllowed": "That choice is not allowed on this card.",
+      "ruledWithReason": "{{by}} ruled: {{value}}. {{reason}}",
+      "closed": "This card was withdrawn. Nothing to rule.",
+      "movedOn": "This card has moved on. Reload to see where it stands.",
+      "handBack": {
+        "asked": "Asked",
+        "requesterMessage": "Requester: {{name}}, from the message that asked.",
+        "requesterTask": "Requester: {{name}}, who created the task.",
+        "requesterOwner": "Requester: {{name}}, the agent's owner. No source message.",
+        "plan": "Plan",
+        "changed": "Changed",
+        "checked": "Checked",
+        "unverified": "Not verified",
+        "nothingUnverified": "Nothing left unverified, says the agent.",
+        "next": "Next: {{agent}}"
+      }
     },
     "mention": {
       "acknowledge": "Acknowledge",

@@ -247,11 +247,18 @@ app.use('/api', attributionRoutes);
 app.use('/api/pods', require('./routes/grants').podGrantsRouter); // tools plan §6: GET /api/pods/:podId/grants, the page's list
 app.use('/api/pods', require('./routes/runTraces'));
 app.use('/api/pods', require('./routes/podRecords')); // TASK-513: GET /api/pods/:podId/record/tasks/:taskId
+app.use('/api/pods', require('./routes/handBacks').podHandBacksRouter); // ADR-037: GET /api/pods/:podId/hand-backs
 app.use('/api/pods', podRoutes);
 app.use('/api/billing', require('./routes/billing'));
 app.use('/api/messages', messageRoutes);
 // ADR-020 D3: approval-card decisions (human-only; see routes/approvals.ts)
 app.use('/api/approvals', require('./routes/approvals'));
+// ADR-037 (F654): withdraw a hand-back (dualAuth; see routes/handBacks.ts)
+app.use('/api/hand-backs', require('./routes/handBacks'));
+// ADR-037 §2: a decision card's subject check registers at boot, before any
+// ruling path can run, never on a module's first import. A card whose subject
+// type has no registration is refused, so this must not be lazy.
+require('./services/handBackService').registerHandBackSubject();
 app.use('/api/uploads', uploadsRoutes);
 // Direction C PR 5: every file and page shared in your pods (dualAuth; see routes/artifacts.ts)
 app.use('/api/artifacts', require('./routes/artifacts'));

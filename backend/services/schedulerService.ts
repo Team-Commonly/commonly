@@ -694,6 +694,26 @@ class SchedulerService {
       { scheduled: false, timezone: 'UTC' },
     );
 
+    // ADR-037 §3: a hand-back whose card was ruled but whose copy failed
+    // catches up here, and a card still pending under a withdrawn record is
+    // closed. Both steps are compare-and-sets, so a rerun changes nothing.
+    const handBackReconcileJob: CronJob = cron.schedule(
+      '*/5 * * * *',
+      async () => {
+        try {
+          // eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
+          const { sweepHandBacks } = require('./handBackService');
+          const result = await sweepHandBacks();
+          if (result.applied || result.closed) {
+            console.log(`[hand-back] sweep applied=${result.applied} closed=${result.closed}`);
+          }
+        } catch (error) {
+          logOutboundFailure('[hand-back] scheduled sweep failed:', error);
+        }
+      },
+      { scheduled: false, timezone: 'UTC' },
+    );
+
     // ADR-034 D3: re-copy (or finish deleting) every flagged document of each
     // model in dual or pg-read. A model in mongo or pg costs nothing here; in
     // dual it is one query on the sparse pgPending index. Lease-free: each
@@ -878,6 +898,7 @@ class SchedulerService {
       installableReconcileJob,
       registryDriftJob,
       decisionCardReconcileJob,
+      handBackReconcileJob,
       dualStoreRepairJob,
       approvalToolCallSweepJob,
       spawnCredentialReapJob,

@@ -22,6 +22,8 @@ const fileBases = {
   grants: '/api/grants',
   mcpGrants: '/api/mcp/grants',
   podRecords: '/api/pods',
+  // Its `podRouter` (GET /api/pods/:podId/hand-backs) is human-only `auth`.
+  handBacks: '/api/hand-backs',
 };
 const wrappers = {
   agentsRuntime: ['agentRuntimeAuth', 'dualAuth'],
@@ -31,6 +33,7 @@ const wrappers = {
   github: ['dualAuth'], tasksApi: ['auth'],
   grants: ['agentRuntimeAuth', 'dualAuth'], mcpGrants: ['agentRuntimeAuth'],
   podRecords: ['auth'],
+  handBacks: ['dualAuth'],
 };
 
 test('every runtime-token acceptor is in the route table', () => {

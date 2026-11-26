@@ -2,6 +2,7 @@ import crypto from 'crypto';
 import type { DecisionCardOption, DecisionRelayCard } from './decisionCardRelay';
 import { escapeRegExp } from '../utils/escape';
 import { rulerNameOf, rulerNamesFor } from './decisionRulerName';
+import { getDecisionSubject } from './decisionSubjectRegistry';
 
 // eslint-disable-next-line global-require
 const DecisionRequest = require('../models/DecisionRequest');
@@ -62,12 +63,25 @@ interface RequestDecisionOptions {
   context?: string;
   /** 1 to MAX_DECIDERS human members of the pod; only they may rule. */
   deciderUserIds?: unknown;
+  /**
+   * ADR-037 §2 card extensions. Internal callers only: the agent route takes a
+   * closed set of body fields, so an agent can never set these.
+   */
+  internal?: {
+    allowedValues?: Array<{ value: string; reasonRequired: boolean }>;
+    deciderFallback?: 'members' | 'none';
+    subject?: { type: string; id: string; stage: string };
+    /** Merged into the source message's metadata beside `source`. */
+    metadata?: Record<string, unknown>;
+  };
 }
 
 interface ChooseDecisionOptions {
   decisionId: string;
   callerUserId: string;
   value: string;
+  /** ADR-037: the person's reason. Required where the card's allowed value says so. */
+  reason?: unknown;
   /** Internal provenance; HTTP callers are forced to workspace below. */
   origin?: DecisionOrigin;
 }
@@ -255,13 +269,16 @@ export const requestDecision = async (input: RequestDecisionOptions): Promise<Re
     ...(deciders ? { deciders } : {}),
   };
 
+  const internal = input.internal || {};
   const posted = await AgentMessageService.postMessage({
     agentName,
     instanceId,
     displayName: input.displayName,
     podId,
     content: formatDecisionMessage(title, question, options, context, deciders),
-    metadata: { source: 'decision-request' },
+    // `source` is the kernel's own marker and stays last, so a caller's
+    // metadata can add a kind but never relabel the message.
+    metadata: { ...(internal.metadata || {}), source: 'decision-request' },
     relayCard,
     threadRootId,
     threadIsDeliberate: true,
@@ -289,6 +306,9 @@ export const requestDecision = async (input: RequestDecisionOptions): Promise<Re
     messageId,
     ...(threadRootId ? { threadRootId } : {}),
     ...(deciders ? { deciders } : {}),
+    ...(internal.allowedValues?.length ? { allowedValues: internal.allowedValues } : {}),
+    ...(internal.deciderFallback ? { deciderFallback: internal.deciderFallback } : {}),
+    ...(internal.subject ? { subject: internal.subject } : {}),
   });
   // eslint-disable-next-line global-require
   const { recordDecision } = require('./attentionItemService');
@@ -311,8 +331,14 @@ const decisionPayload = (row: any, byName?: string): Record<string, unknown> => 
   ...(row.deciders?.length ? {
     deciders: row.deciders.map((decider: any) => ({ userId: String(decider.userId), username: decider.username })),
   } : {}),
+  ...(row.allowedValues?.length ? {
+    allowedValues: row.allowedValues.map((allowed: any) => ({
+      value: allowed.value, reasonRequired: Boolean(allowed.reasonRequired),
+    })),
+  } : {}),
   ruling: row.ruling ? {
     value: row.ruling.value,
+    ...(row.ruling.reason ? { reason: row.ruling.reason } : {}),
     by: row.ruling.byUsername,
     ...(byName || row.ruling.byUsername ? { byName: byName || row.ruling.byUsername } : {}),
     at: row.ruling.at,
@@ -361,7 +387,10 @@ const ruledDecisionContext = (decision: any, pick: string): Record<string, unkno
   };
 };
 
-const enqueueRuledDecisionEvent = async (decision: any): Promise<void> => {
+const enqueueRuledDecisionEvent = async (
+  decision: any,
+  extra: Record<string, unknown> = {},
+): Promise<void> => {
   const ruling = decision?.ruling;
   if (!ruling?.value || !ruling?.byUserId || !ruling?.at || !ruling?.messageId) {
     throw new Error('Ruled decision is missing its delivery payload');
@@ -382,7 +411,14 @@ const enqueueRuledDecisionEvent = async (decision: any): Promise<void> => {
       ruledAt: new Date(ruling.at).toISOString(),
       rulingMessageId: String(ruling.messageId),
       podId: String(decision.podId),
+      // ADR-037: the person's reason, when the ruling carries one.
+      ...(ruling.reason ? { reason: String(ruling.reason) } : {}),
       ...ruledDecisionContext(decision, String(ruling.value)),
+      // Additive fields from the card's subject (ADR-037 §5), never overriding
+      // the kernel's own.
+      ...Object.fromEntries(Object.entries(extra).filter(([key]) => !(key in {
+        decisionId: 1, pick: 1, ruledBy: 1, ruledAt: 1, rulingMessageId: 1, podId: 1, reason: 1,
+      }))),
     },
   });
 };
@@ -422,6 +458,7 @@ const postRulingReply = async (
   row: any,
   callerUserId: string,
   value: string,
+  reason?: string,
 ): Promise<{ messageId: string; message: any }> => {
   await requirePgReply(String(row.podId), callerUserId);
   let resolvedThreadRootId: number | null = null;
@@ -441,7 +478,8 @@ const postRulingReply = async (
   const created = await PGMessage.create(
     String(row.podId),
     callerUserId,
-    value,
+    // The reason is part of the visible ruling, so the thread shows why.
+    reason ? `${value}: ${reason}` : value,
     'text',
     String(row.messageId),
     null,
@@ -464,7 +502,14 @@ export const chooseDecision = async (
 ): Promise<{ status: number; body: Record<string, unknown> }> => {
   const decisionId = cleanText(input.decisionId, 'decisionId', 128);
   const callerUserId = cleanText(input.callerUserId, 'callerUserId', 128);
-  const value = cleanText(input.value, 'value', 2000);
+  let value = cleanText(input.value, 'value', 2000);
+  if (input.reason !== undefined && input.reason !== null && typeof input.reason !== 'string') {
+    return { status: 400, body: { error: 'reason must be a string', code: 'invalid_reason' } };
+  }
+  const reason = typeof input.reason === 'string' ? input.reason.trim() : '';
+  if (reason.length > 2000) {
+    return { status: 400, body: { error: 'reason must be at most 2000 characters', code: 'invalid_reason' } };
+  }
 
   const row = await DecisionRequest.findById(decisionId);
   if (!row) return { status: 404, body: { error: 'Decision request not found' } };
@@ -481,18 +526,77 @@ export const chooseDecision = async (
   if (row.status === 'ruled') {
     return { status: 409, body: { error: 'Decision already ruled', decision: await standingPayload(row) } };
   }
+  // ADR-037 §2: only a pending card can be ruled. A closed card was withdrawn.
+  if (row.status !== 'pending') {
+    return {
+      status: 409,
+      body: { error: 'This decision was closed without a ruling', code: 'decision_closed', decision: decisionPayload(row) },
+    };
+  }
   // A card that names its deciders is theirs to rule; anyone else can read it.
   // Once none of them is still in the pod, any human member may rule, so the
-  // card can't be stranded.
+  // card can't be stranded; unless the card set `deciderFallback: 'none'`
+  // (ADR-037 §2), when nobody else may rule and the card waits.
   const presentDeciders = (row.deciders || [])
     .filter((decider: any) => isListedPodMember(pod, String(decider.userId)));
-  if (presentDeciders.length
+  const noFallback = row.deciderFallback === 'none' && (row.deciders || []).length > 0;
+  if ((presentDeciders.length || noFallback)
     && !presentDeciders.some((decider: any) => String(decider.userId) === String(callerUserId))) {
     return {
       status: 403,
       body: { error: 'This decision is for someone else to rule', code: 'not_a_decider', decision: await standingPayload(row) },
     };
   }
+
+  // ADR-037 §2: a card that lists its allowed values takes only those, and a
+  // value marked reasonRequired takes a reason. Every ruling path (the web
+  // route, the Slack and Telegram replies) reaches this one check.
+  const allowedValues: Array<{ value: string; reasonRequired?: boolean }> = row.allowedValues || [];
+  if (allowedValues.length) {
+    const match = allowedValues.find((allowed) => (
+      String(allowed.value).toLocaleLowerCase() === value.toLocaleLowerCase()
+    ));
+    if (!match) {
+      return {
+        status: 400,
+        body: {
+          error: `This decision takes one of: ${allowedValues.map((allowed) => allowed.value).join(', ')}`,
+          code: 'value_not_allowed',
+          allowedValues: allowedValues.map((allowed) => allowed.value),
+        },
+      };
+    }
+    value = String(match.value);
+    if (match.reasonRequired && !reason) {
+      return { status: 400, body: { error: 'This decision needs a reason with the ruling', code: 'reason_required' } };
+    }
+  }
+
+  // ADR-037 §2: the subject link. The check that the subject is still at the
+  // card's stage is registered by the subject's own service at boot. No
+  // registration means the ruling is refused, never waved through.
+  const subjectType = row.subject?.type;
+  const subject = subjectType ? getDecisionSubject(subjectType) : null;
+  if (subjectType && !subject) {
+    return {
+      status: 409,
+      body: { error: 'This decision cannot be ruled right now', code: 'subject_check_missing' },
+    };
+  }
+  const subjectStageHolds = async (decision: any): Promise<boolean> => {
+    if (!subject) return true;
+    try {
+      return (await subject.checkStage(decision)) === true;
+    } catch (error) {
+      console.warn('[decision-request] subject stage check failed:', (error as Error).message);
+      return false;
+    }
+  };
+  const stageMismatch = {
+    status: 409,
+    body: { error: 'What this decision is about has moved on', code: 'subject_stage_mismatch' },
+  };
+  if (!(await subjectStageHolds(row))) return stageMismatch;
 
   const now = new Date();
   const lockToken = crypto.randomUUID();
@@ -513,12 +617,28 @@ export const chooseDecision = async (
     if (current?.status === 'ruled') {
       return { status: 409, body: { error: 'Decision already ruled', decision: await standingPayload(current) } };
     }
+    if (current?.status === 'closed') {
+      return {
+        status: 409,
+        body: { error: 'This decision was closed without a ruling', code: 'decision_closed', decision: decisionPayload(current) },
+      };
+    }
     return { status: 409, body: { error: 'Decision is being ruled; retry shortly' } };
+  }
+
+  // Checked again under the lock, right before the reply is posted: a
+  // withdraw may have landed while the lock was being taken.
+  if (subject && !(await subjectStageHolds(claimed))) {
+    await DecisionRequest.updateOne(
+      { _id: claimed._id, status: 'pending', 'rulingLock.token': lockToken },
+      { $unset: { rulingLock: 1 } },
+    );
+    return stageMismatch;
   }
 
   let rulingReply: { messageId: string; message: any };
   try {
-    rulingReply = await postRulingReply(claimed, callerUserId, value);
+    rulingReply = await postRulingReply(claimed, callerUserId, value, reason || undefined);
   } catch {
     await DecisionRequest.updateOne(
       { _id: claimed._id, status: 'pending', 'rulingLock.token': lockToken },
@@ -540,6 +660,7 @@ export const chooseDecision = async (
           byUsername: caller.username || 'Human',
           at: ruledAt,
           messageId: rulingReply.messageId,
+          ...(reason ? { reason } : {}),
         },
       },
       $unset: { rulingLock: 1 },
@@ -586,8 +707,19 @@ export const chooseDecision = async (
   // eslint-disable-next-line global-require
   const { resolve } = require('./attentionItemService');
   await resolve('decision_request', ruled._id);
+  // ADR-037 §3: the subject copies the ruling into its own record. The card
+  // is the source of truth; a failure here is caught up by the subject's
+  // read-path reconcile and sweep, so it never undoes or blocks the ruling.
+  let subjectExtra: Record<string, unknown> = {};
+  if (subject?.onRuled) {
+    try {
+      subjectExtra = (await subject.onRuled(ruled)) || {};
+    } catch (error) {
+      console.warn('[decision-request] subject on-ruled hook failed:', (error as Error).message);
+    }
+  }
   try {
-    await enqueueRuledDecisionEvent(ruled);
+    await enqueueRuledDecisionEvent(ruled, subjectExtra);
   } catch (error) {
     // Keep the pre-TASK-130 chat.mention delivery as a failure-only fallback.
     // The typed event is the normal return contract; the fallback prevents a
@@ -727,10 +859,37 @@ export const chooseCardButton = async (
   });
 };
 
+/**
+ * ADR-037 §2: close a pending card without a ruling (its subject was
+ * withdrawn). Conditional on `pending`, so a card already ruled keeps its
+ * ruling, and a ruling still under its lock fails to finalize. Resolves the
+ * card's attention rows. True when this call closed it.
+ */
+export const closeDecision = async (decisionId: unknown): Promise<boolean> => {
+  const now = new Date();
+  // A ruling holding a live lock is mid-post: leave the card to it. If that
+  // ruling then fails its stage check it releases the lock, and the hand-back
+  // sweep retries this close.
+  const closed = await DecisionRequest.findOneAndUpdate(
+    {
+      _id: String(decisionId),
+      status: 'pending',
+      $or: [{ rulingLock: { $exists: false } }, { 'rulingLock.expiresAt': { $lt: now } }],
+    },
+    { $set: { status: 'closed', closedAt: now }, $unset: { rulingLock: 1 } },
+    { new: true },
+  );
+  if (!closed) return false;
+  // eslint-disable-next-line global-require
+  const { resolve } = require('./attentionItemService');
+  await resolve('decision_request', closed._id);
+  return true;
+};
+
 export default {
-  requestDecision, chooseDecision, chooseCardButton, cardChoiceState, normalizeOptions, normalizeDecisionClass, DecisionRequestError,
+  requestDecision, chooseDecision, closeDecision, chooseCardButton, cardChoiceState, normalizeOptions, normalizeDecisionClass, DecisionRequestError,
 };
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 module.exports = {
-  requestDecision, chooseDecision, chooseCardButton, cardChoiceState, normalizeOptions, normalizeDecisionClass, DecisionRequestError,
+  requestDecision, chooseDecision, closeDecision, chooseCardButton, cardChoiceState, normalizeOptions, normalizeDecisionClass, DecisionRequestError,
 };

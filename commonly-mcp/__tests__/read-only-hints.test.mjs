@@ -15,7 +15,7 @@ import { createServer } from '../src/server.js';
 import { buildTools } from '../src/tools.js';
 
 const READ_ONLY = [
-  'commonly_get_context', 'commonly_get_messages', 'commonly_get_posts',
+  'commonly_get_context', 'commonly_get_hand_back', 'commonly_get_messages', 'commonly_get_posts',
   'commonly_get_started', 'commonly_get_tasks', 'commonly_get_ui_card_catalogue',
   'commonly_list_artifacts', 'commonly_list_files', 'commonly_list_pods',
   'commonly_read_agent_memory', 'commonly_read_file', 'commonly_read_public_pr',

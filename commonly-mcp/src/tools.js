@@ -786,6 +786,70 @@ export const buildTools = (config, { onFailure } = {}) => {
         },
       }))),
     },
+    // ADR-037 (F654): review before the PR, and a hand-back a named person
+    // accepts or refuses. MCP-only in Phase 1; native and openclaw get nothing yet.
+    {
+      name: 'commonly_send_plan',
+      description: 'Before writing code for someone, send your plan to ONE named person in the pod to accept or refuse, with a reason. Pass `reviewerUserId` (the `userId` commonly_get_context lists for each member), `asked: { text, sourceMessageId?, taskId? }` and `plan` (your approach, in prose). Set `asked.sourceMessageId` to the id of the message that asked you for this work; it must be a message delivered to you, and Commonly reads who asked from it. Without it, `asked.taskId` names the board task, or Commonly falls back to your owner and the card says so. You never type who asked. The reviewer must be a person in the pod who is not the person who asked and not your owner; otherwise the call is refused (`reviewer_ineligible`). A pod with nobody else to review it answers `no_eligible_reviewer`: invite a reviewer into the pod, or, if one person\'s choice is enough, use commonly_request_decision instead. Optional `next: { agentName, instanceId? }` names an agent in the pod that continues once your hand-back is accepted; `supersedes` names a refused or withdrawn record this redoes; `threadRootId` keeps the card in a thread. Commonly posts the plan as one card; do not also post it with commonly_post_message. The ruling comes back as a `decision.ruled` event carrying the reviewer\'s `reason` and `handBack: { id, status }`. Start the work only after `status` is `plan_accepted`, then report it with commonly_hand_back. Returns `{ handBack: { id, status, decisionId, messageId } }`.',
+      inputSchema: reqWith({
+        podId: STRING,
+        reviewerUserId: STRING,
+        asked: reqWith({ text: STRING, sourceMessageId: STRING, taskId: STRING }, ['text']),
+        plan: STRING,
+        threadRootId: STRING,
+        next: reqWith({ agentName: STRING, instanceId: STRING }, ['agentName']),
+        supersedes: STRING,
+      }, ['podId', 'reviewerUserId', 'asked', 'plan']),
+      call: wrap(async ({
+        podId, reviewerUserId, asked, plan, threadRootId, next, supersedes,
+      }) => trackPost(podId, request(config, {
+        method: 'POST',
+        path: `/api/agents/runtime/pods/${encodeURIComponent(podId)}/hand-backs`,
+        body: {
+          reviewerUserId, asked, plan, threadRootId, next, supersedes,
+        },
+      }))),
+    },
+    {
+      name: 'commonly_hand_back',
+      description: 'Hand finished work back to the person who accepted your plan (commonly_send_plan), for them to accept or refuse with a reason. Only the agent that sent the plan can call it, and only once the plan is `plan_accepted`; a second call answers `stale_state`. Pass the record `id` and: `changed` (one or more `{ kind, ref, note? }`, kind one of pr, commit, file, message, url, e.g. the PR link), `checked` (`{ what, how }` for each thing you actually verified, and how) and `unverified` (`{ what, why? }` for everything you did NOT verify; required, pass [] only if truly nothing). Say what you checked and what you assumed; the reviewer reads the difference. These fields are written once. The ruling comes back as `decision.ruled`; on accept, any `next` agent receives `handback.received` with all five fields. Returns `{ handBack: { id, status, decisionId, messageId } }`.',
+      inputSchema: reqWith({
+        id: STRING,
+        changed: {
+          type: 'array', minItems: 1, maxItems: 20,
+          items: reqWith({ kind: { type: 'string', enum: ['pr', 'commit', 'file', 'message', 'url'] }, ref: STRING, note: STRING }, ['kind', 'ref']),
+        },
+        checked: { type: 'array', maxItems: 20, items: reqWith({ what: STRING, how: STRING }, ['what', 'how']) },
+        unverified: { type: 'array', maxItems: 20, items: reqWith({ what: STRING, why: STRING }, ['what']) },
+      }, ['id', 'changed', 'checked', 'unverified']),
+      call: wrap(async ({
+        id, changed, checked, unverified,
+      }) => request(config, {
+        method: 'POST',
+        path: `/api/agents/runtime/hand-backs/${encodeURIComponent(id)}/hand-back`,
+        body: { changed, checked, unverified },
+      })),
+    },
+    {
+      name: 'commonly_get_hand_back',
+      annotations: READ_ONLY,
+      description: 'Read one hand-back record by `id`: its status (plan_sent, plan_accepted, plan_refused, handed_back, accepted, refused or withdrawn), what was asked and who asked (with how Commonly knows), the plan, the reviewer, each ruling with its reason, and what was changed, checked and left unverified. Any agent in the record\'s pod can read it.',
+      inputSchema: reqWith({ id: STRING }, ['id']),
+      call: wrap(async ({ id }) => request(config, {
+        method: 'GET',
+        path: `/api/agents/runtime/hand-backs/${encodeURIComponent(id)}`,
+      })),
+    },
+    {
+      name: 'commonly_withdraw_hand_back',
+      description: 'Withdraw a hand-back record you sent, before it is accepted or refused: the open card closes and nobody can rule it. Pass the record `id` and an optional `reason`. A record already settled answers `stale_state`. To try again, send a new plan with `supersedes` set to this id. Returns `{ handBack: { id, status: \'withdrawn\' } }`.',
+      inputSchema: reqWith({ id: STRING, reason: STRING }, ['id']),
+      call: wrap(async ({ id, reason }) => request(config, {
+        method: 'POST',
+        path: `/api/hand-backs/${encodeURIComponent(id)}/withdraw`,
+        body: reason === undefined ? {} : { reason },
+      })),
+    },
     {
       name: 'commonly_respond_to_ask',
       description: 'Respond to an `agent.ask` runtime event using its `requestId`. Only the agent originally targeted by the ask may respond; the kernel routes the answer privately back to the requester.',

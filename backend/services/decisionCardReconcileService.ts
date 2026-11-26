@@ -224,6 +224,10 @@ const stampClosed = async (integrationId: unknown, podMessageId: string, now: Da
   );
 };
 
+// A ruled card and a closed one (withdrawn before anyone ruled, ADR-037) are
+// both settled: their receipts close and later prune.
+const FINISHED = new Set(['ruled', 'closed']);
+
 /**
  * Repair durable receipts and bound their retention. A failed row lookup is
  * skipped, never interpreted as a missing decision, so a transient Mongo
@@ -266,7 +270,7 @@ export const sweepDecisionCards = async (now: Date = new Date()): Promise<{
       if (row && row.status === 'pending') continue;
       if (card.closedAt) {
         if (new Date(card.closedAt).getTime() > cutoff.getTime()) continue;
-        if (row && row.status !== 'ruled') continue;
+        if (row && !FINISHED.has(String(row.status))) continue;
         try {
           const result = await Integration.updateOne(
             { _id: integration._id },
@@ -278,7 +282,7 @@ export const sweepDecisionCards = async (now: Date = new Date()): Promise<{
         }
         continue;
       }
-      if (row && row.status !== 'ruled') continue;
+      if (row && !FINISHED.has(String(row.status))) continue;
       // A missing row and a ruled row are both finished. Pending + closedAt is
       // unreachable by construction and therefore remains untouched forever.
       try {

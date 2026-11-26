@@ -119,6 +119,12 @@ export const resolveDecisionCardReply = async (input: {
     };
   };
   if (row.status === 'ruled') return alreadyRuled(row.ruling || {});
+  const closedAnswer = async (): Promise<CardReplyResult> => {
+    await close();
+    return answer(`This card was withdrawn, so there's nothing to rule. Open it in Commonly: ${link}`);
+  };
+  // ADR-037: a card withdrawn before anyone ruled (status closed).
+  if (row.status === 'closed') return closedAnswer();
   if (card.closedAt) return answer(`This card has closed. Open it in Commonly to confirm: ${link}`);
   let value = input.text.trim().slice(0, 2000);
   if (/^\d+$/.test(value)) {
@@ -167,8 +173,24 @@ export const resolveDecisionCardReply = async (input: {
       + ` Open it in Commonly: ${link}`);
   }
   if (outcome.status === 403) return answer(denied);
+  // ADR-037 §5: a channel reply carries one value and no separate reason, so a
+  // card that needs a reason is ruled in the pod. Nothing was recorded.
+  if (outcome.status === 400 && outcome.body.code === 'reason_required') {
+    return answer(`This one needs a reason with the ruling, which a reply here can't carry,`
+      + ` so nothing was recorded. Rule it in Commonly: ${link}`);
+  }
+  if (outcome.status === 400 && outcome.body.code === 'value_not_allowed') {
+    const allowed = (outcome.body.allowedValues || []).join(', ');
+    return answer(`That isn't one of the choices${allowed ? ` (${allowed})` : ''}, so nothing was recorded.`
+      + ` Open it in Commonly: ${link}`);
+  }
   if (outcome.status === 409 && outcome.body.decision?.status === 'ruled') {
     return alreadyRuled(outcome.body.decision.ruling || {});
+  }
+  if (outcome.status === 409 && outcome.body.code === 'decision_closed') return closedAnswer();
+  if (outcome.status === 409
+    && (outcome.body.code === 'subject_stage_mismatch' || outcome.body.code === 'subject_check_missing')) {
+    return answer(`This card has moved on, so your reply wasn't recorded. Open it in Commonly: ${link}`);
   }
   if (outcome.status === 409) return answer('Someone is ruling this right now — try again in a moment.');
   if (outcome.status === 503 && outcome.body.code === 'ruling_not_posted') {

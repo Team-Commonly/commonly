@@ -180,6 +180,45 @@ describe('attentionItemService', () => {
     expect(JSON.stringify(mockUpdateOne.mock.calls[0])).not.toContain('"sam"');
   });
 
+  // ADR-037 §2: deciderFallback 'none' and the closed status.
+  it('with deciderFallback none and its decider gone, queues the card for nobody', async () => {
+    mockPodFindById.mockReturnValue(chain({ _id: 'pod-1', name: 'Ship room', members: ['sam', 'lee'] }));
+    mockUserFind.mockReturnValue(chain([
+      { _id: 'sam', username: 'Sam', isBot: false },
+      { _id: 'lee', username: 'Lee', isBot: false },
+    ]));
+    mockUserFindById.mockReturnValue(chain(null));
+    mockUpdateOne.mockResolvedValue({ upsertedId: 'attention-1' });
+
+    await AttentionItemService.recordDecision({
+      _id: 'decision-1', podId: 'pod-1', agentUserId: 'scout', title: 'Review the plan',
+      options: [{ label: 'Accept' }, { label: 'Refuse' }],
+      deciders: [{ userId: 'gone', username: 'Gone' }], deciderFallback: 'none',
+    });
+    expect(mockUpdateOne).not.toHaveBeenCalled();
+    expect(mockSendNeedsYouEmail).not.toHaveBeenCalled();
+
+    // The same card with its decider present still queues for that decider alone.
+    await AttentionItemService.recordDecision({
+      _id: 'decision-1', podId: 'pod-1', agentUserId: 'scout', title: 'Review the plan',
+      options: [{ label: 'Accept' }, { label: 'Refuse' }],
+      deciders: [{ userId: 'lee', username: 'Lee' }], deciderFallback: 'none',
+    });
+    expect(mockUpdateOne).toHaveBeenCalledTimes(1);
+    expect(JSON.stringify(mockUpdateOne.mock.calls[0])).toContain('lee');
+  });
+
+  it('never queues a closed card', async () => {
+    mockPodFindById.mockReturnValue(chain({ _id: 'pod-1', name: 'Ship room', members: ['sam'] }));
+    mockUserFind.mockReturnValue(chain([{ _id: 'sam', username: 'Sam', isBot: false }]));
+    mockUserFindById.mockReturnValue(chain(null));
+    await AttentionItemService.recordDecision({
+      _id: 'decision-1', podId: 'pod-1', agentUserId: 'scout', title: 'Review the plan', status: 'closed',
+      options: [{ label: 'Accept' }, { label: 'Refuse' }],
+    });
+    expect(mockUpdateOne).not.toHaveBeenCalled();
+  });
+
   it('emails the installer when they are a decider, else the first named decider', async () => {
     const people = [
       { _id: 'sam', username: 'Sam', isBot: false },
