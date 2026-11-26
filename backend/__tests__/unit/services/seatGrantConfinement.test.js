@@ -633,6 +633,8 @@ describe('judgeSeatConfinement — a seat with no daemon and no sandbox block (F
         _id: POD, type: 'team', members: [OWNER, SEAT], publicRead: false, joinPolicy: 'invite-only',
       }) }),
     }));
+    // The granter has an account (F664).
+    await User.create({ _id: OWNER, username: 'granter', email: 'granter@example.test', password: 'fixture-only' });
     await RoomGrant.create(namedPodGrant());
     await expect(call()).rejects.toMatchObject({
       code: 'grant_broker_unconfined', statusCode: 403,

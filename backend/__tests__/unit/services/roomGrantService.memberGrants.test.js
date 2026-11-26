@@ -11,6 +11,7 @@ const mongoose = require('mongoose');
 
 const RoomGrant = require('../../../models/RoomGrant');
 const Pod = require('../../../models/Pod');
+const User = require('../../../models/User');
 const roomGrantService = require('../../../services/roomGrantService');
 const { setupMongoDb, closeMongoDb, clearMongoDb } = require('../../utils/testUtils');
 
@@ -53,6 +54,13 @@ describe('a pod grant ends with its owner\'s membership (F660)', () => {
   afterAll(async () => { await closeMongoDb(); });
   beforeEach(async () => {
     await clearMongoDb();
+    // Every owner here has an account: a grant whose owner's account is gone is
+    // refused before the member check (F664).
+    await User.create([
+      { _id: CREATOR, username: 'pod-creator', email: 'pod-creator@example.test', password: 'fixture-only' },
+      { _id: OWNER, username: 'grant-owner', email: 'grant-owner@example.test', password: 'fixture-only' },
+      { _id: OTHER_MEMBER, username: 'other-member', email: 'other-member@example.test', password: 'fixture-only' },
+    ]);
     await Pod.create({
       _id: POD, name: 'Pod', type: 'chat', createdBy: CREATOR, members: [CREATOR, OWNER, OTHER_MEMBER, AGENT],
     });
@@ -98,8 +106,25 @@ describe('a pod grant ends with its owner\'s membership (F660)', () => {
     });
 
     it('leaves a seat grant alone: its census is the seat, never the owner', async () => {
-      // toolBrokerService.currentMemberIds answers [seat] for a seat target.
+      // toolBrokerService.currentMemberIds answers [seat] for a seat target. A
+      // seat grant is judged by its owner's account existing instead (F664).
       const grant = await RoomGrant.create(grantFixture({ target: { kind: 'seat', id: String(AGENT) } }));
+      await expect(assertGrantUsable({
+        grantId: grant.grantId, agentUserId: String(AGENT), currentMemberIds: [String(AGENT)],
+      })).resolves.toBeTruthy();
+    });
+
+    it('refuses a seat grant whose owner account is gone, and writes nothing (F664)', async () => {
+      await User.deleteOne({ _id: OWNER });
+      const grant = await RoomGrant.create(grantFixture({ target: { kind: 'seat', id: String(AGENT) } }));
+      await expect(assertGrantUsable({
+        grantId: grant.grantId, agentUserId: String(AGENT), currentMemberIds: [String(AGENT)],
+      })).rejects.toMatchObject({ code: 'grant_owner_deleted', statusCode: 403 });
+      expect((await row(grant.grantId)).revokedAt).toBeNull();
+    });
+
+    it('does not judge a seat grant with no recorded owner (F664)', async () => {
+      const grant = await RoomGrant.create(grantFixture({ target: { kind: 'seat', id: String(AGENT) }, ownerId: null }));
       await expect(assertGrantUsable({
         grantId: grant.grantId, agentUserId: String(AGENT), currentMemberIds: [String(AGENT)],
       })).resolves.toBeTruthy();

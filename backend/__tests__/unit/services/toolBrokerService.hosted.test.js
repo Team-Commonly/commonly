@@ -65,6 +65,10 @@ jest.mock('../../../services/roomGrantService', () => {
   }
   return {
     RoomGrantError: MockRoomGrantError,
+    // The owner checks are grant-level, like assertGrantUsable below: the mock's to answer.
+    grantOwnerRefusal: () => null,
+    grantOwnerIds: () => [],
+    existingGrantOwnerIds: async () => new Set(),
     assertGrantUsable: jest.fn(async (options) => {
       if (options.grant.revokedAt) throw new MockRoomGrantError('grant_revoked', 'grant revoked', 403);
       if (!options.currentMemberIds.includes(options.agentUserId)) {

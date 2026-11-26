@@ -78,6 +78,11 @@ beforeAll(async () => {
   mongod = await MongoMemoryServer.create();
   await mongoose.connect(mongod.getUri());
   RoomGrant = require('../../../models/RoomGrant');
+  // The granter has an account: grant use refuses one whose owner's account is
+  // gone (F664).
+  await require('../../../models/User').create({
+    _id: OWNER, username: 'grant-owner', email: 'grant-owner@example.test', password: 'fixture-only',
+  });
   app = express();
   app.use(express.json());
   app.use('/api/grants', require('../../../routes/grants'));
@@ -477,6 +482,24 @@ describe('record wiring', () => {
   test('a refused mint writes nothing', async () => {
     expect((await mint({ audience: [] })).status).toBe(400);
     expect(mockRecordGrantIssued).not.toHaveBeenCalled();
+  });
+
+  test('attenuating a grant whose owner account is gone is refused, and nothing is issued (F664)', async () => {
+    const User = require('../../../models/User');
+    const parent = await mint({});
+    mockRecordGrantIssued.mockClear();
+    await User.deleteOne({ _id: OWNER });
+    try {
+      const res = await request(app).post(`/api/grants/${parent.body.grantId}/attenuate`)
+        .set('x-test-agent', SEAT).set('x-test-agent-owner', OWNER)
+        .send({ tools: ['github.list_issues'], expiresAt: new Date(Date.now() + 86400000).toISOString() });
+      expect(res.status).toBe(403);
+      expect(res.body).toMatchObject({ error: 'grant_owner_deleted' });
+      expect(mockRecordGrantIssued).not.toHaveBeenCalled();
+      expect(await RoomGrant.countDocuments({ parentGrantId: parent.body.grantId })).toBe(0);
+    } finally {
+      await User.create({ _id: OWNER, username: 'grant-owner', email: 'grant-owner@example.test', password: 'fixture-only' });
+    }
   });
 
   test('an agent attenuates: the child is issued by that agent, as an agent', async () => {

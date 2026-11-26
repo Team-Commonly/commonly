@@ -40,7 +40,7 @@ export interface IRoomGrantByoConsent {
   agents: Array<{ userId: string; sandbox: 'confined' | 'unconfined' | 'unknown' }>;
 }
 
-export type RoomGrantRevocationReason = 'task.done' | 'owner_left_pod';
+export type RoomGrantRevocationReason = 'task.done' | 'owner_left_pod' | 'owner_deleted';
 
 export interface IRoomGrantRemovalCue {
   /** The agent's bot User `_id`, the id the grant carried in `audience`. */
@@ -55,7 +55,7 @@ export interface IRoomGrantRemovalCue {
 export interface IRoomGrant extends Document {
   binding?: RoomGrantTaskBinding;
   taskEpoch?: number;
-  /** Set by a revoke whose cause is not a person's revoke: `task.done`, or F660's `owner_left_pod`. */
+  /** Set by a revoke whose cause is not a person's revoke: `task.done`, F660's `owner_left_pod`, or F664's `owner_deleted`. */
   revocationReason?: RoomGrantRevocationReason;
   grantId: string;
   connectionId: string;
@@ -152,7 +152,7 @@ const RoomGrantSchema = new Schema<IRoomGrant>(
       default: undefined,
     },
     taskEpoch: { type: Number, min: 0 },
-    revocationReason: { type: String, enum: ['task.done', 'owner_left_pod'] },
+    revocationReason: { type: String, enum: ['task.done', 'owner_left_pod', 'owner_deleted'] },
     connectionId: { type: String, required: true, trim: true },
     installationId: { type: String, required: true, trim: true },
     target: { type: GrantTargetSchema, required: true },

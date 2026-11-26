@@ -319,10 +319,12 @@ describe('the park and the card', () => {
   });
 
   test('an owner who left the pod is never sent a card they cannot see', async () => {
+    const [grant] = await RoomGrant.find({}).lean();
     await Pod.updateOne({ _id: pod._id }, { $pull: { members: owner._id } });
-    const answer = await hostedCall(await project(), 'sentry_update_issue', args());
-    // The grant itself is refused once its owner is not a member (F660), so the
-    // call never reaches the approval step that would have parked a card.
+    // The list stops offering the grant (F664), and a call made anyway is
+    // refused at the grant (F660), before the approval step that parks a card.
+    expect(names(await project())).toEqual([]);
+    const answer = await hostedCall(forged(grant.grantId, WRITE), 'forged', args());
     expect(answer).toMatchObject({ outcome: 'refused', content: { error: 'grant_owner_not_member' } });
     expect(await ApprovalAction.countDocuments({})).toBe(0);
     expect(mockVendorCall).not.toHaveBeenCalled();
