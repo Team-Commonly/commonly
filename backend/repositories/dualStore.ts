@@ -1289,8 +1289,12 @@ export function createDualStore(
         path.split('.').some((part) => !part || part.startsWith('$')) || (direction !== 1 && direction !== -1))))) {
         throw new Error(`dual-store: ${name} findPageMongo sort needs field paths, each 1 or -1`);
       }
+      // _id last: documents with equal sort values must not swap places between
+      // two pages, or one page repeats a document and the next omits another.
+      const order: Record<string, 1 | -1> = { ...(sort ?? {}) };
+      if (!('_id' in order)) order._id = 1;
       const docs = await reveal(Model.find({ ...filter, pgDeleted: { $ne: true } }))
-        .sort(sort ?? {}).skip(skip).limit(limit as number)
+        .sort(order).skip(skip).limit(limit as number)
         .lean() as Doc[];
       return docs.map((doc) => pick(conceal(plain(doc), fields) as Doc, fields));
     },

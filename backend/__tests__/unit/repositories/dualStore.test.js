@@ -1601,8 +1601,15 @@ describe('dual-store helper (ADR-034 D3)', () => {
       const s = keys(pg);
       await s.findOneAndUpdateWhere(filter, bumpGeneration, { ...after, upsert: true });
       beforeFindOne = () => s.findOneAndUpdateWhere(filter, { $set: { providerId: 'later' } }, after);
+      // The later write's copy fails, so only a wrongly written outer copy
+      // could reach Postgres: the row must stay at the first write's version.
+      pg.failNext('upsert');
       const pre = await s.findOneAndUpdateWhere(filter, { $set: { secretRef: 'r1' } }, before);
       expect(pre).toMatchObject({ secretRef: null, providerId: 'p1' });
+      const pending = await stored();
+      expect(pending).toMatchObject({ secretRef: 'r1', providerId: 'later', pgVersion: 3, pgPending: 3 });
+      expect(pg.rows.get(String(pending._id)).version).toBe(1);
+      await s.repair();
       const raw = await expectCopied(pg);
       expect(raw).toMatchObject({ secretRef: 'r1', providerId: 'later', pgVersion: 3 });
     });
@@ -1831,6 +1838,26 @@ describe('dual-store helper (ADR-034 D3)', () => {
         expect(await s.countMongo(search)).toBe(3);
         expect(await s.countMongo({})).toBe(5);
         expect(pg.calls).toEqual([]);
+      });
+
+      it('breaks ties on _id, so pages over equal sort values neither repeat nor skip a document', async () => {
+        const s = keys(fakePg());
+        const at = new Date(Date.UTC(2026, 10, 1));
+        const ids = Array.from({ length: 4 }, () => new mongoose.Types.ObjectId());
+        // Inserted in reverse _id order, all with one createdAt, and none sorted otherwise.
+        for (const _id of [...ids].reverse()) {
+          // eslint-disable-next-line no-await-in-loop
+          await Key.collection.insertOne({ _id, agent: String(_id), owner: 'o', createdAt: at });
+        }
+        const pageOf = (skip, sort) => s.findPageMongo({}, { ...(sort ? { sort } : {}), skip, limit: 2 });
+        for (const sort of [{ createdAt: -1 }, undefined]) {
+          // eslint-disable-next-line no-await-in-loop
+          const pages = [...(await pageOf(0, sort)), ...(await pageOf(2, sort))];
+          expect(pages.map((doc) => String(doc._id))).toEqual(ids.map(String));
+        }
+        // A caller's own _id order stands.
+        const descending = await s.findPageMongo({}, { sort: { _id: -1 }, limit: 4 });
+        expect(descending.map((doc) => String(doc._id))).toEqual([...ids].reverse().map(String));
       });
 
       it('refuses $where, $expr, a bad sort, and a missing limit', async () => {
