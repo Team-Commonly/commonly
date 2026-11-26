@@ -11,14 +11,16 @@
  * Only the adapters that run inside these mechanisms are checked. Codex
  * confines with its own permission profiles (mode.js), except on native
  * Windows: there a public Codex seat is refused, and any other runs only by the
- * person's own opt-in (CODEX_WINDOWS_MESSAGE below). pi confines an
+ * person's own opt-in (CODEX_WINDOWS_MESSAGE below). With the microVM opt-in
+ * (COMMONLY_SANDBOX_MICROVM=1) a public Codex seat runs in the microVM instead,
+ * and only where WHP is on. pi confines an
  * explicitly public seat with Seatbelt and refuses one it cannot confine at
  * attach (validateEnvironment) and at spawn (adapters/pi.js); a Connect-page pi
  * seat declares no sandbox and is not checked here.
  */
 
 import { normalizeSandboxTrust } from '../environment.js';
-import { PUBLIC_SANDBOX_MODES, resolvePublicSandboxMode } from './mode.js';
+import { PUBLIC_SANDBOX_MODES, resolveCodexSandboxMode, resolvePublicSandboxMode } from './mode.js';
 import { detectBwrap as defaultDetectBwrap, detectBwrapLoopback as defaultDetectBwrapLoopback } from './bwrap.js';
 import { detectSeatbelt as defaultDetectSeatbelt } from './seatbelt.js';
 import { codexTrustedPerimeter } from './codex-perimeter.js';
@@ -258,6 +260,19 @@ export const hostSandboxRefusal = ({
     }
     if (platform !== 'win32') return null;
     if (trust === 'workspace') return null;
+    // Native Windows, opt-in: a public Codex seat runs inside the microVM
+    // (mode.js resolveCodexSandboxMode), and only where WHP is on. Never
+    // Codex's own Windows sandbox, which can't enforce the public profile.
+    if (trust === 'public' && resolveCodexSandboxMode(normalizeSandboxTrust(environment?.sandbox), platform, env) === 'microvm') {
+      try {
+        checkMicrovmAttach({
+          adapterName, platform, env, probe: detectWhp,
+        });
+      } catch (error) {
+        return error.message;
+      }
+      return null;
+    }
     if (trust === 'public') return optedIn === true ? CODEX_WINDOWS_PUBLIC_MESSAGE : CODEX_WINDOWS_MESSAGE;
     // No public trust: `agent run` removed the block for this run after
     // confirming every pod private, or the seat never had one. Either way it

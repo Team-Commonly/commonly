@@ -5,7 +5,10 @@ name: CLI microVM sandbox (Windows)
 # smoke boots a real microVM through the CLI's own code on the runner's WHP and
 # checks the fence from inside it: the model proxy port is reachable, another
 # loopback service and the public internet are not, MCP crosses only through
-# the bridge, and the workspace is read-only. No secrets: every token is fake.
+# the bridge, and the workspace is read-only. A second smoke runs one public
+# Codex turn end to end through the codex adapter against a stub model on the
+# runner, then probes that turn's own fence from inside the guest. No secrets:
+# every token is fake.
 # msb is downloaded by the code under test, pinned and SHA-256 checked there.
 
 on:
@@ -14,11 +17,18 @@ on:
       - 'cli/src/lib/sandbox/microsandbox.js'
       - 'cli/src/lib/sandbox/microsandbox-mcp-bridge.js'
       - 'cli/src/lib/sandbox/mode.js'
+      - 'cli/src/lib/sandbox/guest-home.js'
       - 'cli/src/lib/sandbox/host-check.js'
       - 'cli/src/lib/adapters/claude.js'
+      - 'cli/src/lib/adapters/codex.js'
+      - 'cli/src/lib/provider-proxy.js'
+      - 'packages/seats/src/wire/provider-proxy.js'
       - 'cli/scripts/windows-microvm-smoke.mjs'
+      - 'cli/scripts/windows-microvm-codex-smoke.mjs'
       - 'cli/__tests__/sandbox.microsandbox*.test.mjs'
       - 'cli/__tests__/sandbox.microvm-mode.test.mjs'
+      - 'cli/__tests__/adapters.codex.microvm.test.mjs'
+      - 'cli/__tests__/sandbox.guest-home.test.mjs'
       - 'cli/package-lock.json'
       - '.github/workflows/cli-microsandbox-windows.yml'
   workflow_dispatch:
@@ -47,9 +57,22 @@ jobs:
           __tests__/sandbox.microsandbox.test.mjs
           __tests__/sandbox.microsandbox-mcp-bridge.test.mjs
           __tests__/sandbox.microvm-mode.test.mjs
+          __tests__/adapters.codex.microvm.test.mjs
+          __tests__/sandbox.guest-home.test.mjs
           --runInBand
       - name: Boot a fenced microVM and probe it from inside
         if: ${{ !cancelled() }}
         working-directory: cli
         timeout-minutes: 20
         run: node scripts/windows-microvm-smoke.mjs
+      # One public Codex turn, end to end, through the codex adapter's own
+      # spawn: the VM boots, Codex answers a stub model through the CLI's real
+      # provider proxy (fake key), and the same fence is then probed from
+      # inside (public internet and a loopback-only host port unreachable).
+      - name: Run one Codex turn in a fenced microVM against a fake provider
+        if: ${{ !cancelled() }}
+        working-directory: cli
+        timeout-minutes: 20
+        env:
+          COMMONLY_SANDBOX_MICROVM: '1'
+        run: node scripts/windows-microvm-codex-smoke.mjs

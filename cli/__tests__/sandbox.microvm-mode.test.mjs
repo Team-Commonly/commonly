@@ -102,7 +102,8 @@ describe('invariant 2: never stored', () => {
 });
 
 describe('invariant 3: other adapters refuse it', () => {
-  test.each(['codex', 'opencode', 'qwen', 'goose', 'pi', 'dsh'])('the run-time host check refuses %s', async (adapterName) => {
+  // Codex runs in the microVM too (adapters.codex.microvm.test.mjs).
+  test.each(['opencode', 'qwen', 'goose', 'pi', 'dsh'])('the run-time host check refuses %s', async (adapterName) => {
     const refusal = hostSandboxRefusal({
       environment: { sandbox: { trust: 'public' } },
       adapterName,
@@ -112,9 +113,8 @@ describe('invariant 3: other adapters refuse it', () => {
       detectBwrap: () => ({ available: false, error: 'none' }),
       detectSeatbelt: () => ({ available: false, error: 'none' }),
     });
-    // Codex resolves no host mode and keeps its own Windows refusal.
     expect(refusal).toEqual(expect.any(String));
-    if (adapterName !== 'codex') expect(refusal).toMatch(/only the claude adapter/);
+    expect(refusal).toMatch(/only the claude adapter/);
   });
 
   test('goose and pi refuse a microvm seat themselves', async () => {
