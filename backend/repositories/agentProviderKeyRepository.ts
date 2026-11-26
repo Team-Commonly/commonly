@@ -114,6 +114,27 @@ export async function findProviderKey(owner: ProviderKeyOwner): Promise<Provider
 }
 
 /**
+ * The binding a launch decides on: the same answer as `findProviderKey`, but
+ * read from Mongo in mongo, dual and pg-read, and from Postgres only in pg.
+ * A launch that read a Postgres row lagging another process's set (a copy in
+ * flight or awaiting repair, which this process's 5-second flag cache cannot
+ * see) would answer `set: false` for a key that is set, and the machine
+ * would run without it; one lagging a replace or a remove would answer a
+ * false 409 or read a deleted secret.
+ */
+export async function findProviderKeyForLaunch(owner: ProviderKeyOwner): Promise<ProviderKeyRow | null> {
+  const mode = storeMode(NAME);
+  if (mode === 'mongo') {
+    return AgentProviderKey.findOne(ownerFilter(owner)).lean() as unknown as Promise<ProviderKeyRow | null>;
+  }
+  if (mode === 'pg') {
+    return providerKeyStore().findOneWhere(ownerFilter(owner)) as unknown as Promise<ProviderKeyRow | null>;
+  }
+  const [found] = await providerKeyStore().findPageMongo(ownerFilter(owner), { limit: 1 });
+  return (found ?? null) as unknown as ProviderKeyRow | null;
+}
+
+/**
  * Whether a binding still names `secretRef`, for the orphaned-secret sweep:
  * `{ _id, secretRef }` or null. mongo makes the pre-step-2
  * `findOne({ secretRef }).select('secretRef').lean()`.

@@ -20,8 +20,8 @@ const path = require('path');
 const { Types } = require('mongoose');
 const AgentProviderKey = require('../../../models/AgentProviderKey');
 const {
-  providerKeyStore, findProviderKey, findProviderKeyBySecretRef, clearProviderKey, bumpProviderKeyGeneration,
-  commitProviderKey, markProviderKeyUsed,
+  providerKeyStore, findProviderKey, findProviderKeyForLaunch, findProviderKeyBySecretRef, clearProviderKey,
+  bumpProviderKeyGeneration, commitProviderKey, markProviderKeyUsed,
 } = require('../../../repositories/agentProviderKeyRepository');
 const { setupMongoDb, closeMongoDb } = require('../../utils/testUtils');
 const { fakePg } = require('../../utils/fakePgAdapter');
@@ -313,6 +313,39 @@ describe('agent provider key repository (ADR-034 step 2)', () => {
       const found = await findProviderKeyBySecretRef(secretRef);
       expect(found).toEqual({ _id: doc._id, secretRef });
       expect(mockPg.current.calls).toEqual([]);
+    });
+
+    it('the launch read is Mongo\'s, so a Postgres row that lags a set, a replace or a remove never decides a launch', async () => {
+      const owner = newOwner();
+      const first = ref();
+      const second = ref();
+      const lagTo = (doc, row) => mockPg.current.rows.set(String(doc._id), { ...rowOf(doc), row: { ...rowOf(doc).row, ...row } });
+      // A set whose copy has not landed: Postgres still has no key, unflagged.
+      let { generation } = await bumpProviderKeyGeneration(owner, DEST);
+      await commitProviderKey(owner, generation, commit(first, owner.ownerUserId));
+      let doc = await raw(owner);
+      lagTo(doc, { secret_ref: null });
+      mockPg.current.calls.length = 0;
+      expect(view(await findProviderKeyForLaunch(owner))).toEqual({ generation: 1, secretRef: first });
+      expect(mockPg.current.calls).toEqual([]);
+      // In pg-read the plain read answers from that row, which is why launch does not use it.
+      if (mode === 'pg-read') expect((await findProviderKey(owner)).secretRef).toBeNull();
+      mockPg.current.calls.length = 0;
+      // A replace whose copy has not landed: Postgres still names the old secret.
+      ({ generation } = await bumpProviderKeyGeneration(owner, DEST));
+      await commitProviderKey(owner, generation, commit(second, owner.ownerUserId));
+      doc = await raw(owner);
+      lagTo(doc, { secret_ref: first, generation: 1 });
+      const replaced = await findProviderKeyForLaunch(owner);
+      expect(view(replaced)).toEqual({ generation: 2, secretRef: second });
+      expect(String(replaced._id)).toBe(String(doc._id));
+      // A remove whose copy has not landed: Postgres still names the second secret.
+      await clearProviderKey(owner);
+      doc = await raw(owner);
+      lagTo(doc, { secret_ref: second, generation: 2 });
+      expect(view(await findProviderKeyForLaunch(owner))).toEqual({ generation: 3, secretRef: null });
+      expect(await findProviderKeyForLaunch(newOwner())).toBeNull();
+      expect(mockPg.current.calls.filter((call) => call === 'get' || call === 'findWhere')).toEqual([]);
     });
 
     it('a failed copy is not a failed write: the set resolves, and repair finishes the row', async () => {

@@ -4,7 +4,8 @@ import User from '../models/User';
 import Machine from '../models/Machine';
 import ConnectorSecret from '../models/ConnectorSecret';
 import {
-  findProviderKey, clearProviderKey, bumpProviderKeyGeneration, commitProviderKey, markProviderKeyUsed,
+  findProviderKey, findProviderKeyForLaunch, clearProviderKey, bumpProviderKeyGeneration, commitProviderKey,
+  markProviderKeyUsed,
 } from '../repositories/agentProviderKeyRepository';
 import * as secrets from './connectorSecrets';
 import { AGENT_PROVIDER_KEY } from './connectorSecretKinds';
@@ -96,7 +97,7 @@ export const launchProviderKey = async (req: Request, res: Response): Promise<Re
   const target = await machineRunnerContext(req);
   const machine = (req as any).machine;
   if (!target) return res.status(403).json({ code: 'machine_runner_required' });
-  const row = await findProviderKey({ agentUserId: target.bot._id, ownerUserId: machine.ownerUserId });
+  const row = await findProviderKeyForLaunch({ agentUserId: target.bot._id, ownerUserId: machine.ownerUserId });
   if (!row?.secretRef) return res.json({ set: false });
   const provider = target.seat.environment?.provider as { id?: string; baseURL?: string } | undefined;
   if (!target.capability.available || req.body?.harness !== 'opencode'

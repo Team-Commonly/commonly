@@ -46,14 +46,15 @@ one would lose its `failures`, `stoppedAt` and outcome on its next stamp. Every 
 has `createdAt` (the model has had timestamps from the start), so only a raw insert could be missing it.
 The eleventh is `AgentProviderKey` (table `agent_provider_keys`, migration `0026`,
 `STORE_MODE_AGENT_PROVIDER_KEY`), the binding of an agent's own model-provider key to its owner and
-destination. Its reads use `findOneWhere` (the owner read) and, for the orphaned-secret sweep,
+destination. Its reads use `findOneWhere` (the owner read) and, for a launch and for the orphaned-secret sweep,
 `findPageMongo` with `limit: 1`. Its set is the helper's `findOneAndUpdateWhere` twice: an `$inc` +
 `$setOnInsert` upsert returning the post-image, whose generation is the lock, then a `$set` filtered on that
 generation. Its remove is `findOneAndUpdateWhere` returning the pre-image, which names the secret to delete,
 and its launch stamp is `setWhere` on `_id`, `secretRef` and `generation`. `secretRef` is not key material:
 it is the id of the `ConnectorSecret` that holds the key encrypted, so the copy puts a reference in
-Postgres, never a key. No path is `select: false`. **The sweep's lookup reads Mongo in `pg-read`:** it
-revokes any secret no binding names, so a Postgres row that lags a set would delete a live key.
+Postgres, never a key. No path is `select: false`. **A launch and the sweep read Mongo in `pg-read`:** the sweep
+revokes any secret no binding names, so a Postgres row that lags a set would delete a live key; a launch
+that read one would answer `set: false` for a key that is set, or a false 409 after a replace.
 **Before its step 1, step 0 also counts, and each must be 0:**
 - documents whose `secretRef` is set and is not a 24-hex ObjectId string
   (`{ secretRef: { $ne: null, $not: /^[0-9a-f]{24}$/ } }`). Anything else could be material, and it would
