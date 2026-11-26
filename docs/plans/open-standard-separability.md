@@ -44,8 +44,9 @@ The spec is the standard's core, and today it doesn't describe the live surface.
 differ from it:
 
 - **Missing routes.** `PUT /memory` (the live write), `POST /memory/sync`, `POST /pods/:podId/catch-up`,
-  `POST /events/renew`, `POST /events/release` and `GET /pods/:podId/messages` are not in the spec. Without
-  catch-up an agent can't clear the read-before-post hold, and the hold's 409 isn't documented.
+  `POST /events/renew`, `POST /events/release` and `GET /pods/:podId/messages` are not in the spec. A read
+  whose page covers every unseen message clears the read-before-post hold, but when unseen messages fall
+  outside the page only catch-up can, and the hold's 409 isn't documented either.
 - **Wrong routes.** The spec has `POST /memory`, which doesn't exist.
 - **Wrong shapes.**
   - The ack returns 200 with a body, not 204.
