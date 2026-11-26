@@ -147,11 +147,36 @@ boot once a `0023` file appears. `0023` (`DiscordSummaryHistory`) is on main, so
 `0025` (`AgentTaskRowWakeState`) follows `0024`, and `0026` (`AgentProviderKey`) follows `0025`, and `0027`
 (`HostedMcpDcrRegistration`) follows `0026`, and `0028` (`WaitlistRequest`) follows `0027`.
 
-**A model whose callers delete does not enter dual yet.** A completed delete removes the document and its
-row, and the version with them, so a recreated id starts again at version 1 and a late copy, a pg-mode
-compare-and-set or a backfill of the old document can land on it. The prerequisite is deletes as tombstones
-in both stores that keep the version. Until then the helper's `remove` throws outside `mongo` unless the
-store was created with `allowDeletes: true`, which is unsafe for exactly that reason.
+**A model whose callers delete enters dual only as a tombstone store.** A plain delete removes the
+document and its row, and the version with them, so a late copy, a pg-mode compare-and-set or a backfill of
+the old document could land on a recreated row. So the helper's `remove`, `removeWhere` and
+`removeManyWhere` throw outside `mongo` unless the store passes `deletes: 'tombstone'` over an adapter
+created with `tombstones: true` (ADR-034, amendment of 2026-11-26):
+
+- **Postgres keeps a tombstone.** A delete leaves the row at the delete's version with `pg_deleted = true`,
+  `deleted_at` set and every payload column NULL. Every copy goes through the same version-guarded upsert,
+  so a late copy of the deleted document at a lower version is a no-op under the row lock. Reads leave
+  tombstones out.
+- **Mongo deletes stay real and two-phase:** mark, tombstone the row, delete the document.
+- **Ids are never reused.** Mongo mints every id; a tombstone store refuses, outside `mongo`, a `create`
+  with a caller-supplied `_id`, `upsert(id)`, and an `insertIfAbsent` or `findOneAndUpdateWhere` upsert
+  whose filter or fields name `_id`.
+- **`releaseKeys`** frees the marked document's unique fields in the mark step (dual and pg-read only): a
+  `'sentinel'` field becomes `"\0deleted:" + _id`, an `'unset'` field (a partial or sparse index) is removed.
+  Without it, a re-insert under the same key while a delete waits for repair gets `11000`.
+- **`removeManyWhere(filter)`** reads the matching ids in `_id` order, 500 at a time, and deletes each in
+  two phases with the filter checked again; a crash part-way leaves marked documents that `repair`
+  finishes. In `mongo`, `removeWhere` and `removeManyWhere` are one `deleteOne`/`deleteMany`.
+
+**The table of a tombstone store** has `pg_deleted BOOLEAN NOT NULL DEFAULT false`, `deleted_at
+TIMESTAMPTZ`, a partial index `WHERE pg_deleted` (on `deleted_at`, for a prune), plain `UNIQUE` indexes,
+and every payload column nullable. A unique index needs no partial form: Postgres treats NULLs as distinct,
+so a tombstone never holds a key.
+
+**Pruning tombstones:** none at first. A later manual prune may delete only rows with `pg_deleted` and
+`deleted_at` older than 7 days, and only while no backfill is running, because a backfill cursor can hold a
+document for hours and its copy must still meet the tombstone.
+
 None of `AgentPodReadCursor`, `AgentFirstContact`, `AgentDigestState`, `AgentTaskWakeState`,
 `NeedsYouEmailQuota`, `AgentComputerTakeover`, `BillingEvent`, `DiscordSummaryHistory`, `NeedsYouEmail`,
 `AgentTaskRowWakeState`, `AgentProviderKey`, `HostedMcpDcrRegistration` and `WaitlistRequest` has a delete
@@ -184,8 +209,8 @@ value.
 | # | Do | Done when | Roll back |
 |---|---|---|---|
 | 1 | **Back up** the model's Mongo collection (`mongodump --collection`) and the Postgres table (`pg_dump -t`). | Both dumps restore on a scratch server. | Nothing to undo. |
-| 2 | **Set `STORE_MODE_<MODEL>=dual` on every replica**, and restart them. | Every replica is up on the new setting. | Set it back to `mongo` (or unset) and restart. Mongo has every write. Then `TRUNCATE` the table before trying dual again (see below). |
-| 3 | **Backfill.** First `TRUNCATE` the table. Then run a dry run, `--apply`, and `--verify`. | `--verify` exits 0: `missing`, `differs` and `extra` are 0, and the two checksums match. | The table is only a copy. `TRUNCATE` it, or go back to mongo as in row 2. |
+| 2 | **Set `STORE_MODE_<MODEL>=dual` on every replica**, and restart them. | Every replica is up on the new setting. | Set it back to `mongo` (or unset) and restart. Mongo has every write. Then reset the table before trying dual again (see below). |
+| 3 | **Backfill.** First reset the table: `TRUNCATE` it, or for a tombstone store `DELETE FROM <table> WHERE NOT pg_deleted`. Then run a dry run, `--apply`, and `--verify`. | `--verify` exits 0: `missing`, `differs` and `extra` are 0, and the two checksums match. | The table is only a copy. Reset it as above, or go back to mongo as in row 2. |
 | 4 | **Watch** the compare and the repair job for as long as the model's writes need to cover their real paths: `[dual-store] mismatch model=<Model>` lines from the sampled compare and failed copies, and `[dual-store] repair model=<Model>` lines from the five-minute repair job. Run `--verify` again at the end. | Every mismatch is explained, and the repair job has nothing left to copy. | As in row 2. |
 | 5 | **Read cut:** set `STORE_MODE_<MODEL>=pg-read` on every replica and restart, only after zero unexplained mismatches and a clean `--verify`. ADR-034 D3 also asks for the `commonly verify` scenarios to pass. | Reads come from Postgres. Measure p95 on the model's hot paths. | Set it back to `dual` and restart. Writes never stopped going to Mongo first, so no acknowledged write is lost. |
 
@@ -208,6 +233,17 @@ row written during the mixed window. A dual write that lands between the `TRUNCA
 itself, and the backfill copies everything else. The backfill refuses to run unless the model's mode is
 `dual` or `pg-read` in its own environment.
 
+**A tombstone store's reset keeps its tombstones** (`DELETE FROM <table> WHERE NOT pg_deleted`). They are
+safe to keep because the store never lets an id come back outside `mongo`, and they must stay: a backfill
+or late copy of a deleted document is refused only by its tombstone. A `mongo`-mode period after a rollback
+can reuse an id, because nothing checks there. `--verify` then reports that row as `differs` with
+`fields=pg_deleted` (and the document's writes as `tombstoned` mismatches); delete that one tombstone
+(`DELETE FROM <table> WHERE <id> = '<id>' AND pg_deleted`) and let the next write or the repair job copy
+the document. One gap remains. A replica still in `mongo` that deletes a
+document during the rolling restart, while a dual copy of it is held across the reset, leaves that copy's
+row behind if the process crashes before the copy's own cleanup (which writes a tombstone at the copy's
+version + 1). `--verify` then reports it as `extra`; run the reset again.
+
 ### What the counts mean
 
 - **Backfill:** `scanned` counts the live documents. `inserted` is what was copied, or what a dry run would
@@ -217,7 +253,15 @@ itself, and the backfill copies everything else. The backfill refuses to run unl
 - **Verify:** `mongo` and `pg` are the row counts on each side. `missing` is a live document with no row,
   `differs` is a row whose fields differ (normalised the same way as the sampled compare) or whose version
   is not the document's (`fields=pgVersion`), and `extra` is a row with no live document. A document marked
-  deleted counts as absent. `--verify` runs only in dual or pg-read.
+  deleted counts as absent. For a tombstone store, `tombstones` counts the tombstone rows, which `pg` and
+  `checksumPg` leave out; a tombstone whose id is a live document counts as `differs`
+  (`fields=pg_deleted`), because that document's copies would all be refused. `--verify` runs only in dual
+  or pg-read.
+- **The `tombstoned` mismatch** (`[dual-store] mismatch ... kind=tombstoned`) is a copy refused by a
+  tombstone while the Mongo document is live. Only a reused id produces it, which the store refuses, so it
+  is never expected. The document keeps its marker, so `pg-read` stays on Mongo for the model and the repair
+  job counts it `failed` on every pass until someone explains it. A late copy of a document that is deleted,
+  or being deleted, is refused silently, as it should be.
 
 **A `differs` or `missing` on a live system can be a write in flight**, caught between its Mongo commit and
 its copy. Run `--verify` again; only a difference that stays across runs needs explaining. The backfill
@@ -240,6 +284,13 @@ leaves a write pending, even while Mongo is up. A replica that cached "flagged" 
 up to 5 seconds, so during an outage those reads fail until the cache expires and the failed check
 falls back to Postgres. A `pg-ahead` mismatch means Postgres holds a version Mongo never wrote, which
 only a rollback from `pg` can produce. That case is out of scope until step 4 is lifted.
+
+**A document that fails every repair pass** (`pg-ahead`, `tombstoned`, or a `toRow` it cannot map) stays
+flagged, so `pg-read` keeps reading Mongo for the whole model until it is fixed. It cannot starve the rest:
+each replica's repair walks the flagged documents in `_id` order, resuming after the last one it tried and
+wrapping around, so every flagged document is tried within a few passes however many fail. The operator
+action is to list the model's flagged documents (`pgPending` exists, from a one-off container), fix the cause (for `tombstoned`, delete the
+tombstone as above), and let the next pass copy it.
 
 ## Helper shapes for AgentProviderKey, HostedMcpDcrRegistration and WaitlistRequest
 

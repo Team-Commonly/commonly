@@ -6,7 +6,9 @@
  */
 const mongoose = require('mongoose');
 const { createRealPgSchema } = require('../utils/realPgSchema');
-const { pgTableAdapter, createDualStore, dualStorePlugin } = require('../../repositories/dualStore');
+const {
+  pgTableAdapter, createDualStore, dualStorePlugin, dualStoreStats, resetDualStoreStats,
+} = require('../../repositories/dualStore');
 const { setupMongoDb, closeMongoDb } = require('../utils/testUtils');
 
 const real = process.env.INTEGRATION_TEST === 'true' ? describe : describe.skip;
@@ -272,5 +274,239 @@ real('findOneAndUpdateWhere on real Mongo and real PostgreSQL', () => {
     expect(query).not.toHaveBeenCalled();
     expect(await Key.countDocuments({})).toBe(0);
     query.mockRestore();
+  });
+});
+
+/**
+ * Tombstone deletes on real PostgreSQL: the tombstone SQL against a table with
+ * a UNIQUE column, the row lock that makes a late lower-version copy a no-op,
+ * and a re-insert under the same unique key right after a delete (I6).
+ */
+real('tombstone deletes on real PostgreSQL', () => {
+  const ROW = (id, deliveryId, label = 'payload') => ({ id, delivery_id: deliveryId, label });
+  let database;
+  let adapter;
+  beforeEach(async () => {
+    database = await createRealPgSchema();
+    // The per-model migration shape: a plain UNIQUE, nullable payload columns
+    // (one with a DEFAULT a tombstone must not take), and the partial index.
+    await database.pool.query(`CREATE TABLE deliveries (
+      id TEXT PRIMARY KEY, delivery_id TEXT UNIQUE, label TEXT DEFAULT 'filled-by-default',
+      pg_version INTEGER NOT NULL, pg_deleted BOOLEAN NOT NULL DEFAULT false, deleted_at TIMESTAMPTZ)`);
+    await database.pool.query('CREATE INDEX deliveries_deleted ON deliveries (deleted_at) WHERE pg_deleted');
+    adapter = pgTableAdapter({
+      pool: database.pool, table: 'deliveries', idColumn: 'id', columns: ['delivery_id', 'label'], tombstones: true,
+    });
+  });
+  afterEach(async () => {
+    if (database) await database.close();
+  });
+  const raw = async (id) => (await database.pool.query('SELECT * FROM deliveries WHERE id = $1', [id])).rows[0];
+
+  it('keeps the version, NULLs every payload column (defaults included), frees the unique key, and hides the row', async () => {
+    expect(await adapter.upsert(ROW('a', 'd-1'), 1)).toBe(true);
+    await adapter.remove('a', 1);
+    expect(await adapter.get('a')).toMatchObject({ version: 1, row: { delivery_id: 'd-1' } });
+    await adapter.remove('a', 2);
+    expect(await adapter.get('a')).toBeNull();
+    expect(await adapter.getAny('a')).toEqual({ deleted: true, version: 2 });
+    const dead = await raw('a');
+    expect(dead).toMatchObject({
+      delivery_id: null, label: null, pg_version: 2, pg_deleted: true,
+    });
+    expect(dead.deleted_at).toBeInstanceOf(Date);
+    // A late copy at or below the tombstone's version is refused by the guard.
+    expect(await adapter.upsert(ROW('a', 'd-1'), 1)).toBe(false);
+    expect(await adapter.upsert(ROW('a', 'd-1'), 2)).toBe(false);
+    expect(await adapter.get('a')).toBeNull();
+    // The dead row holds no key: a new id takes the same delivery_id.
+    expect(await adapter.upsert(ROW('b', 'd-1'), 1)).toBe(true);
+    // A delete of a row never written inserts a tombstone, NULLs and all.
+    await adapter.remove('never', 4);
+    expect(await raw('never')).toMatchObject({ label: null, pg_version: 4, pg_deleted: true });
+    expect(await adapter.upsert(ROW('never', 'd-9'), 0)).toBe(false);
+    // Reads leave tombstones out; a scan that asks for them flags them.
+    expect((await adapter.findWhere({ delivery_id: null })).map(({ row }) => row.id)).toEqual([]);
+    expect((await adapter.scan(null, 10)).map(({ id }) => id)).toEqual(['b']);
+    expect((await adapter.scan(null, 10, { includeDeleted: true })).map(({ id, deleted }) => [id, deleted]))
+      .toEqual([['a', true], ['b', false], ['never', true]]);
+    // A copy above the tombstone's version revives the row.
+    expect(await adapter.upsert(ROW('never', 'd-9'), 5)).toBe(true);
+    expect(await raw('never')).toMatchObject({ pg_deleted: false, deleted_at: null, label: 'payload' });
+  });
+
+  it('pg mode: removeAt is a compare-and-set to a tombstone at the next version; replace never touches one', async () => {
+    await adapter.upsert(ROW('a', 'd-1'), 1);
+    expect(await adapter.removeAt('a', 0)).toBe(false);
+    expect(await adapter.removeAt('a', 1)).toBe(true);
+    expect(await adapter.getAny('a')).toEqual({ deleted: true, version: 2 });
+    expect(await adapter.removeAt('a', 2)).toBe(false);
+    expect(await adapter.replace(ROW('a', 'd-1', 'ghost'), 2)).toBe(false);
+    expect(await raw('a')).toMatchObject({ label: null, pg_deleted: true, pg_version: 2 });
+  });
+
+  it('refuses pg_deleted or deleted_at as payload columns', () => {
+    expect(() => pgTableAdapter({
+      pool: database.pool, table: 'deliveries', idColumn: 'id', columns: ['label', 'pg_deleted'], tombstones: true,
+    })).toThrow(/pg_deleted or deleted_at/);
+  });
+
+  describe('a tombstone and a lower-version copy from two pool clients', () => {
+    let clients;
+    let first;
+    let second;
+    beforeEach(async () => {
+      clients = [await database.pool.connect(), await database.pool.connect()];
+      [first, second] = clients.map((client) => pgTableAdapter({
+        pool: client, table: 'deliveries', idColumn: 'id', columns: ['delivery_id', 'label'], tombstones: true,
+      }));
+    });
+    afterEach(() => clients.forEach((client) => client.release()));
+    const blocked = async (promise) => {
+      const state = await Promise.race([promise.then(() => 'done'), new Promise((resolve) => {
+        setTimeout(() => resolve('waiting'), 150);
+      })]);
+      expect(state).toBe('waiting');
+    };
+
+    it.each([
+      ['an existing row', true],
+      ['a row never written (a backfill copy at version 0)', false],
+    ])('the copy waits on the uncommitted tombstone, then is a no-op: %s', async (_label, existing) => {
+      if (existing) await adapter.upsert(ROW('a', 'd-1'), 1);
+      await clients[0].query('BEGIN');
+      await first.remove('a', 3);
+      const copying = second.upsert(ROW('a', 'd-1', 'late'), existing ? 2 : 0);
+      await blocked(copying);
+      await clients[0].query('COMMIT');
+      expect(await copying).toBe(false);
+      expect(await adapter.get('a')).toBeNull();
+      expect(await adapter.getAny('a')).toEqual({ deleted: true, version: 3 });
+    });
+
+    it('the tombstone waits on an uncommitted lower-version copy, then wins', async () => {
+      await clients[0].query('BEGIN');
+      await first.upsert(ROW('a', 'd-1', 'late'), 2);
+      const deleting = second.remove('a', 3);
+      await blocked(deleting);
+      await clients[0].query('COMMIT');
+      await deleting;
+      expect(await adapter.get('a')).toBeNull();
+      expect(await raw('a')).toMatchObject({ label: null, pg_version: 3, pg_deleted: true });
+    });
+
+    it('raced 100 times in either start order, never leaves a live row', async () => {
+      for (let i = 0; i < 100; i += 1) {
+        const id = `race-${i}`;
+        // eslint-disable-next-line no-await-in-loop
+        if (i % 3) await adapter.upsert(ROW(id, `d-${i}`), 1);
+        const tombstone = () => first.remove(id, 3);
+        const copy = () => second.upsert(ROW(id, `d-${i}`, 'late'), 2);
+        // eslint-disable-next-line no-await-in-loop
+        await Promise.all(i % 2 ? [tombstone(), copy()] : [copy(), tombstone()]);
+        // eslint-disable-next-line no-await-in-loop
+        expect(await adapter.get(id)).toBeNull();
+        // eslint-disable-next-line no-await-in-loop
+        expect(await adapter.getAny(id)).toEqual({ deleted: true, version: 3 });
+      }
+      const { rows } = await database.pool.query(
+        'SELECT count(*)::int AS live FROM deliveries WHERE NOT pg_deleted OR delivery_id IS NOT NULL',
+      );
+      expect(rows[0].live).toBe(0);
+    });
+  });
+
+  describe('I6: a re-insert under the same unique key, on real Mongo and real PostgreSQL', () => {
+    const ENV = 'STORE_MODE_DUAL_STORE_REAL_PG_DELIVERY';
+    const deliverySchema = new mongoose.Schema({
+      deliveryId: { type: String, required: true, unique: true },
+      label: String,
+    });
+    dualStorePlugin(deliverySchema);
+    const Delivery = mongoose.models.DualStoreRealPgDelivery
+      || mongoose.model('DualStoreRealPgDelivery', deliverySchema);
+    const toRow = (doc) => ({ id: String(doc._id), delivery_id: doc.deliveryId ?? null, label: doc.label ?? null });
+    let store;
+    beforeAll(async () => {
+      await setupMongoDb();
+      await Delivery.init();
+    });
+    afterAll(closeMongoDb);
+    beforeEach(async () => {
+      process.env[ENV] = 'dual';
+      await Delivery.deleteMany({});
+      store = createDualStore({
+        name: 'DualStoreRealPgDelivery',
+        model: Delivery,
+        pg: adapter,
+        toRow,
+        fromRow: (row) => row,
+        deletes: 'tombstone',
+        releaseKeys: { deliveryId: 'sentinel' },
+      });
+    });
+    afterEach(() => { delete process.env[ENV]; });
+
+    const expectClean = async (tombstones) => {
+      const counts = await store.verify();
+      expect(counts).toMatchObject({
+        mongo: 1, pg: 1, missing: 0, differs: 0, extra: 0, tombstones,
+      });
+      expect(counts.checksumPg).toBe(counts.checksumMongo);
+      expect(await Delivery.countDocuments({ pgPending: { $exists: true } })).toBe(0);
+    };
+
+    it('right after a delete: the new row copies, and the tombstone holds no key', async () => {
+      const old = await store.create({ deliveryId: 'redelivered', label: 'old' });
+      expect(await store.remove(old._id)).toBe(true);
+      const fresh = await store.create({ deliveryId: 'redelivered', label: 'new' });
+      expect((await adapter.get(String(fresh._id))).row).toMatchObject({ delivery_id: 'redelivered', label: 'new' });
+      expect(await raw(String(old._id))).toMatchObject({ delivery_id: null, pg_deleted: true });
+      await expectClean(1);
+    });
+
+    it('while the Postgres remove fails: Mongo takes the re-insert, and repair converges both stores', async () => {
+      const old = await store.create({ deliveryId: 'redelivered', label: 'old' });
+      const remove = jest.spyOn(adapter, 'remove').mockRejectedValueOnce(new Error('pg down'));
+      const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
+      expect(await store.remove(old._id)).toBe(true);
+      remove.mockRestore();
+      // releaseKeys freed the key in Mongo, so the re-insert gets no 11000;
+      // its copy fails on the old row's key (23505) and stays flagged.
+      const fresh = await store.create({ deliveryId: 'redelivered', label: 'new' });
+      expect((await Delivery.findById(fresh._id).lean()).pgPending).toBe(1);
+      expect(await adapter.get(String(fresh._id))).toBeNull();
+      let passes = 0;
+      // eslint-disable-next-line no-await-in-loop
+      while (await Delivery.exists({ pgPending: { $exists: true } }) && passes < 3) {
+        passes += 1;
+        await store.repair({ limit: 10 }); // eslint-disable-line no-await-in-loop
+      }
+      warn.mockRestore();
+      expect(passes).toBeGreaterThanOrEqual(1);
+      expect(passes).toBeLessThanOrEqual(2);
+      expect(await Delivery.findById(old._id).lean()).toBeNull();
+      expect((await adapter.get(String(fresh._id))).row).toMatchObject({ delivery_id: 'redelivered', label: 'new' });
+      await expectClean(1);
+    });
+
+    it('a reused id is a tombstoned mismatch: the flag stays, and verify names the tombstone', async () => {
+      resetDualStoreStats();
+      const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
+      const old = await store.create({ deliveryId: 'first', label: 'old' });
+      await store.remove(old._id);
+      // Reused behind the helper's back, as a mongo-mode period after a rollback could.
+      await Delivery.collection.insertOne({ _id: old._id, deliveryId: 'second' });
+      expect(await store.update(old._id, { label: 'written' })).toMatchObject({ label: 'written' });
+      expect(dualStoreStats('DualStoreRealPgDelivery').tombstoned).toBe(1);
+      expect((await Delivery.findById(old._id).lean()).pgPending).toBe(1);
+      expect(await adapter.get(String(old._id))).toBeNull();
+      expect(await store.repair({ limit: 10 })).toMatchObject({ scanned: 1, failed: 1 });
+      expect(await store.verify()).toMatchObject({
+        mongo: 1, pg: 0, differs: 1, missing: 0, tombstones: 1,
+      });
+      expect(warn.mock.calls.map((args) => args.join(' ')).join('\n')).toMatch(/kind=differs fields=pg_deleted/);
+      warn.mockRestore();
+    });
   });
 });

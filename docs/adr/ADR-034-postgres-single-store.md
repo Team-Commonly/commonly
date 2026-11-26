@@ -104,12 +104,21 @@ conditional update that matches that version, so an earlier write finishing late
 write's marker. A crash between the two leaves the marker set, so nothing depends on recording the
 failure after the fact. **A delete is two-phase:** it first marks the document deleted and pending in
 Mongo, then deletes the Postgres row, and only then removes the Mongo document. A delete that crashes
-halfway is therefore still a flagged document. **That is not yet enough for a model whose callers
-delete:** a completed delete removes the version with the document and the row, so a recreated id starts
-again at version 1, under any late copy of the old one. Until deletes are tombstones in both stores that
-keep the version, the helper refuses `remove` outside `mongo` unless a store opts in, and such a model
-stays in `mongo`. A sparse index on `pgPending` makes the repair a cheap
-scan: it re-copies each flagged document, or deletes its Postgres row if it is marked deleted, then
+halfway is therefore still a flagged document. **Amended 2026-11-26: a delete keeps its version in
+Postgres.** A plain delete removed the version with the document and the row, so a late copy of the old
+document could land after it. A store whose callers delete now opts in with `deletes: 'tombstone'`, and the
+helper refuses deletes outside `mongo` without it. The Postgres row stays as a tombstone at the delete's
+version, every payload column NULL, written through the same version-guarded upsert as every copy, so a
+late copy at a lower version is a no-op under the row lock and a dead row holds no unique key. Mongo
+deletes stay real and two-phase. Ids are never reused: Mongo mints them, and a tombstone store refuses a
+caller-supplied `_id` outside `mongo`. `releaseKeys` frees a marked document's unique fields for the mark
+window, so Mongo takes a re-insert under the same key at once; if the delete's Postgres write failed, the
+new document's copy stays flagged until repair writes the old row's tombstone. A soft delete in Mongo was
+rejected: every caller's reads would change in prod, and each unique index would need a drop-and-recreate
+to become partial. The reverse backfill before step 4's deletion, not yet built, will turn each tombstone
+into a Mongo delete.
+A sparse index on `pgPending` makes the repair a cheap
+scan: it re-copies each flagged document, or tombstones its Postgres row if it is marked deleted, then
 clears the marker the same conditional way. The dual-store helper's tests cover two writes interleaving,
 and a delete crashing at each step. A failed Postgres write counts as a mismatch, and a model in `pg-read` goes back to `dual` while
 any of its documents are flagged, including after a restart, until the repair finds none. Each replica

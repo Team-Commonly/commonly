@@ -15,12 +15,15 @@
  * therefore leaves a flagged document that `repair` finishes, and nothing
  * depends on recording a failure after the fact.
  *
- * Deletes are refused outside mongo unless a store opts in with `allowDeletes`.
- * A completed delete removes the document and its row, and with them the
- * version, so a recreated id restarts at version 1 and a late copy, a pg-mode
- * compare-and-set or a backfill of the old document can land on it. Deletes
- * become safe with tombstones in both stores that keep the version; until then
- * a model whose callers delete stays in mongo (docs/runbooks/adr-034-model-move.md).
+ * Deletes are refused outside mongo unless a store opts in with
+ * `deletes: 'tombstone'`, over an adapter created with `tombstones: true`. A
+ * delete there stays two-phase in Mongo (mark, then a real delete), and leaves
+ * in Postgres a tombstone: the row at the delete's version with every payload
+ * column NULL. Every copy goes through the same version-guarded upsert, so a
+ * late copy of the deleted document loses to the tombstone under the row lock.
+ * Ids are never reused: Mongo mints them, and such a store refuses a
+ * caller-supplied `_id` and `upsert(id)` outside mongo
+ * (docs/runbooks/adr-034-model-move.md).
  */
 import { createHash } from 'crypto';
 import type { Model, Schema } from 'mongoose';
@@ -36,15 +39,29 @@ type Id = unknown;
 interface PgAdapter {
   /** Writes the row unless the stored one is at `version` or newer; true when applied. */
   upsert(row: Row, version: number): Promise<boolean>;
-  /** Deletes the row unless the stored one is at `version` or newer. */
+  /**
+   * Deletes the row unless the stored one is at `version` or newer. With
+   * `tombstones`, writes a tombstone at `version` instead, under the same guard,
+   * inserting one when there is no row.
+   */
   remove(id: string, version: number): Promise<void>;
-  /** pg mode: writes the row at `version + 1` only if it is still at `version`; true when applied. */
+  /** pg mode: writes the row at `version + 1` only if it is still at `version` (and live); true when applied. */
   replace(row: Row, version: number): Promise<boolean>;
-  /** pg mode: deletes the row only if it is still at `version`; true when deleted. */
+  /**
+   * pg mode: deletes the row only if it is still at `version`; true when
+   * deleted. With `tombstones`, turns a live row at `version` into a tombstone
+   * at `version + 1` instead.
+   */
   removeAt(id: string, version: number): Promise<boolean>;
+  /** The live row. A tombstone reads as absent. */
   get(id: string): Promise<{ row: Row; version: number } | null>;
-  /** Rows with an id above `after` (null: from the start), in id byte order, at most `limit`. */
-  scan(after: string | null, limit: number): Promise<Array<{ id: string; row: Row; version: number }>>;
+  /**
+   * Rows with an id above `after` (null: from the start), in id byte order, at
+   * most `limit`. Live rows only, unless `includeDeleted`, when each entry also
+   * says whether it is a tombstone.
+   */
+  scan(after: string | null, limit: number, options?: { includeDeleted?: boolean }):
+    Promise<Array<{ id: string; row: Row; version: number; deleted?: boolean }>>;
   /**
    * Rows matching `where` (see PgWhere), in id byte order, at most `limit`
    * when given. An undeclared or JSON column, an unsupported operator or a
@@ -53,6 +70,10 @@ interface PgAdapter {
   findWhere(where: PgWhere, limit?: number): Promise<Array<{ row: Row; version: number }>>;
   /** The columns `$exists` may test (see pgTableAdapter's `presenceColumns`). None when absent. */
   readonly presenceColumns?: readonly string[];
+  /** True when deletes leave a version-keeping tombstone row (see pgTableAdapter's `tombstones`). */
+  readonly tombstones?: boolean;
+  /** With `tombstones`: the row's version and whether it is a tombstone, or null when there is no row. */
+  getAny?(id: string): Promise<{ deleted: boolean; version: number } | null>;
 }
 
 /** The range operators a filtered read may use, and their SQL. */
@@ -140,13 +161,19 @@ const identifier = (value: string): string => {
  * explicit null while present. Only the store's author can promise that of a
  * field (its writers set it to a value or leave it out), so it is declared
  * here, column by column, and `$exists` on any other column throws.
+ * `tombstones` needs `pg_deleted BOOLEAN NOT NULL DEFAULT false` and
+ * `deleted_at TIMESTAMPTZ` columns and nullable payload columns. A delete then
+ * keeps the row at its version with every payload column NULL, so a late copy
+ * at a lower version is refused by the upsert's own guard, and a dead row
+ * never holds a unique key (Postgres treats NULLs as distinct). Every read
+ * leaves tombstones out, except `getAny` and a scan that asks for them.
  */
 export function pgTableAdapter(
   {
-    pool, table, idColumn, columns, jsonColumns = [], bigintColumns = [], presenceColumns = [],
+    pool, table, idColumn, columns, jsonColumns = [], bigintColumns = [], presenceColumns = [], tombstones = false,
   }: {
     pool: PgQueryable; table: string; idColumn: string; columns: string[];
-    jsonColumns?: string[]; bigintColumns?: string[]; presenceColumns?: string[];
+    jsonColumns?: string[]; bigintColumns?: string[]; presenceColumns?: string[]; tombstones?: boolean;
   },
 ): PgAdapter {
   const t = identifier(table);
@@ -177,36 +204,67 @@ export function pgTableAdapter(
   if (cols.includes(id) || cols.includes('pg_version')) {
     throw new Error('dual-store: columns must not repeat the id column or pg_version');
   }
+  if (cols.includes('pg_deleted') || cols.includes('deleted_at')) {
+    throw new Error('dual-store: columns must not include pg_deleted or deleted_at, which tombstones own');
+  }
   const all = [id, ...cols];
+  // A live copy at a higher version also revives the row, so the highest
+  // version wins whichever kind it is.
+  const revive = tombstones ? ', pg_deleted = false, deleted_at = NULL' : '';
   const upsertSql = `INSERT INTO ${t} (${all.join(', ')}, pg_version)
     VALUES (${all.map((_, i) => `$${i + 1}`).join(', ')}, $${all.length + 1})
-    ON CONFLICT (${id}) DO UPDATE SET ${[...cols, 'pg_version'].map((c) => `${c} = EXCLUDED.${c}`).join(', ')}
+    ON CONFLICT (${id}) DO UPDATE SET ${[...cols, 'pg_version'].map((c) => `${c} = EXCLUDED.${c}`).join(', ')}${revive}
     WHERE ${t}.pg_version < EXCLUDED.pg_version`;
+  const liveOnly = tombstones ? ' AND NOT pg_deleted' : '';
   const replaceSql = `UPDATE ${t} SET ${cols.map((c, i) => `${c} = $${i + 2}`).join(', ')},
-    pg_version = $${cols.length + 2} + 1 WHERE ${id} = $1 AND pg_version = $${cols.length + 2}`;
+    pg_version = $${cols.length + 2} + 1 WHERE ${id} = $1 AND pg_version = $${cols.length + 2}${liveOnly}`;
+  // Every payload column is written NULL explicitly, so no column DEFAULT
+  // fills a tombstone.
+  const nullSets = cols.map((c) => `${c} = NULL, `).join('');
+  const tombstoneSql = `INSERT INTO ${t} (${all.join(', ')}, pg_version, pg_deleted, deleted_at)
+    VALUES ($1, ${cols.map(() => 'NULL, ').join('')}$2, true, now())
+    ON CONFLICT (${id}) DO UPDATE SET ${nullSets}pg_version = EXCLUDED.pg_version, pg_deleted = true, deleted_at = now()
+    WHERE ${t}.pg_version < EXCLUDED.pg_version`;
+  const tombstoneAtSql = `UPDATE ${t} SET ${nullSets}pg_version = $2 + 1, pg_deleted = true, deleted_at = now()
+    WHERE ${id} = $1 AND pg_version = $2 AND NOT pg_deleted`;
   return {
     presenceColumns: presence,
+    tombstones,
     async upsert(row, version) {
       const result = await pool.query(upsertSql, [...all.map((c) => bind(row, c)), version]);
       return (result.rowCount ?? 0) > 0;
     },
     async remove(rowId, version) {
-      await pool.query(`DELETE FROM ${t} WHERE ${id} = $1 AND pg_version < $2`, [rowId, version]);
+      if (tombstones) await pool.query(tombstoneSql, [rowId, version]);
+      else await pool.query(`DELETE FROM ${t} WHERE ${id} = $1 AND pg_version < $2`, [rowId, version]);
     },
     async replace(row, version) {
       const result = await pool.query(replaceSql, [row[id], ...cols.map((c) => bind(row, c)), version]);
       return (result.rowCount ?? 0) > 0;
     },
     async removeAt(rowId, version) {
-      const result = await pool.query(`DELETE FROM ${t} WHERE ${id} = $1 AND pg_version = $2`, [rowId, version]);
+      const result = await pool.query(
+        tombstones ? tombstoneAtSql : `DELETE FROM ${t} WHERE ${id} = $1 AND pg_version = $2`,
+        [rowId, version],
+      );
       return (result.rowCount ?? 0) > 0;
     },
     async get(rowId) {
-      const { rows } = await pool.query(`SELECT ${all.join(', ')}, pg_version FROM ${t} WHERE ${id} = $1`, [rowId]);
+      const { rows } = await pool.query(
+        `SELECT ${all.join(', ')}, pg_version FROM ${t} WHERE ${id} = $1${liveOnly}`,
+        [rowId],
+      );
       if (!rows[0]) return null;
       const { pg_version: version, ...row } = rows[0];
       return { row: read(row), version: Number(version) };
     },
+    ...(tombstones && {
+      async getAny(rowId: string) {
+        const { rows } = await pool.query(`SELECT pg_version, pg_deleted FROM ${t} WHERE ${id} = $1`, [rowId]);
+        if (!rows[0]) return null;
+        return { deleted: rows[0].pg_deleted === true, version: Number(rows[0].pg_version) };
+      },
+    }),
     async findWhere(where, limit) {
       // Everything is checked before the query is built: an identifier is only
       // ever a declared column, and every value is a parameter.
@@ -271,6 +329,7 @@ export function pgTableAdapter(
         params.push(limit);
         limitSql = ` LIMIT $${params.length}`;
       }
+      if (tombstones) clauses.push('NOT pg_deleted');
       const whereSql = clauses.length ? ` WHERE ${clauses.join(' AND ')}` : '';
       const { rows } = await pool.query(
         `SELECT ${all.join(', ')}, pg_version FROM ${t}${whereSql} ORDER BY ${id} COLLATE "C"${limitSql}`,
@@ -278,30 +337,38 @@ export function pgTableAdapter(
       );
       return rows.map(({ pg_version: version, ...row }) => ({ row: read(row), version: Number(version) }));
     },
-    async scan(after, limit) {
+    async scan(after, limit, { includeDeleted = false } = {}) {
+      const withDeleted = tombstones && includeDeleted;
       // COLLATE "C" pages by byte order whatever the database collation is, so
       // keyset paging never skips or repeats a row.
       const { rows } = await pool.query(
-        `SELECT ${all.join(', ')}, pg_version FROM ${t}
-          WHERE $1::text IS NULL OR ${id} COLLATE "C" > $1::text
+        `SELECT ${all.join(', ')}, pg_version${withDeleted ? ', pg_deleted' : ''} FROM ${t}
+          WHERE ($1::text IS NULL OR ${id} COLLATE "C" > $1::text)${withDeleted ? '' : liveOnly}
           ORDER BY ${id} COLLATE "C" LIMIT $2`,
         [after, limit],
       );
-      return rows.map(({ pg_version: version, ...row }) => ({ id: String(row[id]), row: read(row), version: Number(version) }));
+      return rows.map(({ pg_version: version, pg_deleted: deleted, ...row }) => ({
+        id: String(row[id]),
+        row: read(row),
+        version: Number(version),
+        ...(withDeleted && { deleted: deleted === true }),
+      }));
     },
   };
 }
 
 // pg-ahead: Postgres holds a version Mongo never wrote, which only a rollback
 // from pg that did not carry pg_version back into pgVersion can produce.
-type MismatchKind = 'missing' | 'differs' | 'pg-write-failed' | 'pg-ahead';
+// tombstoned: a copy was refused by a tombstone while the Mongo document is
+// live, which only a reused id can produce.
+type MismatchKind = 'missing' | 'differs' | 'pg-write-failed' | 'pg-ahead' | 'tombstoned';
 type Stats = Record<MismatchKind, number>;
 const stats = new Map<string, Stats>();
 
 /** Mismatch counts for one model since start (or the last reset). */
 export function dualStoreStats(name: string): Stats {
   return {
-    missing: 0, differs: 0, 'pg-write-failed': 0, 'pg-ahead': 0, ...stats.get(name),
+    missing: 0, differs: 0, 'pg-write-failed': 0, 'pg-ahead': 0, tombstoned: 0, ...stats.get(name),
   };
 }
 export function resetDualStoreStats(): void {
@@ -347,6 +414,8 @@ const plain = (doc: Doc | null): Doc | null => {
 const FLAG_CACHE_MS = 5000;
 const PG_UPDATE_ATTEMPTS = 5;
 const UPSERT_ATTEMPTS = 5;
+/** removeManyWhere reads the matching ids this many at a time. */
+const REMOVE_PAGE = 500;
 
 const checkBatchSize = (batchSize: number): void => {
   if (!Number.isInteger(batchSize) || batchSize < 1) {
@@ -370,10 +439,22 @@ interface DualStoreOptions {
   /** Share of dual reads also compared against Postgres. */
   sampleRate?: number;
   /**
-   * UNSAFE until deletes are tombstones in both stores (see the header): lets
-   * `remove` run in dual, pg-read and pg. Off by default, so `remove` throws there.
+   * `'tombstone'` lets `remove`, `removeWhere` and `removeManyWhere` run in
+   * dual, pg-read and pg, and needs an adapter created with `tombstones: true`
+   * (see the header). Such a store refuses, outside mongo, a `create` with a
+   * caller-supplied `_id`, `upsert(id)`, and an insert by `insertIfAbsent` or
+   * `findOneAndUpdateWhere` whose filter or fields name `_id`, so no id is ever
+   * reused. Unset, the delete methods throw outside mongo.
    */
-  allowDeletes?: boolean;
+  deletes?: 'tombstone';
+  /**
+   * With `deletes`: the unique fields a delete frees in its mark step (dual and
+   * pg-read only), so a re-insert under the same key while the document is
+   * marked gets no duplicate-key error. `'sentinel'` rewrites a string field to
+   * `"\0deleted:" + _id`; `'unset'` removes the field (for a partial or sparse
+   * index). The marked document already reads as absent through the helper.
+   */
+  releaseKeys?: Record<string, 'sentinel' | 'unset'>;
   /**
    * The document fields `findOneWhere` and `findWhere` may filter on, and the
    * column each is in. A filter on any other field throws outside mongo.
@@ -392,6 +473,24 @@ export interface DualStore {
   update(id: Id, fields: Doc): Promise<Doc | null>;
   /** False when there was no such document. */
   remove(id: Id): Promise<boolean>;
+  /**
+   * Deletes the one document `filter` matches, as `remove` does; false when
+   * none matched. mongo makes exactly one `deleteOne` (a document a dual delete
+   * left marked never matches, as for `remove`). In dual and
+   * pg-read the mark is a conditional write on the filter, so a document that
+   * stops matching is not deleted. The filter takes the shapes
+   * `findOneAndUpdateWhere` takes. Refused in pg mode until step 4.
+   */
+  removeWhere(filter: Doc): Promise<boolean>;
+  /**
+   * Deletes every document `filter` matches, returning how many. mongo makes
+   * exactly one `deleteMany`, which skips marked documents too. In dual and pg-read the matching ids are
+   * read from Mongo in `_id` order, 500 at a time, and each is deleted on its
+   * own as `removeWhere` deletes it, with the filter checked again, so each
+   * takes its own version and tombstone; a crash part-way leaves marked
+   * documents that `repair` finishes. Refused in pg mode until step 4.
+   */
+  removeManyWhere(filter: Doc): Promise<number>;
   findById(id: Id): Promise<Doc | null>;
   /**
    * Atomic create-or-change of one document. `pipeline` is the change as Mongo
@@ -515,12 +614,14 @@ export interface BackfillCounts {
 }
 export interface VerifyCounts {
   mongo: number; pg: number; missing: number; differs: number; extra: number;
+  /** Tombstone rows, present only for an adapter with tombstones. `pg` and the checksums count live rows only. */
+  tombstones?: number;
   checksumMongo: string; checksumPg: string;
 }
 
 export function createDualStore(
   {
-    name, model: Model, pg, toRow, fromRow, sampleRate = 0.1, allowDeletes = false, filterColumns,
+    name, model: Model, pg, toRow, fromRow, sampleRate = 0.1, deletes, releaseKeys, filterColumns, ...rest
   }: DualStoreOptions,
 ): DualStore {
   // Without the plugin, strict mode drops pgVersion and pgPending on write, so a
@@ -528,9 +629,47 @@ export function createDualStore(
   if (!Model.schema.path('pgVersion') || !Model.schema.path('pgPending')) {
     throw new Error(`dual-store: apply dualStorePlugin to the ${name} schema`);
   }
+  if ('allowDeletes' in rest) {
+    throw new Error(`dual-store: ${name} passes allowDeletes, which deletes: 'tombstone' replaced`);
+  }
+  if (deletes !== undefined && deletes !== 'tombstone') {
+    throw new Error(`dual-store: ${name} deletes must be 'tombstone'`);
+  }
+  const tombstones = deletes === 'tombstone';
+  if (tombstones && (pg.tombstones !== true || typeof pg.getAny !== 'function')) {
+    throw new Error(`dual-store: ${name} deletes: 'tombstone' needs an adapter created with tombstones: true`);
+  }
+  // The mark step's key release, checked once: each path a top-level string
+  // (sentinel) or any top-level path (unset) of the schema.
+  const released = Object.entries(releaseKeys ?? {});
+  if (released.length && !tombstones) {
+    throw new Error(`dual-store: ${name} releaseKeys needs deletes: 'tombstone'`);
+  }
+  released.forEach(([path, how]) => {
+    const type = Model.schema.path(path) as { instance?: string } | undefined;
+    if (!type || path.includes('.') || MARKERS.includes(path) || path === '_id') {
+      throw new Error(`dual-store: ${name} releaseKeys ${JSON.stringify(path)} is not a top-level field it may change`);
+    }
+    if (how !== 'sentinel' && how !== 'unset') {
+      throw new Error(`dual-store: ${name} releaseKeys ${path} must be 'sentinel' or 'unset'`);
+    }
+    if (how === 'sentinel' && type.instance !== 'String') {
+      throw new Error(`dual-store: ${name} releaseKeys ${path} 'sentinel' needs a String path`);
+    }
+  });
+  const releaseSet = Object.fromEntries(released.filter(([, how]) => how === 'sentinel')
+    .map(([path]) => [path, { $concat: ['\0deleted:', { $toString: '$_id' }] }]));
+  const releaseUnset = released.filter(([, how]) => how === 'unset').map(([path]) => path);
   /** A document marked pgDeleted reads as absent in every mode. */
   const alive = (id: Id) => ({ _id: id, pgDeleted: { $ne: true } });
   let flagged: { value: boolean; at: number } | null = null;
+  /**
+   * Where this process's next repair pass starts. Passes walk the flagged
+   * documents in `_id` order and wrap around, so documents that fail on every
+   * pass (a `tombstoned` or `pg-ahead` one) can never fill `limit` and hide
+   * the rest.
+   */
+  let repairAfter: Id = null;
 
   // Paths the schema hides (`select: false`). Mongo leaves them out of every
   // read that does not name them, so a copy, a compare or a backfill mapped
@@ -591,8 +730,9 @@ export function createDualStore(
 
   /**
    * Copies one committed write and clears its marker by version. A clear that
-   * matches nothing lost to a later write, or to a delete; after a delete the
-   * late upsert may have re-created the row, so its own version is removed.
+   * matches nothing lost to a later write, or to a delete. With tombstones the
+   * delete's tombstone has already refused this copy; without them the late
+   * upsert may have re-created the row, so its own version is removed.
    */
   const finishCopy = async (id: Id, version: number, doc: Doc, countFailure = true): Promise<boolean> => {
     try {
@@ -603,8 +743,16 @@ export function createDualStore(
         // write explains that. Postgres read first, so a version above Mongo's
         // latest is one Mongo never wrote: keep the marker, so pg-read stays
         // on Mongo, and say so.
-        const inPg = await pg.get(String(id));
-        const latest = await Model.findById(id, { pgVersion: 1 }).lean() as Doc | null;
+        const inPg = pg.getAny ? await pg.getAny(String(id)) : await pg.get(String(id));
+        const latest = await Model.findById(id, { pgVersion: 1, pgDeleted: 1 }).lean() as Doc | null;
+        // A tombstone refused the copy of a document Mongo still holds live:
+        // only a reused id does that. Keep the marker, so pg-read stays on
+        // Mongo, and say so. A late copy of a deleted document is expected.
+        if (inPg && (inPg as { deleted?: boolean }).deleted && latest && !latest.pgDeleted) {
+          if (countFailure) mismatch(name, id, 'tombstoned');
+          flagged = { value: true, at: Date.now() };
+          return false;
+        }
         if (inPg && latest && inPg.version > Number(latest.pgVersion ?? 0)) {
           if (countFailure) mismatch(name, id, 'pg-ahead');
           flagged = { value: true, at: Date.now() };
@@ -629,6 +777,8 @@ export function createDualStore(
         const now = await Model.findById(id, { pgDeleted: 1 }).lean() as Doc | null;
         if (!now || now.pgDeleted) {
           // A still-flagged delete is finished by repair; a finished one leaves only this log line.
+          // With tombstones this writes one at version + 1, which a delete's
+          // own tombstone (at a higher version) already outranks.
           await pg.remove(String(id), version + 1).catch((error: Error) => {
             console.warn(`[dual-store] late-row cleanup failed model=${name}:`, error.message);
           });
@@ -646,8 +796,12 @@ export function createDualStore(
     if (doc.pgPending != null || Math.random() >= sampleRate) return;
     try {
       const got = await pg.get(String(doc._id));
-      if (!got) mismatch(name, doc._id, 'missing');
-      else {
+      if (!got) {
+        // A delete that finished after this read left a tombstone at or above
+        // the version read: not a missing row.
+        const any = pg.getAny ? await pg.getAny(String(doc._id)) : null;
+        if (!(any?.deleted && any.version >= Number(doc.pgVersion ?? 0))) mismatch(name, doc._id, 'missing');
+      } else {
         const fields = differingFields(toRow(doc), got.row);
         if (fields.length) mismatch(name, doc._id, 'differs', fields);
       }
@@ -777,7 +931,10 @@ export function createDualStore(
     async create(doc: Doc): Promise<Doc> {
       const casted = plain(new Model(doc).toObject() as Doc) as Doc;
       const row = toRow(casted);
-      if (!await pg.upsert(row, 1)) throw new Error(`dual-store: ${name} ${String(casted._id)} already exists`);
+      // A tombstone outranks version 1, so a deleted id is refused here too.
+      if (!await pg.upsert(row, 1)) {
+        throw new Error(`dual-store: ${name} ${String(casted._id)} already exists or was deleted`);
+      }
       return fromRow(row);
     },
     async update(id: Id, fields: Doc): Promise<Doc | null> {
@@ -801,6 +958,8 @@ export function createDualStore(
         // eslint-disable-next-line no-await-in-loop -- read-then-delete, retried on a lost race
         const got = await pg.get(String(id));
         if (!got) return false;
+        // With tombstones, a compare-and-set of the live row to a tombstone at
+        // the next version, so the version survives the delete.
         // eslint-disable-next-line no-await-in-loop
         if (await pg.removeAt(String(id), got.version)) return true;
       }
@@ -1000,9 +1159,53 @@ export function createDualStore(
     if (doc) await finishCopy(before._id, version, doc);
   };
 
+  const refuseDeletes = (method: string, mode: StoreMode) => new Error(`dual-store: ${name} refuses ${method} in`
+    + ` ${mode}: deletes need deletes: 'tombstone' and a tombstone adapter (docs/runbooks/adr-034-model-move.md)`);
+
+  /**
+   * A store with tombstones never reuses an id: a recreated id would restart
+   * below its own tombstone. Mongo mints every id this store inserts outside
+   * mongo, so an insert whose filter or document names `_id` anywhere (top
+   * level, or under `$and`, `$or` or `$nor` at any depth: an upsert can take
+   * its fields from any of them) is refused there.
+   */
+  const namesId = (where: unknown): boolean => isPlainObject(where) && Object.entries(where).some(([key, value]) => (
+    key === '_id' || (LOGICAL_OPS.includes(key) && Array.isArray(value) && value.some(namesId))));
+  const refuseReusedId = (method: string) => new Error(`dual-store: ${name} ${method} refuses a caller-chosen _id`
+    + ' outside mongo: a store with tombstones never reuses an id');
+
+  /**
+   * The two-phase delete of the one document `live` matches, outside mongo:
+   * mark it (taking a version, the marker and, with releaseKeys, freeing its
+   * unique keys), tombstone its row at that version, then delete the document
+   * by its marker. A crash between any two steps leaves a flagged pgDeleted
+   * document for repair.
+   */
+  const removeMarked = async (live: Doc): Promise<boolean> => {
+    const stages: Doc[] = [{ $set: { pgDeleted: true, ...bump, ...releaseSet } }, markPending];
+    if (releaseUnset.length) stages.push({ $unset: releaseUnset });
+    const marked = await Model.findOneAndUpdate(live, stages, { new: true }).lean() as Doc | null;
+    if (!marked) return false;
+    const version = marked.pgVersion as number;
+    try {
+      await pg.remove(String(marked._id), version);
+    } catch {
+      mismatch(name, marked._id, 'pg-write-failed');
+      flagged = { value: true, at: Date.now() };
+      return true;
+    }
+    await Model.deleteOne({ _id: marked._id, pgPending: version });
+    return true;
+  };
+
   const api: DualStore = {
     async create(doc) {
       const mode = storeMode(name);
+      // Mongoose's `id` virtual sets `_id` too, unless the schema has a real `id` path.
+      if (tombstones && mode !== 'mongo' && doc != null && ((doc as Doc)._id !== undefined
+        || ((doc as Doc).id !== undefined && !Model.schema.path('id')))) {
+        throw refuseReusedId('create');
+      }
       if (mode === 'pg') return pgOnly.create(doc);
       if (mode === 'mongo') return plain((await Model.create(doc)).toObject() as Doc) as Doc;
       const created = (await Model.create({ ...doc, pgVersion: 1, pgPending: 1 })).toObject() as Doc;
@@ -1033,31 +1236,51 @@ export function createDualStore(
     async remove(id) {
       const mode = storeMode(name);
       if (mode === 'mongo') return (await Model.deleteOne(alive(id))).deletedCount > 0;
-      if (!allowDeletes) {
-        throw new Error(`dual-store: ${name} refuses remove in ${mode}: deletes need tombstones in both stores`
-          + ' (docs/runbooks/adr-034-model-move.md)');
-      }
+      if (!tombstones) throw refuseDeletes('remove', mode);
       if (mode === 'pg') return pgOnly.remove(id);
-      // Two-phase: mark, remove the row, then the document. A crash between
-      // any two steps leaves a flagged pgDeleted document for repair.
-      const marked = await Model.findOneAndUpdate(
-        alive(id), [{ $set: { pgDeleted: true, ...bump } }, markPending], { new: true },
-      ).lean() as Doc | null;
-      if (!marked) return false;
-      const version = marked.pgVersion as number;
-      try {
-        await pg.remove(String(marked._id), version);
-      } catch {
-        mismatch(name, marked._id, 'pg-write-failed');
-        flagged = { value: true, at: Date.now() };
-        return true;
+      return removeMarked(alive(id));
+    },
+
+    async removeWhere(filter) {
+      const mode = storeMode(name);
+      checkMongoFilter('removeWhere', filter);
+      // A document a dual delete left marked reads as absent, as remove's alive(id) treats it.
+      if (mode === 'mongo') return (await Model.deleteOne({ ...filter, pgDeleted: { $ne: true } })).deletedCount > 0;
+      if (!tombstones) throw refuseDeletes('removeWhere', mode);
+      if (mode === 'pg') throw notYetInPg('removeWhere');
+      return removeMarked({ ...filter, pgDeleted: { $ne: true } });
+    },
+
+    async removeManyWhere(filter) {
+      const mode = storeMode(name);
+      checkMongoFilter('removeManyWhere', filter);
+      if (mode === 'mongo') return (await Model.deleteMany({ ...filter, pgDeleted: { $ne: true } })).deletedCount;
+      if (!tombstones) throw refuseDeletes('removeManyWhere', mode);
+      if (mode === 'pg') throw notYetInPg('removeManyWhere');
+      let removed = 0;
+      let after: Id = null;
+      for (;;) {
+        const page: Doc[] = [filter, { pgDeleted: { $ne: true } }];
+        if (after !== null) page.push({ _id: { $gt: after } });
+        // eslint-disable-next-line no-await-in-loop -- keyset paging
+        const ids = await Model.find({ $and: page }, { _id: 1 }).sort({ _id: 1 }).limit(REMOVE_PAGE)
+          .lean() as Doc[];
+        if (!ids.length) break;
+        for (const { _id: docId } of ids) {
+          // $and keeps any _id condition of the caller's own, and checks the
+          // whole filter again against the document as it is now.
+          // eslint-disable-next-line no-await-in-loop -- one versioned delete at a time
+          if (await removeMarked({ $and: [filter, { _id: docId }], pgDeleted: { $ne: true } })) removed += 1;
+        }
+        after = ids[ids.length - 1]._id;
+        if (ids.length < REMOVE_PAGE) break;
       }
-      await Model.deleteOne({ _id: marked._id, pgPending: version });
-      return true;
+      return removed;
     },
 
     async upsert(id, { pipeline, merge }) {
       const mode = storeMode(name);
+      if (tombstones && mode !== 'mongo') throw refuseReusedId('upsert(id)');
       if (mode === 'pg') return pgOnly.upsert(id, merge);
       // dual and pg-read: the change, the version and the marker in one atomic write.
       const stages = mode === 'mongo' ? pipeline : [...pipeline, { $set: bump }, markPending];
@@ -1099,6 +1322,9 @@ export function createDualStore(
     async insertIfAbsent(filter, fields) {
       const mode = storeMode(name);
       if (mode === 'pg') throw notYetInPg('insertIfAbsent');
+      if (tombstones && mode !== 'mongo' && (namesId(filter) || namesId(fields))) {
+        throw refuseReusedId('insertIfAbsent');
+      }
       const options = {
         upsert: true, includeResultMetadata: true, setDefaultsOnInsert: true,
       };
@@ -1212,6 +1438,9 @@ export function createDualStore(
       }
       checkMongoFilter('findOneAndUpdateWhere', filter);
       const { set, inc, onInsert } = planUpdate(update, upsert);
+      if (tombstones && upsert && mode !== 'mongo' && (namesId(filter) || '_id' in onInsert)) {
+        throw refuseReusedId('findOneAndUpdateWhere');
+      }
       const after = returnDocument === 'after';
       if (mode === 'mongo') {
         return plain(await Model.findOneAndUpdate(filter, update, {
@@ -1320,7 +1549,16 @@ export function createDualStore(
       };
       const mode = storeMode(name);
       if (mode === 'mongo' || mode === 'pg') return counts;
-      const docs = await reveal(Model.find({ pgPending: { $exists: true } })).limit(limit).lean() as Doc[];
+      const flaggedPage = (range: Doc | null, max: number) => reveal(Model.find({
+        pgPending: { $exists: true }, ...(range && { _id: range }),
+      })).sort({ _id: 1 }).limit(max).lean() as Promise<Doc[]>;
+      const start = repairAfter;
+      let docs = await flaggedPage(start === null ? null : { $gt: start }, limit);
+      if (start !== null && docs.length < limit) {
+        docs = docs.concat(await flaggedPage({ $lte: start }, limit - docs.length));
+      }
+      // A full page resumes after its last document; a short one saw them all.
+      repairAfter = docs.length === limit ? docs[docs.length - 1]._id : null;
       for (const doc of docs) {
         counts.scanned += 1;
         const version = doc.pgPending as number;
@@ -1365,7 +1603,8 @@ export function createDualStore(
         const version = Number(doc.pgVersion ?? 0);
         let applied: boolean;
         if (dryRun) {
-          const got = await pg.get(String(doc._id));
+          // A tombstone refuses a copy at or below its version as a live row does.
+          const got = pg.getAny ? await pg.getAny(String(doc._id)) : await pg.get(String(doc._id));
           applied = !got || got.version < version;
         } else {
           applied = await pg.upsert(toRow(doc), version);
@@ -1420,6 +1659,7 @@ export function createDualStore(
       const counts = {
         mongo: mongoRows.size, pg: 0, missing: 0, differs: 0, extra: 0,
       };
+      let tombstoneRows = 0;
       const report = (rowId: string, kind: string, fields: string[] = []) => {
         const listed = fields.length ? ` fields=${fields.join(',')}` : '';
         console.warn(`[dual-store] verify model=${name} id=${hashId(rowId)} kind=${kind}${listed}`);
@@ -1428,10 +1668,26 @@ export function createDualStore(
       const seen = new Set<string>();
       let after: string | null = null;
       for (;;) {
-        // eslint-disable-next-line no-await-in-loop -- keyset paging
-        const page = await pg.scan(after, batchSize);
+        // Keyset paging. An adapter without tombstones is called exactly as before.
+        // eslint-disable-next-line no-await-in-loop
+        const page: Array<{ id: string; row: Row; version: number; deleted?: boolean }> = await (pg.tombstones
+          ? pg.scan(after, batchSize, { includeDeleted: true }) : pg.scan(after, batchSize));
         if (!page.length) break;
-        for (const { id: rowId, row, version } of page) {
+        for (const {
+          id: rowId, row, version, deleted,
+        } of page) {
+          if (deleted) {
+            // A tombstone is counted on its own and left out of `pg` and the
+            // checksum. One whose document is live differs: a copy of that
+            // document would be refused.
+            tombstoneRows += 1;
+            if (mongoRows.has(rowId)) {
+              seen.add(rowId);
+              counts.differs += 1;
+              report(rowId, 'differs', ['pg_deleted']);
+            }
+            continue; // eslint-disable-line no-continue
+          }
           counts.pg += 1;
           pgLines.push(line(row));
           const expected = mongoRows.get(rowId);
@@ -1461,6 +1717,7 @@ export function createDualStore(
       const checksum = (lines: string[]) => createHash('sha256').update(lines.sort().join('\n')).digest('hex');
       return {
         ...counts,
+        ...(pg.tombstones && { tombstones: tombstoneRows }),
         checksumMongo: checksum([...mongoRows.values()].map(line)),
         checksumPg: checksum(pgLines),
       };

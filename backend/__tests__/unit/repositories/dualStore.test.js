@@ -28,10 +28,11 @@ const fromRow = (row) => ({
   ...(row.note != null && { note: row.note }),
 });
 
-// These tests exercise the helper's delete path, so they opt in to it; a
-// store without the opt-in refuses remove outside mongo (test 14).
+// A store over a tombstone adapter opts in to deletes, as a model whose
+// callers delete does; a store without the opt-in refuses every delete outside
+// mongo (test 14), and one with it refuses caller-chosen ids (test 21).
 const store = (pg, extra = {}) => createDualStore({
-  name: NAME, model: Widget, pg, toRow, fromRow, allowDeletes: true, ...extra,
+  name: NAME, model: Widget, pg, toRow, fromRow, ...(pg.tombstones && { deletes: 'tombstone' }), ...extra,
 });
 
 describe('dual-store helper (ADR-034 D3)', () => {
@@ -84,6 +85,54 @@ describe('dual-store helper (ADR-034 D3)', () => {
     expect(raw).toBeNull();
   });
 
+  it('1b. a store with tombstones and releaseKeys makes no Postgres call in mongo mode, and deletes as Mongoose does', async () => {
+    const pg = fakePg({ tombstones: true });
+    const s = store(pg, { sampleRate: 1, releaseKeys: { note: 'unset', title: 'sentinel' } });
+    // Neither refusal of a caller-chosen id applies in mongo mode.
+    const chosen = new mongoose.Types.ObjectId();
+    expect(await s.create({ _id: chosen, title: 'b', note: 'kept' })).toMatchObject({ title: 'b' });
+    await s.upsert(new mongoose.Types.ObjectId(), {
+      pipeline: [{ $set: { title: 'c' } }], merge: () => ({ title: 'c' }),
+    });
+    await s.create({ title: 'c' });
+    await s.create({ title: 'd' });
+    const deleteOne = jest.spyOn(Widget, 'deleteOne');
+    const deleteMany = jest.spyOn(Widget, 'deleteMany');
+    const findOneAndUpdate = jest.spyOn(Widget, 'findOneAndUpdate');
+    const find = jest.spyOn(Widget, 'find');
+
+    expect(await s.removeWhere({ title: 'b' })).toBe(true);
+    expect(deleteOne).toHaveBeenCalledTimes(1);
+    expect(deleteOne).toHaveBeenCalledWith({ title: 'b', pgDeleted: { $ne: true } });
+    expect(await s.removeWhere({ title: 'none' })).toBe(false);
+    expect(await s.removeManyWhere({ title: 'c' })).toBe(2);
+    expect(deleteMany).toHaveBeenCalledTimes(1);
+    expect(deleteMany).toHaveBeenCalledWith({ title: 'c', pgDeleted: { $ne: true } });
+    expect(await s.remove((await Widget.findOne({ title: 'd' }).lean())._id)).toBe(true);
+    // No mark, no key release, no id read: one delete call each.
+    expect(findOneAndUpdate).not.toHaveBeenCalled();
+    expect(find).not.toHaveBeenCalled();
+    expect(await Widget.countDocuments({})).toBe(0);
+    expect(pg.calls).toEqual([]);
+  });
+
+  it('1c. mongo: removeWhere and removeManyWhere leave a document a dual delete marked, as remove does', async () => {
+    const pg = fakePg({ tombstones: true });
+    const s = store(pg);
+    // A rollback from dual left this one marked mid-delete.
+    await Widget.collection.insertOne({ title: 'marked', pgDeleted: true, pgVersion: 2, pgPending: 2 });
+    await s.create({ title: 'live' });
+    await Widget.collection.insertOne({ title: 'live', pgDeleted: true, pgVersion: 3, pgPending: 3 });
+    const deleteOne = jest.spyOn(Widget, 'deleteOne');
+    const deleteMany = jest.spyOn(Widget, 'deleteMany');
+    expect(await s.removeWhere({ title: 'marked' })).toBe(false);
+    expect(await s.removeManyWhere({ title: 'live' })).toBe(1);
+    expect(deleteOne).toHaveBeenCalledTimes(1);
+    expect(deleteMany).toHaveBeenCalledTimes(1);
+    expect(await Widget.countDocuments({ pgDeleted: true })).toBe(2);
+    expect(pg.calls).toEqual([]);
+  });
+
   it('2. dual create and update commit to Mongo first, copy toRow to Postgres, and clear the marker', async () => {
     process.env[ENV] = 'dual';
     const pg = fakePg();
@@ -105,7 +154,7 @@ describe('dual-store helper (ADR-034 D3)', () => {
     expect(raw.pgPending).toBeUndefined();
     expect(pg.rows.get(String(doc._id))).toEqual({ row: toRow(raw), version: 2 });
     expect(dualStoreStats(NAME)).toEqual({
-      missing: 0, differs: 0, 'pg-write-failed': 0, 'pg-ahead': 0,
+      missing: 0, differs: 0, 'pg-write-failed': 0, 'pg-ahead': 0, tombstoned: 0,
     });
   });
 
@@ -157,7 +206,7 @@ describe('dual-store helper (ADR-034 D3)', () => {
 
     it('a late upsert after a finished delete does not leave the row behind', async () => {
       process.env[ENV] = 'dual';
-      const pg = fakePg();
+      const pg = fakePg({ tombstones: true });
       const s = store(pg);
       const doc = await s.create({ title: 'v1' });
       const hold = pg.hold('upsert');
@@ -167,7 +216,8 @@ describe('dual-store helper (ADR-034 D3)', () => {
       expect(await Widget.findById(doc._id).lean()).toBeNull();
       hold.release();
       await writeA;
-      expect(pg.rows.has(String(doc._id))).toBe(false);
+      expect(pg.live(String(doc._id))).toBeUndefined();
+      expect(pg.rows.get(String(doc._id))).toMatchObject({ deleted: true, version: 3 });
     });
   });
 
@@ -191,6 +241,33 @@ describe('dual-store helper (ADR-034 D3)', () => {
     expect(await s.repair({ limit: 10 })).toEqual({
       scanned: 0, copied: 0, deleted: 0, failed: 0,
     });
+  });
+
+  it('4c. repair walks flagged documents in _id order and wraps, so ones that always fail cannot hide the rest', async () => {
+    process.env[ENV] = 'dual';
+    const pg = fakePg();
+    const s = store(pg, {
+      toRow: (doc) => {
+        if (doc.title === 'poison') throw new Error('unmappable');
+        return toRow(doc);
+      },
+    });
+    const first = await s.create({ title: 'poison' });
+    await s.create({ title: 'poison' });
+    const good = await s.create({ title: 'fine' });
+    await Widget.updateOne({ _id: good._id }, { $set: { pgPending: 1 } });
+    expect(await s.repair({ limit: 2 })).toEqual({
+      scanned: 2, copied: 0, deleted: 0, failed: 2,
+    });
+    // Resumes after the second poison: the good one, then wraps to the first.
+    expect(await s.repair({ limit: 2 })).toEqual({
+      scanned: 2, copied: 1, deleted: 0, failed: 1,
+    });
+    expect(pg.rows.get(String(good._id))).toMatchObject({ version: 1 });
+    expect((await Widget.findById(first._id).lean()).pgPending).toBe(1);
+    // Two left, fewer than the limit: one pass sees both and starts over.
+    expect(await s.repair({ limit: 10 })).toMatchObject({ scanned: 2, failed: 2 });
+    expect(await s.repair({ limit: 10 })).toMatchObject({ scanned: 2, failed: 2 });
   });
 
   it('4b. a toRow that throws after the Mongo write is a failed copy, never a failed write; repair goes on past it', async () => {
@@ -225,7 +302,7 @@ describe('dual-store helper (ADR-034 D3)', () => {
   describe('5. a delete crashing at each step', () => {
     const setup = async () => {
       process.env[ENV] = 'dual';
-      const pg = fakePg();
+      const pg = fakePg({ tombstones: true });
       const s = store(pg);
       const doc = await s.create({ title: 'doomed' });
       return { pg, s, id: doc._id };
@@ -240,7 +317,8 @@ describe('dual-store helper (ADR-034 D3)', () => {
       expect(await s.findById(id)).toBeNull();
       expect(await s.update(id, { title: 'zombie' })).toBeNull();
       expect(await s.repair({ limit: 10 })).toMatchObject({ deleted: 1, failed: 0 });
-      expect(pg.rows.has(String(id))).toBe(false);
+      expect(pg.live(String(id))).toBeUndefined();
+      expect(pg.rows.get(String(id))).toEqual({ row: { id: String(id) }, version: 2, deleted: true });
       expect(await Widget.findById(id).lean()).toBeNull();
       expect(await s.findById(id)).toBeNull();
     });
@@ -250,12 +328,13 @@ describe('dual-store helper (ADR-034 D3)', () => {
       const deleteOne = jest.spyOn(Widget, 'deleteOne').mockRejectedValueOnce(new Error('crash'));
       await expect(s.remove(id)).rejects.toThrow('crash');
       deleteOne.mockRestore();
-      expect(pg.rows.has(String(id))).toBe(false);
+      expect(pg.live(String(id))).toBeUndefined();
       expect(await Widget.findById(id).lean()).toMatchObject({ pgDeleted: true });
       expect(await s.findById(id)).toBeNull();
       expect(await s.repair({ limit: 10 })).toMatchObject({ deleted: 1, failed: 0 });
       expect(await Widget.findById(id).lean()).toBeNull();
-      expect(pg.rows.has(String(id))).toBe(false);
+      expect(pg.live(String(id))).toBeUndefined();
+      expect(pg.rows.get(String(id))).toMatchObject({ deleted: true, version: 2 });
     });
 
     it('a pgDeleted document reads as absent in mongo mode too', async () => {
@@ -305,7 +384,7 @@ describe('dual-store helper (ADR-034 D3)', () => {
     const doc = await s.create({ title: 'ok', note: 'SECRET-NOTE-123' });
     expect(await s.findById(doc._id)).toMatchObject({ title: 'ok' });
     expect(dualStoreStats(NAME)).toEqual({
-      missing: 0, differs: 0, 'pg-write-failed': 0, 'pg-ahead': 0,
+      missing: 0, differs: 0, 'pg-write-failed': 0, 'pg-ahead': 0, tombstoned: 0,
     });
 
     pg.rows.get(String(doc._id)).row.note = 'SECRET-DRIFT-456';
@@ -341,7 +420,7 @@ describe('dual-store helper (ADR-034 D3)', () => {
 
   it('pg mode reads and writes Postgres only', async () => {
     process.env[ENV] = 'pg';
-    const pg = fakePg();
+    const pg = fakePg({ tombstones: true });
     const s = store(pg);
     const doc = await s.create({ title: 'pg-only', count: 1 });
     expect(await Widget.countDocuments({})).toBe(0);
@@ -364,7 +443,7 @@ describe('dual-store helper (ADR-034 D3)', () => {
   describe('9. pg mode: an update and a delete interleaving', () => {
     it('an update that read the row before a delete does not bring it back', async () => {
       process.env[ENV] = 'pg';
-      const pg = fakePg();
+      const pg = fakePg({ tombstones: true });
       const s = store(pg);
       const doc = await s.create({ title: 'racing', count: 1 });
       const held = pg.hold('replace');
@@ -373,12 +452,13 @@ describe('dual-store helper (ADR-034 D3)', () => {
       expect(await s.remove(doc._id)).toBe(true);
       held.release();
       expect(await updating).toBeNull();
-      expect(pg.rows.has(String(doc._id))).toBe(false);
+      expect(pg.live(String(doc._id))).toBeUndefined();
+      expect(pg.rows.get(String(doc._id))).toMatchObject({ deleted: true, version: 2 });
     });
 
     it('a delete that read the row before an update still deletes it, and says so truthfully', async () => {
       process.env[ENV] = 'pg';
-      const pg = fakePg();
+      const pg = fakePg({ tombstones: true });
       const s = store(pg);
       const doc = await s.create({ title: 'racing', count: 1 });
       const held = pg.hold('removeAt');
@@ -387,7 +467,8 @@ describe('dual-store helper (ADR-034 D3)', () => {
       expect(await s.update(doc._id, { count: 2 })).toMatchObject({ count: 2 });
       held.release();
       expect(await removing).toBe(true);
-      expect(pg.rows.has(String(doc._id))).toBe(false);
+      expect(pg.live(String(doc._id))).toBeUndefined();
+      expect(pg.rows.get(String(doc._id))).toMatchObject({ deleted: true, version: 3 });
     });
   });
 
@@ -557,15 +638,17 @@ describe('dual-store helper (ADR-034 D3)', () => {
     });
 
     describe('onto a document marked deleted', () => {
+      // A store with tombstones refuses upsert(id) outside mongo (test 21), so
+      // the document is marked by one and written onto by a store without them.
       const midDelete = async () => {
         process.env[ENV] = 'dual';
-        const pg = fakePg();
-        const s = store(pg);
+        const pg = fakePg({ tombstones: true });
+        const s = store(pg, { deletes: undefined });
         const key = id();
         await s.upsert(key, raise(8, 'old'));
         await s.update(key, { note: 'old note' });
         pg.failNext('remove');
-        expect(await s.remove(key)).toBe(true);
+        expect(await store(pg).remove(key)).toBe(true);
         expect(await Widget.findById(key).lean()).toMatchObject({ pgDeleted: true, pgPending: 3 });
         return { pg, s, key };
       };
@@ -741,7 +824,7 @@ describe('dual-store helper (ADR-034 D3)', () => {
 
     it('leaves out a document marked deleted', async () => {
       process.env[ENV] = 'dual';
-      const pg = fakePg();
+      const pg = fakePg({ tombstones: true });
       const s = store(pg);
       const doc = await s.create({ title: 'doomed' });
       pg.failNext('remove');
@@ -763,7 +846,7 @@ describe('dual-store helper (ADR-034 D3)', () => {
       process.env[ENV] = mode;
       const writes = ['findOneAndUpdate', 'updateOne', 'deleteOne', 'deleteMany']
         .map((method) => jest.spyOn(Widget, method));
-      await expect(bare(pg).remove(doc._id)).rejects.toThrow(/refuses remove in .*tombstones/);
+      await expect(bare(pg).remove(doc._id)).rejects.toThrow(/refuses remove in .*tombstone/);
       writes.forEach((spy) => expect(spy).not.toHaveBeenCalled());
       expect(pg.calls).toEqual([]);
       expect(await Widget.findById(doc._id).lean()).toMatchObject({ title: 'kept', pgVersion: 1 });
@@ -1869,6 +1952,433 @@ describe('dual-store helper (ADR-034 D3)', () => {
         await expect(s.findPageMongo({}, { limit: 1, skip: -1 })).rejects.toThrow(/skip/);
         await expect(s.findPageMongo({ owner: { $options: 'i' } }, { limit: 1 })).rejects.toThrow(/\$options/);
       });
+    });
+  });
+
+  describe('21. tombstone deletes', () => {
+    const dual = (extra = {}) => {
+      process.env[ENV] = 'dual';
+      const pg = fakePg({ tombstones: true });
+      return { pg, s: store(pg, extra) };
+    };
+
+    it('refuses deletes: tombstone over an adapter without tombstones, and the retired allowDeletes', () => {
+      expect(() => store(fakePg(), { deletes: 'tombstone' })).toThrow(/tombstones: true/);
+      expect(() => store(fakePg(), { allowDeletes: true })).toThrow(/allowDeletes/);
+      expect(() => store(fakePg({ tombstones: true }), { deletes: 'soft' })).toThrow(/must be 'tombstone'/);
+    });
+
+    describe('late copies lose to the tombstone (I1, I2, I3)', () => {
+      it('I1: a dual write whose copy lands after the delete finished leaves only the tombstone', async () => {
+        const { pg, s } = dual();
+        const doc = await s.create({ title: 'v1' });
+        const hold = pg.hold('upsert');
+        const writing = s.update(doc._id, { title: 'late' });
+        await hold.arrived;
+        expect(await s.remove(doc._id)).toBe(true);
+        expect(await Widget.findById(doc._id).lean()).toBeNull();
+        expect(pg.rows.get(String(doc._id))).toEqual({ row: { id: String(doc._id) }, version: 3, deleted: true });
+        hold.release();
+        expect(await writing).toMatchObject({ title: 'late' });
+        expect(pg.live(String(doc._id))).toBeUndefined();
+        expect(pg.rows.get(String(doc._id))).toMatchObject({ version: 3, deleted: true });
+        // An expected late copy, not a reused id.
+        expect(dualStoreStats(NAME).tombstoned).toBe(0);
+      });
+
+      it("I1: a late write's cleanup never lowers the tombstone's version, so the next late copy still loses", async () => {
+        const { pg, s } = dual();
+        const doc = await s.create({ title: 'v1' });
+        const hold = pg.hold('upsert');
+        const early = s.update(doc._id, { title: 'v2' });
+        await hold.arrived;
+        await s.update(doc._id, { title: 'v3' });
+        await s.update(doc._id, { title: 'v4' });
+        await s.remove(doc._id);
+        expect(pg.rows.get(String(doc._id))).toMatchObject({ version: 5, deleted: true });
+        hold.release();
+        await early;
+        // The v2 copy's cleanup writes its tombstone at v3, under the guard.
+        expect(pg.rows.get(String(doc._id))).toMatchObject({ version: 5, deleted: true });
+        // A copy of v4 arriving later still loses.
+        expect(await pg.upsert(toRow({ _id: doc._id, title: 'v4' }), 4)).toBe(false);
+        expect(pg.live(String(doc._id))).toBeUndefined();
+      });
+
+      it('I1: a crash right after the late upsert, before any cleanup, still leaves no live row', async () => {
+        const { pg, s } = dual();
+        const doc = await s.create({ title: 'v1' });
+        const hold = pg.hold('upsert');
+        const writing = s.update(doc._id, { title: 'late' });
+        await hold.arrived;
+        await s.remove(doc._id);
+        // The process dies after the upsert: the marker clear and the
+        // late-row cleanup never run.
+        jest.spyOn(Widget, 'updateOne').mockRejectedValueOnce(new Error('crash'));
+        const callsBefore = pg.calls.length;
+        hold.release();
+        await writing;
+        // The late upsert (entered before the hold) was refused, and nothing
+        // cleaned up after it: no remove ever ran.
+        expect(pg.calls.slice(callsBefore)).toEqual(['getAny']);
+        expect(pg.live(String(doc._id))).toBeUndefined();
+        process.env[ENV] = 'pg-read';
+        expect(await store(pg).findById(doc._id)).toBeNull();
+      });
+
+      it('I2: a repair copy read before the delete lands after it and is refused', async () => {
+        const { pg, s } = dual();
+        const doc = await s.create({ title: 'v1' });
+        pg.failNext('upsert');
+        await s.update(doc._id, { title: 'flagged' });
+        const hold = pg.hold('upsert');
+        const repairing = s.repair({ limit: 10 });
+        await hold.arrived;
+        expect(await s.remove(doc._id)).toBe(true);
+        hold.release();
+        expect(await repairing).toMatchObject({ scanned: 1, failed: 0 });
+        expect(pg.live(String(doc._id))).toBeUndefined();
+        expect(pg.rows.get(String(doc._id))).toMatchObject({ version: 3, deleted: true });
+        expect(await Widget.countDocuments({})).toBe(0);
+      });
+
+      it('I3: a backfill copy held across the delete is refused, and verify counts the tombstone', async () => {
+        const { insertedId } = await Widget.collection.insertOne({ title: 'history' });
+        const { pg, s } = dual();
+        const hold = pg.hold('upsert');
+        const copying = s.backfill({ dryRun: false });
+        await hold.arrived;
+        expect(await s.remove(insertedId)).toBe(true);
+        hold.release();
+        expect(await copying).toEqual({
+          scanned: 1, inserted: 0, alreadyCurrent: 1, deferredPending: 0,
+        });
+        expect(pg.live(String(insertedId))).toBeUndefined();
+        expect(pg.rows.get(String(insertedId))).toMatchObject({ version: 1, deleted: true });
+        expect(await s.verify()).toMatchObject({
+          mongo: 0, pg: 0, tombstones: 1, missing: 0, differs: 0, extra: 0,
+        });
+      });
+
+      it('a dry-run backfill counts a document under its tombstone as current', async () => {
+        const { pg, s } = dual();
+        const { insertedId } = await Widget.collection.insertOne({ title: 'under' });
+        pg.rows.set(String(insertedId), { row: { id: String(insertedId) }, version: 2, deleted: true });
+        expect(await s.backfill({ dryRun: true })).toMatchObject({ inserted: 0, alreadyCurrent: 1 });
+      });
+    });
+
+    it('I4: a sampled compare read before a delete that finishes logs no missing', async () => {
+      const { pg, s } = dual({ sampleRate: 1 });
+      const doc = await s.create({ title: 'read then deleted' });
+      const hold = pg.hold('get');
+      const reading = s.findById(doc._id);
+      await hold.arrived;
+      expect(await s.remove(doc._id)).toBe(true);
+      hold.release();
+      expect(await reading).toMatchObject({ title: 'read then deleted' });
+      expect(dualStoreStats(NAME).missing).toBe(0);
+      expect(logged()).not.toContain('kind=missing');
+      // A live document with no row at all is still missing.
+      const other = await s.create({ title: 'kept' });
+      pg.rows.delete(String(other._id));
+      await s.findById(other._id);
+      expect(dualStoreStats(NAME).missing).toBe(1);
+    });
+
+    describe('ids are never reused (I5)', () => {
+      it.each(['dual', 'pg-read', 'pg'])('%s: refuses every caller-chosen id before either store is written', async (mode) => {
+        const pg = fakePg({ tombstones: true });
+        const s = store(pg);
+        process.env[ENV] = mode;
+        const chosen = new mongoose.Types.ObjectId();
+        const writes = ['create', 'findOneAndUpdate', 'updateOne', 'insertMany']
+          .map((method) => jest.spyOn(Widget, method));
+        await expect(s.create({ _id: chosen, title: 'x' })).rejects.toThrow(/caller-chosen _id/);
+        await expect(s.upsert(chosen, {
+          pipeline: [{ $set: { title: 'x' } }], merge: () => ({ title: 'x' }),
+        })).rejects.toThrow(/caller-chosen _id/);
+        if (mode !== 'pg') {
+          await expect(s.insertIfAbsent({ _id: chosen }, { title: 'x' })).rejects.toThrow(/caller-chosen _id/);
+          await expect(s.insertIfAbsent({ title: 'x' }, { _id: chosen })).rejects.toThrow(/caller-chosen _id/);
+          await expect(s.findOneAndUpdateWhere(
+            { $and: [{ _id: chosen }] }, { $set: { title: 'x' } }, { returnDocument: 'after', upsert: true },
+          )).rejects.toThrow(/caller-chosen _id/);
+          await expect(s.findOneAndUpdateWhere(
+            { title: 'x' }, { $setOnInsert: { _id: chosen } }, { returnDocument: 'after', upsert: true },
+          )).rejects.toThrow(/caller-chosen _id/);
+          // An upsert takes its fields from an $or of one branch too, at any depth.
+          await expect(s.findOneAndUpdateWhere(
+            { $or: [{ _id: chosen }] }, { $set: { title: 'x' } }, { returnDocument: 'after', upsert: true },
+          )).rejects.toThrow(/caller-chosen _id/);
+          await expect(s.insertIfAbsent({ $or: [{ _id: chosen }] }, { title: 'x' })).rejects.toThrow(/caller-chosen _id/);
+          await expect(s.insertIfAbsent(
+            { $and: [{ title: 'x' }, { $nor: [{ $or: [{ _id: chosen }] }] }] }, { title: 'x' },
+          )).rejects.toThrow(/caller-chosen _id/);
+        }
+        // Mongoose's id virtual would set _id too.
+        await expect(s.create({ id: String(chosen), title: 'x' })).rejects.toThrow(/caller-chosen _id/);
+        writes.forEach((spy) => expect(spy).not.toHaveBeenCalled());
+        expect(pg.calls).toEqual([]);
+        expect(await Widget.countDocuments({})).toBe(0);
+      });
+
+      it('dual: a found-by-_id update without upsert, and a Mongo-minted create, still work', async () => {
+        const { pg, s } = dual();
+        const doc = await s.create({ title: 'minted' });
+        expect(await s.findOneAndUpdateWhere(
+          { _id: doc._id }, { $set: { title: 'changed' } }, { returnDocument: 'after' },
+        )).toMatchObject({ title: 'changed' });
+        expect(pg.live(String(doc._id))).toMatchObject({ row: { title: 'changed' }, version: 2 });
+      });
+
+      it('dual: a copy refused by a tombstone while Mongo is live is a tombstoned mismatch and keeps the flag', async () => {
+        const { pg, s } = dual();
+        const doc = await s.create({ title: 'first life' });
+        await s.remove(doc._id);
+        // An id reused behind the helper's back, below its own tombstone.
+        await Widget.collection.insertOne({ _id: doc._id, title: 'second life' });
+        expect(await s.update(doc._id, { title: 'written' })).toMatchObject({ title: 'written' });
+        expect(dualStoreStats(NAME).tombstoned).toBe(1);
+        expect(dualStoreStats(NAME)['pg-ahead']).toBe(0);
+        expect(logged()).toMatch(/kind=tombstoned/);
+        expect((await Widget.findById(doc._id).lean()).pgPending).toBe(1);
+        expect(pg.live(String(doc._id))).toBeUndefined();
+        process.env[ENV] = 'pg-read';
+        expect(await store(pg).findById(doc._id)).toMatchObject({ title: 'written' });
+        expect(await store(pg).repair({ limit: 10 })).toMatchObject({ scanned: 1, failed: 1 });
+        expect(await store(pg).verify()).toMatchObject({ differs: 1, missing: 0, tombstones: 1 });
+        expect(logged()).toMatch(/verify model=DualStoreTestWidget id=[0-9a-f]{12} kind=differs fields=pg_deleted$/m);
+      });
+    });
+
+    describe('releaseKeys frees unique keys in the mark window (I7)', () => {
+      const keySchema = new mongoose.Schema({ key: String, hash: String, label: String });
+      keySchema.index({ key: 1 }, { unique: true });
+      keySchema.index({ hash: 1 }, { unique: true, partialFilterExpression: { hash: { $type: 'string' } } });
+      dualStorePlugin(keySchema);
+      const Keyed = mongoose.models.DualStoreTombKeyed || mongoose.model('DualStoreTombKeyed', keySchema);
+      const KEY_ENV = 'STORE_MODE_DUAL_STORE_TOMB_KEYED';
+      const keyRow = (doc) => ({
+        id: String(doc._id), key: doc.key ?? null, hash: doc.hash ?? null, label: doc.label ?? null,
+      });
+      const keyed = (pg, extra = {}) => createDualStore({
+        name: 'DualStoreTombKeyed',
+        model: Keyed,
+        pg,
+        toRow: keyRow,
+        fromRow: (row) => ({ _id: new mongoose.Types.ObjectId(row.id), key: row.key, hash: row.hash }),
+        deletes: 'tombstone',
+        ...extra,
+      });
+      beforeAll(() => Keyed.init());
+      beforeEach(() => Keyed.deleteMany({}));
+      afterEach(() => { delete process.env[KEY_ENV]; });
+
+      it.each(['dual', 'pg-read'])('%s: a re-insert under the same keys while the delete is marked gets no 11000', async (mode) => {
+        process.env[KEY_ENV] = mode;
+        const pg = fakePg({ tombstones: true });
+        const s = keyed(pg, { releaseKeys: { key: 'sentinel', hash: 'unset' } });
+        const first = await s.create({ key: 'delivery-1', hash: 'h1', label: 'old' });
+        pg.failNext('remove');
+        expect(await s.remove(first._id)).toBe(true);
+        const marked = await Keyed.findById(first._id).lean();
+        expect(marked).toMatchObject({ pgDeleted: true, key: `\0deleted:${first._id}` });
+        expect('hash' in marked).toBe(false);
+        const second = await s.create({ key: 'delivery-1', hash: 'h1', label: 'new' });
+        expect(String(second._id)).not.toBe(String(first._id));
+        // The marked document reads as absent; the new one is what a key lookup sees.
+        expect(await Keyed.findOne({ key: 'delivery-1' }).lean()).toMatchObject({ label: 'new' });
+        expect(await s.repair({ limit: 10 })).toMatchObject({ deleted: 1, failed: 0 });
+        expect(await Keyed.countDocuments({})).toBe(1);
+        expect(pg.rows.get(String(first._id))).toMatchObject({ deleted: true, version: 2 });
+        expect(pg.live(String(second._id))).toMatchObject({ row: { key: 'delivery-1', hash: 'h1' } });
+      });
+
+      it('without releaseKeys the same re-insert fails with 11000, which is what it prevents', async () => {
+        process.env[KEY_ENV] = 'dual';
+        const pg = fakePg({ tombstones: true });
+        const s = keyed(pg);
+        const first = await s.create({ key: 'delivery-1', hash: 'h1' });
+        pg.failNext('remove');
+        await s.remove(first._id);
+        await expect(s.create({ key: 'delivery-1', hash: 'h2' })).rejects.toMatchObject({ code: 11000 });
+      });
+
+      it('mongo: a delete is one deleteOne, with no key rewrite', async () => {
+        const pg = fakePg({ tombstones: true });
+        const s = keyed(pg, { releaseKeys: { key: 'sentinel' } });
+        const doc = await s.create({ key: 'k' });
+        const findOneAndUpdate = jest.spyOn(Keyed, 'findOneAndUpdate');
+        expect(await s.removeWhere({ key: 'k' })).toBe(true);
+        expect(findOneAndUpdate).not.toHaveBeenCalled();
+        expect(await Keyed.findById(doc._id).lean()).toBeNull();
+        expect(pg.calls).toEqual([]);
+      });
+
+      it('refuses releaseKeys without deletes, on a missing or non-string path, or a marker', () => {
+        const pg = fakePg({ tombstones: true });
+        expect(() => keyed(pg, { deletes: undefined, releaseKeys: { key: 'sentinel' } })).toThrow(/needs deletes/);
+        expect(() => keyed(pg, { releaseKeys: { nope: 'unset' } })).toThrow(/not a top-level field/);
+        expect(() => keyed(pg, { releaseKeys: { pgVersion: 'unset' } })).toThrow(/not a top-level field/);
+        expect(() => store(pg, { releaseKeys: { count: 'sentinel' } })).toThrow(/needs a String path/);
+        expect(() => keyed(pg, { releaseKeys: { key: 'erase' } })).toThrow(/'sentinel' or 'unset'/);
+      });
+    });
+
+    describe('removeWhere and removeManyWhere', () => {
+      it('dual: removeWhere deletes the one matching document in two phases, and false when none match', async () => {
+        const { pg, s } = dual();
+        const a = await s.create({ title: 'a', count: 1 });
+        await s.create({ title: 'b', count: 1 });
+        expect(await s.removeWhere({ title: 'a', count: { $gte: 1 } })).toBe(true);
+        expect(await Widget.findById(a._id).lean()).toBeNull();
+        expect(pg.rows.get(String(a._id))).toMatchObject({ deleted: true, version: 2 });
+        expect(await s.removeWhere({ title: 'a' })).toBe(false);
+        expect(await Widget.countDocuments({})).toBe(1);
+        await expect(s.removeWhere({ title: { $where: 'x' } })).rejects.toThrow(/does not support \$where/);
+      });
+
+      it('dual: each document takes its own version, and a non-matching one is untouched', async () => {
+        const { pg, s } = dual();
+        const one = await s.create({ title: 'purge', count: 1 });
+        const two = await s.create({ title: 'purge', count: 1 });
+        await s.update(two._id, { note: 'n' });
+        await s.update(two._id, { note: 'm' });
+        const kept = await s.create({ title: 'keep', count: 1 });
+        expect(await s.removeManyWhere({ title: 'purge' })).toBe(2);
+        expect(pg.rows.get(String(one._id))).toEqual({ row: { id: String(one._id) }, version: 2, deleted: true });
+        expect(pg.rows.get(String(two._id))).toEqual({ row: { id: String(two._id) }, version: 4, deleted: true });
+        expect(pg.live(String(kept._id))).toMatchObject({ row: { title: 'keep' }, version: 1 });
+        expect(await Widget.find({}).lean()).toHaveLength(1);
+        expect(await s.removeManyWhere({ title: 'purge' })).toBe(0);
+      });
+
+      it('dual: a document that stops matching between the read and its delete is skipped', async () => {
+        const { pg, s } = dual();
+        const first = await s.create({ title: 'purge' });
+        const second = await s.create({ title: 'purge' });
+        const third = await s.create({ title: 'purge' });
+        const hold = pg.hold('remove');
+        const removing = s.removeManyWhere({ title: 'purge' });
+        await hold.arrived;
+        await s.update(second._id, { title: 'saved' });
+        hold.release();
+        expect(await removing).toBe(2);
+        expect(await Widget.findById(first._id).lean()).toBeNull();
+        expect(await Widget.findById(third._id).lean()).toBeNull();
+        expect(await s.findById(second._id)).toMatchObject({ title: 'saved' });
+        expect(pg.live(String(second._id))).toMatchObject({ row: { title: 'saved' }, version: 2 });
+      });
+
+      it('dual: a crash part-way leaves the marked document for repair, and a re-run takes the rest', async () => {
+        const { pg, s } = dual();
+        const docs = [];
+        for (let i = 0; i < 3; i += 1) docs.push(await s.create({ title: 'purge' })); // eslint-disable-line no-await-in-loop
+        const real = Widget.deleteOne.bind(Widget);
+        let call = 0;
+        jest.spyOn(Widget, 'deleteOne').mockImplementation((...args) => {
+          call += 1;
+          if (call === 2) return Promise.reject(new Error('crash'));
+          return real(...args);
+        });
+        await expect(s.removeManyWhere({ title: 'purge' })).rejects.toThrow('crash');
+        Widget.deleteOne.mockRestore();
+        expect(await Widget.findById(docs[0]._id).lean()).toBeNull();
+        expect(await Widget.findById(docs[1]._id).lean()).toMatchObject({ pgDeleted: true, pgPending: 2 });
+        expect(await s.findById(docs[1]._id)).toBeNull();
+        expect(pg.rows.get(String(docs[1]._id))).toMatchObject({ deleted: true, version: 2 });
+        expect(await s.repair({ limit: 10 })).toMatchObject({ deleted: 1, failed: 0 });
+        expect(await Widget.findById(docs[1]._id).lean()).toBeNull();
+        expect(await s.removeManyWhere({ title: 'purge' })).toBe(1);
+        expect(await Widget.countDocuments({})).toBe(0);
+        expect(await s.verify()).toMatchObject({
+          mongo: 0, pg: 0, tombstones: 3, missing: 0, differs: 0, extra: 0,
+        });
+      });
+
+      it('dual: pages past 500 matching documents', async () => {
+        const { pg, s } = dual();
+        await Widget.collection.insertMany(Array.from({ length: 503 }, () => ({ title: 'bulk' })));
+        const find = jest.spyOn(Widget, 'find');
+        expect(await s.removeManyWhere({ title: 'bulk' })).toBe(503);
+        expect(find).toHaveBeenCalledTimes(2);
+        expect(await Widget.countDocuments({})).toBe(0);
+        expect([...pg.rows.values()].filter((entry) => entry.deleted)).toHaveLength(503);
+      });
+
+      it('refuses without deletes outside mongo, and in pg mode until step 4, before any write', async () => {
+        await Widget.create({ title: 'kept' });
+        const plainPg = fakePg();
+        process.env[ENV] = 'dual';
+        await expect(store(plainPg).removeWhere({ title: 'kept' })).rejects.toThrow(/refuses removeWhere in dual/);
+        await expect(store(plainPg).removeManyWhere({ title: 'kept' })).rejects.toThrow(/refuses removeManyWhere in dual/);
+        process.env[ENV] = 'pg';
+        const pg = fakePg({ tombstones: true });
+        await expect(store(pg).removeWhere({ title: 'kept' })).rejects.toThrow(/not supported in pg mode/);
+        await expect(store(pg).removeManyWhere({ title: 'kept' })).rejects.toThrow(/not supported in pg mode/);
+        expect(await Widget.countDocuments({ title: 'kept' })).toBe(1);
+        expect([...plainPg.calls, ...pg.calls]).toEqual([]);
+      });
+    });
+
+    describe('pg mode', () => {
+      it('a delete is a compare-and-set to a tombstone at the next version; an update racing it never revives the row', async () => {
+        process.env[ENV] = 'pg';
+        const pg = fakePg({ tombstones: true });
+        const s = store(pg);
+        const doc = await s.create({ title: 'racing', count: 1 });
+        const held = pg.hold('replace');
+        const updating = s.update(doc._id, { count: 2 });
+        await held.arrived;
+        expect(await s.remove(doc._id)).toBe(true);
+        expect(await pg.getAny(String(doc._id))).toEqual({ deleted: true, version: 2 });
+        held.release();
+        expect(await updating).toBeNull();
+        expect(await pg.replace(toRow({ _id: doc._id, title: 'ghost' }), 2)).toBe(false);
+        expect(await s.findById(doc._id)).toBeNull();
+        expect(await s.remove(doc._id)).toBe(false);
+        expect(pg.rows.get(String(doc._id))).toMatchObject({ deleted: true, version: 2 });
+      });
+
+      it('a create on a tombstoned id is refused, even by a store that does not refuse the id itself', async () => {
+        process.env[ENV] = 'pg';
+        const pg = fakePg({ tombstones: true });
+        const doc = await store(pg).create({ title: 'once' });
+        await store(pg).remove(doc._id);
+        await expect(store(pg).create({ _id: doc._id, title: 'again' })).rejects.toThrow(/caller-chosen _id/);
+        await expect(store(pg, { deletes: undefined }).create({ _id: doc._id, title: 'again' }))
+          .rejects.toThrow(/already exists or was deleted/);
+        expect(pg.rows.get(String(doc._id))).toMatchObject({ deleted: true, version: 2 });
+      });
+
+      it('reads leave tombstones out: findById, findWhere and a scan', async () => {
+        process.env[ENV] = 'pg';
+        const pg = fakePg({ tombstones: true });
+        const s = store(pg, { filterColumns: { title: 'title' } });
+        const gone = await s.create({ title: 'same' });
+        const kept = await s.create({ title: 'same' });
+        await s.remove(gone._id);
+        expect((await s.findWhere({ title: 'same' })).map((doc) => String(doc._id))).toEqual([String(kept._id)]);
+        expect((await pg.scan(null, 10)).map((entry) => entry.id)).toEqual([String(kept._id)]);
+        expect((await pg.scan(null, 10, { includeDeleted: true })).filter((entry) => entry.deleted)).toHaveLength(1);
+      });
+    });
+
+    it('verify counts tombstones apart from live rows; a plain adapter reports no tombstones count', async () => {
+      const { pg, s } = dual();
+      await s.create({ title: 'a' });
+      const b = await s.create({ title: 'b' });
+      await s.remove(b._id);
+      const counts = await s.verify();
+      expect(counts).toMatchObject({
+        mongo: 1, pg: 1, tombstones: 1, missing: 0, differs: 0, extra: 0,
+      });
+      expect(counts.checksumPg).toBe(counts.checksumMongo);
+      const plainPg = fakePg();
+      await store(plainPg).create({ title: 'c' });
+      expect('tombstones' in await store(plainPg).verify()).toBe(false);
+      expect(pg.calls.filter((call) => call === 'scan').length).toBeGreaterThan(0);
     });
   });
 });
