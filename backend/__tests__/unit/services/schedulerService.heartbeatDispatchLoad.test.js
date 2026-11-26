@@ -30,11 +30,13 @@ const SchedulerService = require('../../../services/schedulerService').construct
 const NOW = new Date('2026-11-26T12:06:00.000Z');
 const N = 2000;
 
-// Every tenth install is global, so the pod pick has work to skip.
+// Every tenth install is global, so the pod pick has work to skip. Each pod id
+// has the real 24-hex shape.
+const podIdOf = (i) => `6a8f${i.toString(16).padStart(20, '0')}`;
 const installs = Array.from({ length: N }, (_, i) => ({
   agentName: `agent${i}`,
   instanceId: 'default',
-  podId: `pod${i}`,
+  podId: podIdOf(i),
   config: { heartbeat: { enabled: true, everyMinutes: 60, ...(i % 10 === 0 ? { global: true } : {}) } },
 }));
 
@@ -109,6 +111,41 @@ describe('heartbeat dispatch load (F668)', () => {
     expect(r.enqueued).toBe(N);
     expect(AgentEventService.enqueue).toHaveBeenCalledTimes(N);
     expect(ranBeforeDone).toBe(true);
+  });
+
+  it('starts one chunk of enqueues at a time, and yields between enqueue chunks', async () => {
+    // Due selection also yields every 100 installs, so this holds the enqueue
+    // phase open to see its own chunking and yield, not selection's.
+    mockFind(installs.slice(0, 250));
+    const held = [];
+    AgentEventService.enqueue.mockImplementation(() => new Promise((resolve) => { held.push(resolve); }));
+    const flush = async () => {
+      for (let k = 0; k < 50; k += 1) {
+        // eslint-disable-next-line no-await-in-loop
+        await new Promise((resolve) => { setImmediate(resolve); });
+      }
+    };
+    const release = () => held.splice(0).forEach((resolve) => resolve({ _id: 'evt' }));
+
+    const run = SchedulerService.dispatchAgentHeartbeats({ now: NOW, respectIntervals: false });
+    await flush();
+    // The first chunk is in flight, and nothing past it has started.
+    expect(AgentEventService.enqueue).toHaveBeenCalledTimes(100);
+
+    let startedWhenImmediateRan = null;
+    release();
+    setImmediate(() => { startedWhenImmediateRan = AgentEventService.enqueue.mock.calls.length; });
+    await flush();
+    // An immediate queued as the first chunk settled ran before the second
+    // chunk started, so the loop yielded between them.
+    expect(startedWhenImmediateRan).toBe(100);
+    expect(AgentEventService.enqueue).toHaveBeenCalledTimes(200);
+
+    release();
+    await flush();
+    release();
+    const r = await run;
+    expect(r.enqueued).toBe(250);
   });
 
   it('a seat that fails in the first chunk does not stop the seats in later chunks', async () => {

@@ -24,7 +24,7 @@ This document clarifies how Commonly's built-in Summarizer service works alongsi
 **Location**: `backend/services/summarizerService.js`, `chatSummarizerService.js`, `dailyDigestService.js`
 
 **What it does**:
-- Runs **automatically every hour** (cron job at minute 0)
+- Runs **automatically every hour** (cron job at minute 9)
 - Summarizes external integration buffers and enqueues events for `commonly-bot`
 - Enqueues per-pod `summary.request` events for installed `commonly-bot` instances
 - Runs **daily at 6 AM UTC** to generate personalized digests
