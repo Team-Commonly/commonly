@@ -37,7 +37,7 @@ export const UI_EVENTS: Record<string, PropSchema> = {
   'teammate-card-shown': { where: ['workspace', 'pod'] },
   'teammate-card-click': { where: ['workspace', 'pod'] },
   'teammate-card-dismiss': { where: ['workspace', 'pod'] },
-  'discord-click': { where: ['card', 'connect', 'feedback-menu'] },
+  'discord-click': { where: ['card', 'byo', 'connect', 'feedback-menu'] },
 };
 
 // Route templates from the V2App table, without the /v2 mount.

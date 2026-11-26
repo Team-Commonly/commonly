@@ -169,11 +169,12 @@ describe('usage events', () => {
     const user = await makeUser();
     await post(user, { name: 'discord-click', screen: '/', props: { where: 'card' } }).expect(204);
     await post(user, { name: 'discord-click', screen: '/connect', props: { where: 'connect' } }).expect(204);
+    await post(user, { name: 'discord-click', screen: '/agents/byo', props: { where: 'byo' } }).expect(204);
     await post(user, { name: 'discord-click', screen: '/', props: { where: 'feedback-menu' } }).expect(204);
     await post(user, { name: 'discord-click', screen: '/', props: { where: 'https://discord.gg/x' } }).expect(204);
     const stored = await rows().find({ name: 'discord-click' }).sort({ _id: 1 }).toArray();
     expect(stored.map((row) => row.props)).toEqual([
-      { where: 'card' }, { where: 'connect' }, { where: 'feedback-menu' }, undefined,
+      { where: 'card' }, { where: 'connect' }, { where: 'byo' }, { where: 'feedback-menu' }, undefined,
     ]);
   });
 

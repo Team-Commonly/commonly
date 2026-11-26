@@ -88,7 +88,7 @@ When a published page is added or removed, regenerate `backend/config/publicPage
 
 Every Discord link in the product is counted, for Growth's weekly read.
 
-- Signed in: `discord-click` with `where: card | connect | feedback-menu`. `card` is the shell's one-time Discord card, `connect` the help line on `/connect`, and `feedback-menu` the Feedback menu's Discord item.
+- Signed in: `discord-click` with `where: card | byo | connect | feedback-menu`. `card` is the shell's one-time Discord card; `byo` the help line under the computer setup command on Bring your own (`/agents/byo`), where setup drop-off happens; `connect` the same line on `/connect`; and `feedback-menu` the Feedback menu's Discord item.
 - Logged out: the published pages' script counts any `discord.gg/` link as `cta-click` with value `discord`, in `ui_daily_counts` (the landing footer, the community section and every page that carries the footer).
 - Weekly total: `ui_events` rows named `discord-click` in the last 7 days, split by `props.where`, plus the `cta-click`/`discord` counts in `ui_daily_counts` for the same days.
 - Both read low by design: a person who switched usage events off, an EU/EEA/UK account that never turned them on, and any DNT/GPC browser send nothing. Read the count as a floor and a trend, not a total.
