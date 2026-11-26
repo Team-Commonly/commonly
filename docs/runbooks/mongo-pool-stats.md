@@ -40,10 +40,20 @@ Running values carry across intervals:
 
 ## The wait is an approximation
 
-Driver 5.9 puts no duration on any CMAP event. Each event carries only `address`, `time` and, on most, `connectionId` or `reason`. So the stats keep a FIFO of `connectionCheckOutStarted` times for each address. A `connectionCheckedOut` or `connectionCheckOutFailed` on that address takes the oldest start time off the queue, and the difference is the wait. The pool serves its wait queue in FIFO order, so the count and the distribution of waits hold. The pairing of a particular wait to a particular checkout doesn't always hold:
+Driver 5.9 puts no duration on any CMAP event. Each event carries only `address`, `time` and, on most, `connectionId` or `reason`. So the stats keep a FIFO of `connectionCheckOutStarted` times for each address. A `connectionCheckedOut` or `connectionCheckOutFailed` on that address takes the oldest start time off the queue, and the difference is the wait.
 
-- The pool opens up to 2 connections at once (`maxConnecting`), and they can finish out of order, so a wait can be paired with the wrong checkout.
+`checkouts` is exact. `waited` and the percentiles are approximate whenever checkouts complete out of order:
+
+- The pool creates up to 2 connections at once (`maxConnecting`), and they can finish out of order.
 - A waiting checkout can be cancelled out of order.
+
+When that happens, the recorded waits themselves change, not just which checkout they're attributed to. Say A starts at 0 ms and B at 100 ms, then B is checked out at 101 ms and A at 200 ms. The real waits are [1, 200], but the collector records [101, 100]. That moves `waited` and p95.
+
+`maxCheckedOut`, `maxWaiting`, `failed` and `created` don't depend on the pairing, so they read reliably.
+
+Two more sources of skew:
+
+- The queue starts empty. An end event for a checkout already in flight when stats start counts a checkout with no wait sample, or pairs with a newer start. That skew, and any skew from cap drops, corrects itself once the queue empties.
 - The queue starts empty. An end event for a checkout already in flight when stats start counts a checkout with no wait sample, or pairs with a newer start. That skew, and any skew from cap drops, corrects itself once the queue empties.
 
 The running counts are clamped at 0.
@@ -56,6 +66,6 @@ Always read the wait together with `maxCheckedOut` and `created`.
 
 - **Pool saturation:** `maxCheckedOut` at or near the pool size (100 by default), `waited` above 0, and a p95 wait in the hundreds of ms. Queries are queueing for a connection. If `created` is also above 0, part of the wait is connect time. Look at what holds connections (long queries, cursors left open, bursts of parallel work) before raising maxPoolSize.
 - **Slow new connections:** `waited` and p95 up, `created` above 0 and `maxCheckedOut` well under the pool size. Checkouts wait on connection setup, not on a free connection. See [mongo-new-connections-time-out.md](mongo-new-connections-time-out.md).
-- **Not the pool:** `maxCheckedOut` well under the pool size, and p95 near 0 (with `created` near 0). Checkouts are served at once, so any slowness is somewhere else, such as the event loop (`[loop-lag]`, [cpu-profile-on-signal.md](cpu-profile-on-signal.md)), the network or the server.
+- **Not the pool:** `checkouts` above 0, p95 near 0, `maxWaiting` near 0, `failed=0` and `maxCheckedOut` well under the pool size (with `created` near 0). Percentiles of 0 with `checkouts=0` are just no samples, and they prove nothing. `maxWaiting` above 0 with `checkouts=0` means a checkout is still waiting, for example on a connection setup that spans intervals. Only when all these conditions hold are checkouts served at once, so any slowness is somewhere else, such as the event loop (`[loop-lag]`, [cpu-profile-on-signal.md](cpu-profile-on-signal.md)), the network or the server.
 - `failed` with `timeout` means a checkout waited past `waitQueueTimeoutMS`. With `connectionError`, connections can't be established at all (see [mongo-new-connections-time-out.md](mongo-new-connections-time-out.md)).
 - `created` and `closed` both high in every interval means connections are churning. With maxIdleTimeMS 0 they should stay near 0 once the pool is warm.

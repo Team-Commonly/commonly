@@ -63,6 +63,32 @@ describe('connectDB', () => {
     expect(startMongoPoolStats).toHaveBeenCalledWith(mongoose.connection.getClient());
   });
 
+  it('starts pool stats only after the connect resolves', async () => {
+    process.env.MONGO_POOL_STATS = '1';
+    let resolveConnect;
+    mongoose.connect.mockReturnValueOnce(new Promise((resolve) => { resolveConnect = resolve; }));
+    const pending = connectDB();
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(mongoose.connect).toHaveBeenCalledTimes(1);
+    expect(startMongoPoolStats).not.toHaveBeenCalled();
+    resolveConnect();
+    await pending;
+    expect(startMongoPoolStats).toHaveBeenCalledTimes(1);
+  });
+
+  it('never starts pool stats when the connect rejects', async () => {
+    process.env.MONGO_POOL_STATS = '1';
+    mongoose.connect.mockRejectedValueOnce(new Error('fail'));
+    const exitSpy = jest.spyOn(process, 'exit').mockImplementation(() => {});
+    const errSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
+    await connectDB();
+    expect(exitSpy).toHaveBeenCalledWith(1);
+    expect(startMongoPoolStats).not.toHaveBeenCalled();
+    exitSpy.mockRestore();
+    errSpy.mockRestore();
+  });
+
   it('still resolves the connect when pool stats throws', async () => {
     process.env.MONGO_POOL_STATS = '1';
     startMongoPoolStats.mockImplementationOnce(() => { throw new Error('boom'); });

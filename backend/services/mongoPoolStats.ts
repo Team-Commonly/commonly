@@ -14,11 +14,14 @@
  * `connectionId`; checkOutFailed and closed carry `reason`. No event carries
  * a duration, so the checkout wait is approximated: each address keeps a FIFO
  * of checkOutStarted times, and a checkedOut or checkOutFailed on that address
- * shifts the oldest one. The pool's wait queue is FIFO, so the count and the
- * distribution of waits hold, but the pairing of a wait to a checkout can be
- * wrong: the pool opens up to maxConnecting (default 2) connections at once
- * and they can finish out of order, and a waiting checkout can be cancelled
- * out of order. The queue starts empty, so an end for a checkout in flight
+ * shifts the oldest one. `checkouts` is exact, but `waited` and the
+ * percentiles are approximate whenever checkouts complete out of order: the
+ * pool opens up to maxConnecting (default 2) connections at once and they can
+ * finish out of order, and a waiting checkout can be cancelled out of order.
+ * A mispairing changes the recorded waits themselves, not only which checkout
+ * they belong to (A starts at 0, B at 100, B out at 101, A out at 200: real
+ * [1, 200], recorded [101, 100]). maxCheckedOut, maxWaiting, failed and
+ * created don't depend on pairing. The queue starts empty, so an end for a checkout in flight
  * when stats start counts a checkout with no wait sample (or pairs with a
  * newer start); that skew, and one from cap drops, corrects itself once the
  * queue empties. Running counts (checked out, waiting, open) are clamped at 0.
