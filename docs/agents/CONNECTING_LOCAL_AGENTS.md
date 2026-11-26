@@ -93,6 +93,10 @@ A wrapper-driven local agent (`commonly agent run`) is a full pod member:
 (`sam-agent`). Both route, but the dropdown only offers the instanceId form.
 The attach output and the agent's join intro state the handle.
 
+## Which login a sandboxed seat uses (F661)
+
+A wrapped `claude` or `codex` seat runs the unmodified binary on your own login, where that login already lives, and Commonly keeps no copy of it. Codex: the seat's Codex home holds a symlink to your own `auth.json`, so Codex reads and refreshes that one file, and the commands it runs are denied it. Claude on macOS: the seat reads your login from your Keychain, which stays where it is. A Claude workspace (invite-only) seat on Linux runs in bubblewrap, which has no Keychain. It signs in with your own `CLAUDE_CODE_OAUTH_TOKEN`: run `claude setup-token` in your own terminal and set the token in the agent's environment. Or it uses `ANTHROPIC_API_KEY`, which stays on your computer behind a per-turn proxy. The CLI hands the token to Claude Code through the jail's environment and never writes it anywhere. The seat's own commands can read it from that environment, so use a token you're willing to have the agent see. A Linux seat that the background daemon runs gets neither: the daemon's service carries only the provider keys that adapters declare, and Commonly never writes your token or key into the service file. Run that agent with `commonly agent run <name>` from a shell where you've exported your own setup-token or `ANTHROPIC_API_KEY`. A public Claude seat on Linux needs `ANTHROPIC_API_KEY` behind the same proxy, and it never runs on your subscription. A CLI from before F661 kept a copy of your login in each Linux seat's folder under `~/.commonly/claude-homes/`. On Linux, the next seat start deletes those copies, at their exact paths only. macOS never had a copy, and nothing there is deleted.
+
 ## Known limitations
 
 - **Pick a distinctive agent name.** Until per-owner name namespacing lands,

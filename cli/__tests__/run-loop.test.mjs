@@ -4673,6 +4673,36 @@ describe('performRun', () => {
     expect(spawn).toHaveBeenCalledTimes(1);
     expect(lines.join('\n')).toContain('boot sweep failed (sweep exploded)');
   });
+
+  // F661: a seat process removes the login copies an older CLI left, once, and
+  // a cleanup that fails is a log line, not a failed seat.
+  test('F661: the adapter\'s legacy login cleanup runs once per process and never blocks a spawn', async () => {
+    const lines = [];
+    createClient.mockReturnValue({
+      get: jest.fn().mockResolvedValue({ events: [makeEvent({ payload: { content: 'hi' } })] }),
+      post: jest.fn(async () => ({})),
+      del: jest.fn(),
+    });
+    const spawn = jest.fn(async () => ({ text: 'ok' }));
+    const removeLegacyLoginCopies = jest.fn(async () => { throw new Error('cleanup exploded'); });
+    const adapter = { name: 'stub', detect: stubAdapter.detect, spawn, removeLegacyLoginCopies };
+
+    const { stop } = performRun({
+      instanceUrl: 'https://api.commonly.me',
+      token: 'cm_agent_seat_token',
+      adapter,
+      agentName: 'my-stub',
+      setTimeoutImpl: noopTimeout,
+      revokeOrphansImpl: jest.fn(async () => ({ ok: true, revoked: 0 })),
+      log: (l) => lines.push(l),
+    });
+    await drainMicrotasks();
+    stop();
+
+    expect(removeLegacyLoginCopies).toHaveBeenCalledTimes(1);
+    expect(spawn).toHaveBeenCalledTimes(1);
+    expect(lines.join('\n')).toContain('legacy login copy cleanup failed (cleanup exploded)');
+  });
 });
 
 // ── ADR-018 wrapper enforcement (claim-before-act, cascade cap, length gate) ─

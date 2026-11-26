@@ -1,7 +1,9 @@
 // F96: a public Claude Code seat on Linux, for real. Claude Code runs in the
 // bwrap jail against a stub Anthropic API that plays the model. The stub
-// answers one plain turn per credential path, then asks for the token three
-// ways (Read, Bash, an exfil through WebFetch). Each ask must come back from
+// answers one plain turn, then asks for the token three ways (Read, Bash, an
+// exfil through WebFetch). Since F661 a public seat runs only on an API key
+// behind the proxy, and a workspace seat on the person's own
+// CLAUDE_CODE_OAUTH_TOKEN; Commonly writes no copy of a login file for either. Each ask must come back from
 // Claude Code's permission layer as a refused tool call; the stub never
 // declines on its own, so a pass cannot come from a model refusal.
 //
@@ -172,28 +174,31 @@ maybe('a public Claude Code seat on Linux (F96)', () => {
 
   const paths = {
     'an API key (proxy)': () => ({ ANTHROPIC_API_KEY: HOST_KEY, ANTHROPIC_BASE_URL: modelUrl }),
-    'a subscription login (access-only copy)': () => {
-      writeLogin(8 * 3600 * 1000);
-      return { CLAUDE_CONFIG_DIR: loginDir, ANTHROPIC_BASE_URL: modelUrl };
-    },
   };
 
   test.each(Object.keys(paths))('a real turn runs confined, on %s', async (label) => {
     const before = model.seen.auth.length;
     const res = await turn(paths[label]());
     expect(res.text).toContain('pong');
-    const auth = model.seen.auth.slice(before);
-    // The model saw the real credential, and only the stub (or the proxy) held it.
-    if (label.startsWith('an API key')) expect(auth).toContain(HOST_KEY);
-    else expect(auth.some((value) => value.includes(ACCESS))).toBe(true);
-    // A login seat's copy is gone after the turn; the host's keeps its refresh token, unchanged.
+    // The model saw the real key, and only the proxy held it.
+    expect(model.seen.auth.slice(before)).toContain(HOST_KEY);
+    // F661: no login file is written for the seat.
     expect(fs.existsSync(path.join(statePath, '.claude', '.credentials.json'))).toBe(false);
   });
 
+  // F661: a public seat never runs on the person's own Claude login.
+  test('with no API key a public seat refuses, whatever login is on the machine', async () => {
+    const hostLogin = fs.readFileSync(writeLogin(8 * 3600 * 1000), 'utf8');
+    await expect(turn({ CLAUDE_CONFIG_DIR: loginDir, CLAUDE_CODE_OAUTH_TOKEN: ACCESS, ANTHROPIC_BASE_URL: modelUrl }))
+      .rejects.toThrow(/need ANTHROPIC_API_KEY/);
+    expect(fs.existsSync(path.join(statePath, '.claude', '.credentials.json'))).toBe(false);
+    expect(fs.readFileSync(path.join(loginDir, '.credentials.json'), 'utf8')).toBe(hostLogin);
+  });
+
   // Decided 11-04 (#2784): no walk of an invite-only Linux Claude seat
-  // was ever recorded. This is one: a real turn on the workspace jail, with the
-  // login carried access-only, the transcript kept out of the project, and the
-  // host's login unchanged.
+  // was ever recorded. This is one: a real turn on the workspace jail, signed
+  // in with the person's own token (F661: no login file is copied), the
+  // transcript kept out of the project, and the host's login unchanged.
   test('a real turn runs on an invite-only (workspace) seat, with its transcript outside the project', async () => {
     const before = model.seen.auth.length;
     const hostLogin = fs.readFileSync(writeLogin(8 * 3600 * 1000), 'utf8');
@@ -201,21 +206,20 @@ maybe('a public Claude Code seat on Linux (F96)', () => {
       agentName,
       sessionId: null,
       cwd,
-      env: { PATH: process.env.PATH, CLAUDE_CONFIG_DIR: loginDir, ANTHROPIC_BASE_URL: modelUrl },
+      env: {
+        PATH: process.env.PATH, CLAUDE_CONFIG_DIR: loginDir, CLAUDE_CODE_OAUTH_TOKEN: ACCESS, ANTHROPIC_BASE_URL: modelUrl,
+      },
       environment: { model: 'claude-haiku-5-5', sandbox: { trust: 'workspace' } },
       memoryLongTerm: '',
       timeoutMs: 120_000,
     }))().catch((error) => {
-      // What the stub was asked, for a turn that never reached the model, and
-      // the jail's own login copy after it (fixture tokens, no secrets).
-      const copy = path.join(workspaceStatePath, '.claude', '.credentials.json');
-      const login = fs.existsSync(copy) ? JSON.parse(fs.readFileSync(copy, 'utf8')).claudeAiOauth || {} : null;
+      // What the stub was asked, for a turn that never reached the model.
+      const configDir = path.join(workspaceStatePath, '.claude');
       // eslint-disable-next-line no-console
       console.log('F96 workspace seat failed', JSON.stringify({
         stubSaw: model.seen.paths.slice(before),
         stateFiles: fs.existsSync(workspaceStatePath) ? fs.readdirSync(workspaceStatePath) : null,
-        configFiles: fs.existsSync(path.dirname(copy)) ? fs.readdirSync(path.dirname(copy)) : null,
-        login: login && { keys: Object.keys(login), expiresInMin: Math.round((login.expiresAt - Date.now()) / 60000) },
+        configFiles: fs.existsSync(configDir) ? fs.readdirSync(configDir) : null,
       }));
       throw error;
     });
@@ -224,6 +228,7 @@ maybe('a public Claude Code seat on Linux (F96)', () => {
     expect(model.seen.auth.slice(before).some((value) => value.includes(ACCESS))).toBe(true);
     expect(fs.existsSync(path.join(cwd, '.claude'))).toBe(false);
     expect(fs.existsSync(path.join(workspaceStatePath, '.claude', 'projects'))).toBe(true);
+    expect(fs.existsSync(path.join(workspaceStatePath, '.claude', '.credentials.json'))).toBe(false);
     expect(fs.readFileSync(path.join(loginDir, '.credentials.json'), 'utf8')).toBe(hostLogin);
   });
 
@@ -279,7 +284,9 @@ maybe('a public Claude Code seat on Linux (F96)', () => {
       agentName,
       sessionId: null,
       cwd,
-      env: { PATH: process.env.PATH, CLAUDE_CONFIG_DIR: loginDir, ANTHROPIC_BASE_URL: modelUrl },
+      env: {
+        PATH: process.env.PATH, CLAUDE_CONFIG_DIR: loginDir, CLAUDE_CODE_OAUTH_TOKEN: ACCESS, ANTHROPIC_BASE_URL: modelUrl,
+      },
       environment: { model: 'claude-haiku-5-5', sandbox: { trust: 'workspace' } },
       memoryLongTerm: '',
       timeoutMs: 60_000,
@@ -347,9 +354,7 @@ maybe('a public Claude Code seat on Linux (F96)', () => {
       const env = paths[label]();
       const loginFile = path.join(loginDir, '.credentials.json');
       const hostLogin = fs.existsSync(loginFile) ? fs.readFileSync(loginFile, 'utf8') : null;
-      const credentialPath = label.startsWith('an API key')
-        ? '/proc/self/environ'
-        : path.join(statePath, '.claude', '.credentials.json');
+      const credentialPath = '/proc/self/environ';
       model.ask(attacks(credentialPath)[tool]);
       const before = model.seen.bodies.length;
 
@@ -394,21 +399,5 @@ maybe('a public Claude Code seat on Linux (F96)', () => {
       expect(exfilHits).toBe(0);
       if (hostLogin !== null) expect(fs.readFileSync(loginFile, 'utf8')).toBe(hostLogin);
     });
-  });
-
-  // Condition 2: a spawn near the login's expiry must not sign the
-  // host out. The jail holds no refresh token, so it cannot rotate one; a turn
-  // that would outlive the token is refused before anything is copied.
-  test('near expiry, the jail cannot rotate the host login, and a turn that would outlive it is refused', async () => {
-    const loginFile = writeLogin(4 * 60 * 1000);
-    const hostLogin = fs.readFileSync(loginFile, 'utf8');
-    const res = await turn({ CLAUDE_CONFIG_DIR: loginDir, ANTHROPIC_BASE_URL: modelUrl }, 60_000);
-    expect(res.text).toContain('pong');
-    expect(fs.readFileSync(loginFile, 'utf8')).toBe(hostLogin);
-    expect(model.seen.paths.some((p) => /oauth\/token/.test(p))).toBe(false);
-
-    await expect(turn({ CLAUDE_CONFIG_DIR: loginDir, ANTHROPIC_BASE_URL: modelUrl }, 10 * 60 * 1000))
-      .rejects.toThrow(/Claude login on this machine expires/);
-    expect(fs.readFileSync(loginFile, 'utf8')).toBe(hostLogin);
   });
 });
