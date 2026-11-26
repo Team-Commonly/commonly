@@ -638,9 +638,18 @@ export function createDualStore(
       if (!isPgValue(cast)) throw new Error(`dual-store: ${name} cannot filter ${field} on a non-scalar value`);
       return cast;
     };
+    // Mongo matches a RegExp as a pattern (in an equality or an $in), but the
+    // schema cast turns it into the string "/^a/", which Postgres compares
+    // literally: the stores would disagree. Refused before either is read.
+    const noPattern = (field: string, operand: unknown): void => {
+      if (operand instanceof RegExp) {
+        throw new Error(`dual-store: ${name} cannot filter ${field} with a regular expression in Postgres`);
+      }
+    };
     return Object.fromEntries(Object.entries(filter).map(([field, value]) => {
       const column = Object.prototype.hasOwnProperty.call(filterColumns, field) ? filterColumns[field] : undefined;
       if (!column) throw new Error(`dual-store: ${name} cannot filter on ${JSON.stringify(field)} in Postgres`);
+      noPattern(field, value);
       if (isPlainObject(value)) {
         const lone = loneOpMixed(value);
         if (lone) {
@@ -653,6 +662,7 @@ export function createDualStore(
             }
             // Each element is cast as an equality's value is, and checked after the cast too.
             return [op, operand.map((element) => {
+              noPattern(field, element);
               const cast = element === null || element === undefined ? null : scalar(field, element);
               if (cast === null) {
                 throw new Error(`dual-store: ${name} cannot filter ${field} with $in holding null in Postgres`);
@@ -674,6 +684,7 @@ export function createDualStore(
           if (!Object.prototype.hasOwnProperty.call(RANGE_OPS, op)) {
             throw new Error(`dual-store: ${name} cannot filter ${field} with ${JSON.stringify(op)} in Postgres`);
           }
+          noPattern(field, operand);
           // Checked after the cast too: a Date setter turns '' into null.
           const cast = operand === null || operand === undefined ? null : scalar(field, operand);
           if (cast === null) {

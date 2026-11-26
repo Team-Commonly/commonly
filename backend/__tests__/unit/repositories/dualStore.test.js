@@ -1080,6 +1080,10 @@ describe('dual-store helper (ADR-034 D3)', () => {
         await expect(s.findWhere({ title: { $in: [] } })).rejects.toThrow(/non-empty array/);
         await expect(s.findWhere({ title: { $in: 'a' } })).rejects.toThrow(/non-empty array/);
         await expect(s.findWhere({ title: { $in: ['a', null] } })).rejects.toThrow(/holding null/);
+        // Mongo would match a RegExp as a pattern; the cast would make it a literal "/^a/" in Postgres.
+        await expect(s.findWhere({ title: { $in: ['b', /^a/] } })).rejects.toThrow(/regular expression/);
+        await expect(s.findWhere({ title: /^a/ })).rejects.toThrow(/regular expression/);
+        await expect(s.findWhere({ title: { $gte: /^a/ } })).rejects.toThrow(/regular expression/);
         await expect(s.findWhere({ count: { $in: [1], $gt: 0 } })).rejects.toThrow(/cannot combine \$in/);
         // title can be written as null, so Postgres could not tell it from missing.
         await expect(s.findWhere({ title: { $exists: false } })).rejects.toThrow(/not a declared presence column/);
@@ -1307,12 +1311,19 @@ describe('dual-store helper (ADR-034 D3)', () => {
       expect(pg.rows.get(String(created._id)))
         .toEqual({ row: lockerRow(await rawWithSecret(created._id)), version: 2 });
 
+      // Each write's row is checked before the next write, which would restore a lost secret.
       expect(await s.updateWhere({ _id: created._id }, [{ $set: { note: { $literal: 'n' } } }])).toBe(true);
+      expect(pg.rows.get(String(created._id)))
+        .toEqual({ row: lockerRow(await rawWithSecret(created._id)), version: 3 });
       expect(await s.setWhere({ _id: created._id }, { title: 'c' })).toBe(true);
+      expect(pg.rows.get(String(created._id)))
+        .toEqual({ row: lockerRow(await rawWithSecret(created._id)), version: 4 });
       const upserted = await s.upsert(created._id, {
         pipeline: [{ $set: { note: { $literal: 'u' } } }], merge: (current) => ({ ...current, note: 'u' }),
       });
       expect('secret' in upserted).toBe(false);
+      expect(pg.rows.get(String(created._id)))
+        .toEqual({ row: lockerRow(await rawWithSecret(created._id)), version: 5 });
       const other = await s.create({ title: 'z', secret: 'fake-secret-0002' });
       expect(await s.updateManyWhere({ title: { $in: ['c', 'z'] } }, [{ $set: { note: { $literal: 'm' } } }])).toBe(2);
       expect(secretOf(pg, created._id)).toBe(SECRET);
