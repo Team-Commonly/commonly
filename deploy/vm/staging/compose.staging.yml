@@ -110,9 +110,11 @@ services:
     healthcheck:
       test: ["CMD", "mongosh", "--quiet", "--eval", "db.adminCommand('ping').ok"]
       interval: 10s
-      timeout: 5s
+      # 15s, not 5s: at its 0.15 CPU cap, under prod contention during a staging
+      # `up`, mongosh's ping timed out at 5s three times running (2026-11-26).
+      timeout: 15s
       retries: 12
-      start_period: 30s
+      start_period: 60s
 
   # The backend image carries the compiled sink (as the chart's email-sink does).
   email-sink:
