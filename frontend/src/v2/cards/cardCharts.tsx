@@ -45,7 +45,8 @@ function Frame({ ticks, y, labels, x, xLabel, yLabel, children }: {
   return <svg className="ui-ch-svg" viewBox={`0 0 ${W} ${H}`} role="img" aria-label={[yLabel, xLabel].filter(Boolean).join(' by ') || 'Chart'}>
     {ticks.map(t => <g key={t}><line className="gr" x1={PAD.l} x2={W - PAD.r} y1={y(t)} y2={y(t)} />
       <text className="tk" x={PAD.l - 6} y={y(t)} dy="0.32em" textAnchor="end">{fmt(t)}</text></g>)}
-    {children}
+    {/* The marks draw in once, left to right (uiCard.css). */}
+    <g className="mk">{children}</g>
     {labels.map((l, i) => (i % every === 0 ? <text key={i} className="tk" x={x(i)} y={H - 6} textAnchor="middle">{l}</text> : null))}
   </svg>;
 }

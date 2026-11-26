@@ -5871,6 +5871,17 @@ test('revision 3 charts scale to the card and draw in v2 tokens only', () => {
   for (const rule of rules) expect(rule).not.toMatch(/#[0-9a-f]{3,8}\b|rgba?\(|hsla?\(|data-v2-theme|prefers-color-scheme/i);
 });
 
+test('card motion (spinner, pulse, progress, chart draw-in) stops under prefers-reduced-motion', () => {
+  const css = read('../cards/uiCard.css');
+  const reduced = css.slice(css.indexOf('@media (prefers-reduced-motion: reduce)'));
+  expect(reduced.length).toBeGreaterThan(40);
+  ['li.active .gl .arc', 'li.pending .gl', '.ui-pg-t > span', '.ui-ch-svg .mk'].forEach((selector) => {
+    expect(css).toMatch(new RegExp(`${selector.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')} \\{[^}]*animation:ui-`));
+    expect(reduced).toContain(selector);
+  });
+  expect(reduced).toContain('animation:none; transition:none;');
+});
+
 test('the card Source line (TASK-607) uses v2 tokens only, one value per token, no dark-only colours', () => {
   const css = read('../cards/uiCard.css');
   const rules = css.split('\n').filter(line => /\.ui-src/.test(line));

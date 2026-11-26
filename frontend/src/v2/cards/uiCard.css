@@ -179,3 +179,22 @@
 .v2-ui-card button.ub.on { color:var(--k); border-color:var(--k); }
 .v2-ui-card button.ub:focus-visible { outline:2px solid var(--v2-ink); outline-offset:2px; }
 .v2-ui-card .ui-ft .ui-cn { margin-left:0; }
+/* Motion. The active step spins, pending steps breathe, Progress eases to its
+   value and grows in on first render, and chart marks draw in once. All of it
+   stops under prefers-reduced-motion, leaving the same static frame. */
+.v2-ui-card .ui-steps .gl .tr { stroke:var(--d); }
+.v2-ui-card .ui-steps li.active .gl { color:var(--v2-accent); }
+.v2-ui-card .ui-steps li.active .gl .arc { transform-origin:8px 8px; animation:ui-spin 0.9s linear infinite; }
+.v2-ui-card .ui-steps li.pending .gl { animation:ui-pulse 1.8s ease-in-out infinite; }
+.v2-ui-card .ui-pg-t > span { transform-origin:left center; transition:width 0.4s ease-out; animation:ui-grow-x 0.6s ease-out; }
+.v2-ui-card .ui-ch-svg .mk { animation:ui-draw 0.7s ease-out; }
+@keyframes ui-spin { to { transform:rotate(360deg); } }
+@keyframes ui-pulse { 0%, 100% { opacity:1; } 50% { opacity:0.4; } }
+@keyframes ui-grow-x { from { transform:scaleX(0); } to { transform:scaleX(1); } }
+@keyframes ui-draw { from { clip-path:inset(0 100% 0 0); } to { clip-path:inset(0 0 0 0); } }
+@media (prefers-reduced-motion: reduce) {
+  .v2-ui-card .ui-steps li.active .gl .arc,
+  .v2-ui-card .ui-steps li.pending .gl,
+  .v2-ui-card .ui-pg-t > span,
+  .v2-ui-card .ui-ch-svg .mk { animation:none; transition:none; }
+}
