@@ -25,7 +25,8 @@
  *   meta.json "version": 1; RequestId is a string, number or null.
  *
  * Nothing here logs params or results: they can carry prompts, file contents
- * and credentials. Logs name methods, ids and sizes only.
+ * and credentials. Logs name known methods, numeric ids and sizes only; any
+ * other text the agent chose is logged by type and size.
  */
 
 export const ACP_PROTOCOL_VERSION = 1;
@@ -44,18 +45,29 @@ export const ACP_ERROR = Object.freeze({
 // A file read or a long transcript can be large; a runaway stdout cannot be
 // allowed to grow the buffer without bound.
 export const DEFAULT_MAX_MESSAGE_BYTES = 16 * 1024 * 1024;
-const LOG_FIELD_CHARS = 64;
 const NEWLINE = 0x0a;
 
 const localError = (code, message) => Object.assign(new Error(message), { code });
 const hasOwn = (obj, key) => Object.prototype.hasOwnProperty.call(obj, key);
 const isId = (id) => typeof id === 'string' || (typeof id === 'number' && Number.isFinite(id));
-// For a value the agent controls (a method name, an id, an error code) on its
-// way into a log line: short, printable ASCII only, so no log injection.
-const clamp = (value) => {
-  const text = String(value);
-  const clean = text.slice(0, LOG_FIELD_CHARS).replace(/[^\x20-\x7e]/g, '?');
-  return text.length > LOG_FIELD_CHARS ? `${clean}…(${text.length} chars)` : clean;
+// An inbound request may also carry a null id (ACP's RequestId allows it);
+// the reply echoes it.
+const isRequestId = (id) => id === null || isId(id);
+// The methods ACP defines. Only these are logged by name: an unknown method,
+// like a string id, is text the agent chose, and a log is no place for it.
+const KNOWN_METHODS = new Set([
+  'initialize', 'authenticate', 'session/new', 'session/load', 'session/prompt',
+  'session/cancel', 'session/set_mode', 'session/update', 'session/request_permission',
+  'fs/read_text_file', 'fs/write_text_file', 'terminal/create', 'terminal/output',
+  'terminal/release', 'terminal/wait_for_exit', 'terminal/kill',
+]);
+const sizeLabel = (value) => (typeof value === 'string' ? `${value.length} chars` : typeof value);
+const logMethod = (method) => (KNOWN_METHODS.has(method) ? method : `unknown method (${sizeLabel(method)})`);
+// Numbers are ours or harmless; any other id is logged by type and size only.
+const logId = (id) => {
+  if (typeof id === 'number' && Number.isFinite(id)) return String(id);
+  if (id === null) return 'null';
+  return `string, ${sizeLabel(id)}`;
 };
 // Encoding can fail on a BigInt or a cycle; that failure belongs to the one
 // call that brought the value, never to the connection.
@@ -158,7 +170,7 @@ export function createAcpConnection({
     try {
       line = encode({ jsonrpc: '2.0', id, ...payload });
     } catch {
-      log(`acp: reply to request id ${clamp(id)} could not be encoded; sending an internal error`);
+      log(`acp: reply to request id ${logId(id)} could not be encoded; sending an internal error`);
       line = encode({ jsonrpc: '2.0', id, error: { code: ACP_ERROR.INTERNAL_ERROR, message: 'Internal error' } });
     }
     write(line);
@@ -166,7 +178,7 @@ export function createAcpConnection({
 
   const handleInboundRequest = async (msg) => {
     const { id, method } = msg;
-    log(`acp: <- ${clamp(method)} (request id ${clamp(id)})`);
+    log(`acp: <- ${logMethod(method)} (request id ${logId(id)})`);
     if (typeof onRequest !== 'function') {
       respond(id, { error: { code: ACP_ERROR.METHOD_NOT_FOUND, message: 'Method not found' } });
       return;
@@ -182,7 +194,7 @@ export function createAcpConnection({
         reply = { error };
       } else {
         // A crash in our handler may hold anything in its message; send none of it.
-        log(`acp: handler for ${clamp(method)} (id ${clamp(id)}) threw without a JSON-RPC code`);
+        log(`acp: handler for ${logMethod(method)} (id ${logId(id)}) threw without a JSON-RPC code`);
         reply = { error: { code: ACP_ERROR.INTERNAL_ERROR, message: 'Internal error' } };
       }
     }
@@ -198,13 +210,13 @@ export function createAcpConnection({
       if (!hasOwn(msg, 'id')) {
         try {
           const ret = onNotification(msg.method, msg.params);
-          if (ret && typeof ret.catch === 'function') ret.catch(() => log(`acp: notification handler for ${clamp(msg.method)} failed`));
+          if (ret && typeof ret.catch === 'function') ret.catch(() => log(`acp: notification handler for ${logMethod(msg.method)} failed`));
         } catch {
-          log(`acp: notification handler for ${clamp(msg.method)} failed`);
+          log(`acp: notification handler for ${logMethod(msg.method)} failed`);
         }
         return;
       }
-      if (!isId(msg.id)) { log(`acp: skipped ${clamp(msg.method)} with an invalid id`); return; }
+      if (!isRequestId(msg.id)) { log(`acp: skipped ${logMethod(msg.method)} with an invalid id`); return; }
       handleInboundRequest(msg);
       return;
     }
@@ -218,12 +230,19 @@ export function createAcpConnection({
         entry.reject(localError('ACP_INVALID_RESPONSE', `ACP response to ${entry.method} (id ${msg.id}) carries both result and error`));
         return;
       }
-      if (msg.error) {
+      if (hasOwn(msg, 'error')) {
         const e = msg.error;
+        // ACP requires an object with an integer code. Anything else still
+        // settles the request, as an invalid response.
+        if (!e || typeof e !== 'object' || Array.isArray(e) || !Number.isInteger(e.code)) {
+          log(`acp: <- invalid error object for ${entry.method} (id ${msg.id})`);
+          entry.reject(localError('ACP_INVALID_RESPONSE', `ACP response to ${entry.method} (id ${msg.id}) carries an invalid error object`));
+          return;
+        }
         const err = new Error(typeof e.message === 'string' ? e.message : 'ACP error');
         err.code = e.code;
         if (e.data !== undefined) err.data = e.data;
-        log(`acp: <- error ${clamp(e.code)} for ${entry.method} (id ${msg.id})`);
+        log(`acp: <- error ${e.code} for ${entry.method} (id ${msg.id})`);
         entry.reject(err);
       } else {
         log(`acp: <- result for ${entry.method} (id ${msg.id})`);

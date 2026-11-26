@@ -54,6 +54,7 @@ const memoryPair = (options = {}) => {
   return { agentOut, written, sentMessages, conn, logs, notifications };
 };
 const tick = () => new Promise((r) => setImmediate(r));
+const hasOwnId = (m) => Object.prototype.hasOwnProperty.call(m, 'id');
 
 describe('ACP client: requests and responses', () => {
   test('a request resolves with the result', async () => {
@@ -335,6 +336,74 @@ describe('ACP client: what the agent controls is clamped before it is logged', (
       expect(line).not.toMatch(/[\r\n]/);
       expect(line.length).toBeLessThan(300);
     }
+    conn.close('done');
+  });
+
+  test('a string id and an unknown method are logged by size only, never their text', async () => {
+    const { agentOut, conn, logs, sentMessages } = memoryPair({
+      onRequest: async () => { throw new Error('no'); },
+    });
+    // Built at runtime: a key-shaped literal here would trip the repo's secret scan.
+    const secret = ['agent', 'chosen', 'text'].join('-') + 'q'.repeat(24);
+    agentOut.write(`${JSON.stringify({ jsonrpc: '2.0', id: secret, method: `x/${secret}`, params: {} })}\n`);
+    agentOut.write(`${JSON.stringify({ jsonrpc: '2.0', method: `y/${secret}`, params: {} })}\n`);
+    agentOut.write(`${JSON.stringify({ jsonrpc: '2.0', id: secret, method: 'fs/read_text_file', params: {} })}\n`);
+    await tick(); await tick();
+    // The reply still echoes the id: only the log withholds it.
+    expect(sentMessages().filter((m) => m.id === secret)).toHaveLength(2);
+    expect(logs.join('\n')).not.toContain(secret);
+    expect(logs.join('\n')).toContain('fs/read_text_file');
+    expect(logs.join('\n')).toMatch(/unknown method \(\d+ chars\)/);
+    conn.close('done');
+  });
+
+  test('an error code that cannot become a string settles its request as invalid', async () => {
+    const { agentOut, conn, sentMessages } = memoryPair();
+    const first = conn.request('a').catch((e) => e);
+    await tick();
+    const [{ id }] = sentMessages();
+    // JSON.parse gives an object whose own toString is null: String() on it throws.
+    agentOut.write(`{"jsonrpc":"2.0","id":${id},"error":{"code":{"toString":null},"message":"bad"}}\n`);
+    const err = await first;
+    expect(err.code).toBe('ACP_INVALID_RESPONSE');
+    // The connection carries on.
+    const second = conn.request('b');
+    await tick();
+    const { id: id2 } = sentMessages().find((m) => m.method === 'b');
+    agentOut.write(`${JSON.stringify({ jsonrpc: '2.0', id: id2, result: { ok: 1 } })}\n`);
+    await expect(second).resolves.toEqual({ ok: 1 });
+    conn.close('done');
+  });
+
+  test.each([
+    ['a string code', { code: '-32603', message: 'x' }],
+    ['a fractional code', { code: 1.5, message: 'x' }],
+    ['a null error', null],
+    ['an array error', [1]],
+  ])('an error object with %s rejects as invalid', async (_label, error) => {
+    const { agentOut, conn, sentMessages } = memoryPair();
+    const pending = conn.request('a').catch((e) => e);
+    await tick();
+    const [{ id }] = sentMessages();
+    agentOut.write(`${JSON.stringify({ jsonrpc: '2.0', id, error })}\n`);
+    const err = await pending;
+    expect(err.code).toBe('ACP_INVALID_RESPONSE');
+    expect(conn.isClosed()).toBe(false);
+    conn.close('done');
+  });
+});
+
+describe('ACP client: null request ids', () => {
+  test('an inbound request with a null id reaches onRequest and its reply keeps the null id', async () => {
+    const calls = [];
+    const { agentOut, conn, sentMessages } = memoryPair({
+      onRequest: async (method, params) => { calls.push({ method, params }); return { granted: true }; },
+    });
+    agentOut.write(`${JSON.stringify({ jsonrpc: '2.0', id: null, method: 'session/request_permission', params: { p: 1 } })}\n`);
+    await tick(); await tick();
+    expect(calls).toEqual([{ method: 'session/request_permission', params: { p: 1 } }]);
+    const reply = sentMessages().find((m) => hasOwnId(m) && m.id === null);
+    expect(reply).toEqual({ jsonrpc: '2.0', id: null, result: { granted: true } });
     conn.close('done');
   });
 });
