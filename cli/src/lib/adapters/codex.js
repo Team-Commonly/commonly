@@ -93,6 +93,9 @@ import { refuseCodeRunningGitSetup } from '../sandbox/workspace-git-config.js';
 import { codexTrustedPerimeter } from '../sandbox/codex-perimeter.js';
 import { resolveCodexSandboxMode } from '../sandbox/mode.js';
 import {
+  ensureGuestDir, readGuestFile, removeGuestEntry, writeGuestFile,
+} from '../sandbox/guest-home.js';
+import {
   GUEST_CODEX, GUEST_HOME, GUEST_PATH, GUEST_WORKSPACE, buildMicrovmRunArgs, checkMicrovmAttach,
   guestProxyBaseUrl, microvmSeatHome, msbHostEnv, prepareMicrovmHost, probeWhp, startMicrovmTurn,
   writeMicrovmTurn,
@@ -737,10 +740,23 @@ export const codexNativeBinary = (env) => {
 // cross it is left out whole.
 const PUBLIC_CODEX_INSTRUCTIONS_MAX_BYTES = 32 * 1024;
 
-const writePublicCodexInstructions = async (publicHome, ctx) => {
+// The host's own file operations on a public Codex home. The microVM turn
+// passes guest-home.js's instead, which follow no link (its home is the guest's
+// to write).
+const hostHomeFileOps = {
+  remove: (dir, name) => rm(join(dir, name), { force: true }),
+  write: async (dir, name, text) => {
+    const target = join(dir, name);
+    const staged = `${target}.${process.pid}.tmp`;
+    await writeFile(staged, text, { encoding: 'utf8', mode: 0o600 });
+    await rename(staged, target);
+  },
+};
+
+const writePublicCodexInstructions = async (publicHome, ctx, ops = hostHomeFileOps) => {
   // Codex loads this file before AGENTS.md when it exists. Clear any leftover
   // override on every spawn so it cannot shadow the seat's declared skills.
-  await rm(join(publicHome, 'AGENTS.override.md'), { force: true });
+  await ops.remove(publicHome, 'AGENTS.override.md');
   const declared = Array.isArray(ctx.environment?.skills?.claude) ? ctx.environment.skills.claude : [];
   const baseDir = ctx.cwd || process.cwd();
   const sources = declared.map((source) => resolveSkillSource(source, baseDir));
@@ -754,15 +770,12 @@ const writePublicCodexInstructions = async (publicHome, ctx) => {
       onIncluded: (source) => included.push(source),
     },
   );
-  const target = join(publicHome, 'AGENTS.md');
   if (!text) {
-    await rm(target, { force: true });
+    await ops.remove(publicHome, 'AGENTS.md');
     ctx.onSkillsLinked?.({ mounted: [], conflicted: sources.map((path) => ({ path, reason: 'not-inlined' })) });
     return;
   }
-  const staged = `${target}.${process.pid}.tmp`;
-  await writeFile(staged, text, { encoding: 'utf8', mode: 0o600 });
-  await rename(staged, target);
+  await ops.write(publicHome, 'AGENTS.md', text);
   ctx.onSkillsLinked?.({
     mounted: included,
     conflicted: sources.filter((source) => !included.includes(source)).map((path) => ({ path, reason: 'not-inlined' })),
@@ -1256,6 +1269,9 @@ const buildArgs = ({
   privateOtherCodexHomes = [],
   privateCodexHomeLinks = [],
   loginFileStore = false,
+  // Only the microVM turn passes false: its host writes the Codex home's
+  // config.toml fresh each turn (microvmGuestCodexConfig).
+  ignoreUserConfig = true,
 }) => {
   const publicSandbox = publicSandboxMode !== null;
   // F387: a private seat keeps the flag below only in a cloud-codex pod, or
@@ -1288,7 +1304,7 @@ const buildArgs = ({
   // a user [permissions.*] table on codex-cli 0.162.1).
   const executionPolicy = publicSandbox
     ? [
-      '--ignore-user-config',
+      ...(ignoreUserConfig ? ['--ignore-user-config'] : []),
       '--ignore-rules',
       ...publicPermissionProfileFlags(
         publicSandboxMode,
@@ -1535,21 +1551,43 @@ export const microvmHostMcpConfig = (servers, ctx = {}) => {
   return { config: { mcpServers }, unavailable };
 };
 
+// What Codex loads from its home besides AGENTS.md: cleared before every turn
+// (config.toml is then written fresh by the host), so nothing a turn leaves in
+// its home extends the next one.
+export const GUEST_CODEX_HOME_LOADED = Object.freeze([
+  'AGENTS.override.md', 'config.toml', 'managed_config.toml', 'hooks.json', 'skills', 'prompts', 'rules', 'hooks',
+  'plugins',
+]);
+
+// The reply is posted to a pod: more than this is cut, and says so.
+export const MICROVM_REPLY_MAX_BYTES = 256 * 1024;
+
 /**
- * The guest Codex's MCP entries, as `-c mcp_servers.<name>.*` overrides (the
- * keys of its config.toml; the seat's own config.toml is ignored, so a turn
- * can't plant one for the next). Each runs the guest shim, which dials the
- * bridge. Codex passes its MCP children none of its own environment (repo
- * CLAUDE.md), so the env table carries the bridge address and the turn secret.
+ * The guest Codex's config.toml, written by the host into its home before each
+ * turn and removed after: only the MCP entries. Each runs the guest shim, which
+ * dials the bridge. Codex passes its MCP children none of its own environment
+ * (repo CLAUDE.md), so the env table carries the bridge address and the turn
+ * secret. Kept out of argv on purpose: Codex's argv is readable through
+ * /proc/<pid>/cmdline inside the guest, and the profile's minimal read set
+ * does not cover the Codex home, so the model's shell can read neither this
+ * file nor the turn folder. Everything else rides in `-c` overrides, which
+ * win over this file.
  */
-export const microvmGuestMcpFlags = (mcpConfig, ctx = {}) => Object.entries(mcpConfig?.mcpServers || {})
-  .flatMap(([name, entry]) => [
-    '-c', `mcp_servers.${name}.command=${toml(entry.command)}`,
-    '-c', `mcp_servers.${name}.args=[${(entry.args || []).map(toml).join(',')}]`,
-    '-c', `mcp_servers.${name}.env={${Object.entries(entry.env || {}).map(([key, value]) => `${key} = ${toml(value)}`).join(', ')}}`,
-    '-c', `mcp_servers.${name}.default_tools_approval_mode="approve"`,
-    '-c', `mcp_servers.${name}.disabled_tools=[${publicSeatWithheldTools(ctx).map(toml).join(',')}]`,
-  ]);
+export const microvmGuestCodexConfig = (mcpConfig, ctx = {}) => [
+  '# Written by the Commonly CLI for one microVM turn, and removed after it.',
+  ...Object.entries(mcpConfig?.mcpServers || {}).flatMap(([name, entry]) => [
+    '',
+    `[mcp_servers.${toml(name)}]`,
+    `command = ${toml(entry.command)}`,
+    `args = [${(entry.args || []).map(toml).join(', ')}]`,
+    'default_tools_approval_mode = "approve"',
+    `disabled_tools = [${publicSeatWithheldTools(ctx).map(toml).join(', ')}]`,
+    '',
+    `[mcp_servers.${toml(name)}.env]`,
+    ...Object.entries(entry.env || {}).map(([key, value]) => `${key} = ${toml(value)}`),
+  ]),
+  '',
+].join('\n');
 
 /** The guest Codex's whole environment: the proxy's per-turn token, never a key. */
 export const guestCodexEnv = ({ proxyToken }) => ({
@@ -1571,18 +1609,52 @@ const microvmServerBaseEnv = (source, credential) => {
   return withholdRuntimeCredential(env, { credentialFile: credential?.path || null });
 };
 
-// The turn's reply, read from the seat HOME. Anything but a plain file there
-// (a link the guest made) is refused, never followed.
-const readMicrovmReply = async (path) => {
-  let info = null;
-  try {
-    info = await lstat(path);
-  } catch (err) {
-    if (err?.code === 'ENOENT') return '';
-    throw err;
+// writePublicCodexInstructions' file operations, through guest-home.js: no
+// link under the seat HOME is followed.
+const guestHomeFileOps = {
+  remove: (dir, name) => removeGuestEntry(dir, name),
+  write: (dir, name, text) => writeGuestFile(dir, name, text),
+};
+
+/**
+ * The seat HOME, readied for a turn while no VM of it runs. Every folder is
+ * checked for links on the way down, the extension points Codex loads are
+ * cleared, and the skills are rewritten.
+ */
+export const prepareMicrovmCodexHome = async (home, ctx) => {
+  await mkdir(dirname(home), { recursive: true, mode: 0o700 });
+  await ensureGuestDir(home);
+  await ensureGuestDir(home, [GUEST_CODEX_HOME_NAME, 'tmp', 'arg0-linux']);
+  const codexHome = await ensureGuestDir(home, [GUEST_CODEX_HOME_NAME]);
+  const replies = await ensureGuestDir(home, [GUEST_REPLIES_NAME]);
+  for (const name of GUEST_CODEX_HOME_LOADED) {
+    // eslint-disable-next-line no-await-in-loop
+    await removeGuestEntry(codexHome, name);
   }
-  if (!info.isFile()) throw adapterFailure('codex', 'the microVM turn left something other than a file for its reply');
-  return (await readFile(path, 'utf8')).trim();
+  await writePublicCodexInstructions(codexHome, ctx, guestHomeFileOps);
+  return { codexHome, replies };
+};
+
+// The turn's reply, read from the seat HOME after msb has exited, with every
+// folder on the way checked again (the guest could write them during the turn).
+const readMicrovmReply = async (home, name) => {
+  const replies = await ensureGuestDir(home, [GUEST_REPLIES_NAME]);
+  const read = await readGuestFile(replies, name, { maxBytes: MICROVM_REPLY_MAX_BYTES });
+  if (!read) return '';
+  const text = read.text.trim();
+  return read.truncated ? `${text}\n\n[reply truncated at ${MICROVM_REPLY_MAX_BYTES / 1024} KB]` : text;
+};
+
+// After the turn: the reply and this turn's config.toml (it names the turn's
+// bridge secret) go, by the same no-follow rules. A refusal here leaves the
+// entry, since removing through a link is exactly what must not happen.
+const cleanMicrovmHome = async (home, replyName) => {
+  try {
+    await removeGuestEntry(await ensureGuestDir(home, [GUEST_REPLIES_NAME]), replyName);
+  } catch { /* left in place */ }
+  try {
+    await removeGuestEntry(await ensureGuestDir(home, [GUEST_CODEX_HOME_NAME]), 'config.toml');
+  } catch { /* left in place */ }
 };
 
 const runMicrovmTurn = async ({
@@ -1622,10 +1694,10 @@ const runMicrovmTurn = async ({
   });
   if (hostMcp.unavailable.length) throw publicMcpUnavailableError(hostMcp.unavailable);
 
-  // Its own HOME per seat, apart from a Claude seat of the same name.
+  // Its own HOME per seat, apart from a Claude seat of the same name. Readied
+  // (and a planted link refused) before anything is installed or started.
   const home = ctx._microvmHome || microvmSeatHome(`codex:${codexHomeIdentity(ctx)}`, 'public');
-  const codexHome = join(home, GUEST_CODEX_HOME_NAME);
-  const replies = join(home, GUEST_REPLIES_NAME);
+  const { codexHome } = await prepareMicrovmCodexHome(home, ctx);
   const replyName = `${randomBytes(16).toString('hex')}.txt`;
   let providerProxy = null;
   let turn = null;
@@ -1640,11 +1712,6 @@ const runMicrovmTurn = async ({
       wire: 'openai-responses',
       adapterLabel: 'Codex',
     });
-    await mkdir(join(codexHome, 'tmp', 'arg0-linux'), { recursive: true, mode: 0o700 });
-    await mkdir(replies, { recursive: true, mode: 0o700 });
-    // The seat's skills, rewritten every turn (and any override removed), so
-    // nothing a turn leaves in its home stands in for them on the next.
-    await writePublicCodexInstructions(codexHome, ctx);
     const baseEnv = microvmServerBaseEnv(source, credential);
     turn = await (ctx._startMicrovmTurn || startMicrovmTurn)({
       proxyPort: proxyPortOf(providerProxy),
@@ -1657,15 +1724,18 @@ const runMicrovmTurn = async ({
     if (!turn?.turnDir) {
       throw new Error('public Codex agents in the microVM sandbox need a prepared microVM; refusing to run Codex outside it');
     }
+    // The MCP entries, with the bridge secret, go in config.toml, not argv.
+    await writeGuestFile(codexHome, 'config.toml', microvmGuestCodexConfig(turn.mcpConfig, ctx));
     // Inside the VM, Codex keeps the public permission profile, read-only:
     // the VM is the fence, and the profile keeps the model's shell off the
-    // seat's home and the turn folder.
+    // seat's home and the turn folder. It reads the config.toml just written
+    // (and nothing else from its home config); `-c` wins over that file.
     const guestArgs = buildArgs({
       sessionId,
       prompt,
       outputFile: `${GUEST_HOME}/${GUEST_REPLIES_NAME}/${replyName}`,
-      mcpFlags: microvmGuestMcpFlags(turn.mcpConfig, ctx),
       publicSandboxMode: 'read-only',
+      ignoreUserConfig: false,
       model: seatModel,
       effort: ctx.environment?.effort,
       codexHelperReadPaths: GUEST_CODEX_HELPER_READS,
@@ -1673,10 +1743,12 @@ const runMicrovmTurn = async ({
       platform: 'linux',
       workspacePath: GUEST_WORKSPACE,
     });
+    // The turn folder's mcp.json is Claude's shape and unused here, so it
+    // carries no server and no secret; the shim is still written beside it.
     await writeMicrovmTurn(turn.turnDir, {
       argv: [GUEST_CODEX, ...guestArgs],
       env: guestCodexEnv({ proxyToken: providerProxy.token }),
-      mcpConfig: turn.mcpConfig,
+      mcpConfig: { mcpServers: {} },
     });
     if (ctx.signal?.aborted) {
       throw ctx.signal.reason || new Error('codex spawn cancelled before the process started');
@@ -1697,22 +1769,21 @@ const runMicrovmTurn = async ({
       turnReap: ctx._turnReap,
       confined: true,
     });
-    const text = await readMicrovmReply(join(replies, replyName));
+    const text = await readMicrovmReply(home, replyName);
     if (!ran.turnCompleted && !text) throw adapterFailure('codex', 'the turn stopped before it finished');
     const newSessionId = ran.threadId || sessionId || null;
-    const contextTokens = newSessionId
-      ? (ctx._codexContextTokens || codexContextTokens)({ codexHome, sessionId: newSessionId })
-      : null;
     const effort = ctx.environment?.effort;
     const stats = {
       ...(seatModel ? { model: String(seatModel) } : {}),
       ...(typeof effort === 'string' && effort ? { effort } : {}),
     };
+    // No context-token count: reading the rollout would walk guest-written
+    // folders on the host, which this mode keeps to the checked paths above.
     return {
-      text, newSessionId, contextTokens, ...(Object.keys(stats).length ? { stats } : {}),
+      text, newSessionId, contextTokens: null, ...(Object.keys(stats).length ? { stats } : {}),
     };
   } finally {
-    await rm(join(replies, replyName), { force: true }).catch(() => {});
+    await cleanMicrovmHome(home, replyName);
     try { await turn?.close?.(); } catch { /* ignore */ }
     try { await providerProxy?.close(); } catch { /* ignore */ }
   }

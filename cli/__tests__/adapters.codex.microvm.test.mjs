@@ -34,7 +34,7 @@ const microsandbox = await import('../src/lib/sandbox/microsandbox.js');
 const codexModule = await import('../src/lib/adapters/codex.js');
 
 const codex = codexModule.default;
-const { microvmGuestMcpFlags } = codexModule;
+const { GUEST_CODEX_HOME_LOADED, MICROVM_REPLY_MAX_BYTES, microvmGuestCodexConfig } = codexModule;
 const {
   GUEST_CODEX, GUEST_HOST, GUEST_TURN_DIR, MICROVM_FLAG_ENV, microvmSeatHome, startMicrovmTurn,
 } = microsandbox;
@@ -192,8 +192,15 @@ describe('the codex adapter in a microVM', () => {
       const turnDir = mount ? mount.slice(0, mount.length - `:${GUEST_TURN_DIR}:ro`.length) : null;
       const read = (name) => fs.readFileSync(path.join(turnDir, name), 'utf8');
       const turn = JSON.parse(read('turn.json'));
+      const configPath = path.join(home, 'codex-home', 'config.toml');
       calls.push({
-        cmd, args, opts, turnDir, turn, turnFiles: fs.readdirSync(turnDir).map((name) => read(name)).join('\n'),
+        cmd,
+        args,
+        opts,
+        turnDir,
+        turn,
+        turnFiles: fs.readdirSync(turnDir).map((name) => read(name)).join('\n'),
+        config: fs.existsSync(configPath) ? fs.readFileSync(configPath, 'utf8') : null,
       });
       const out = turn.argv[turn.argv.indexOf('-o') + 1];
       const hostReply = path.join(home, ...out.slice('/home/seat/'.length).split('/'));
@@ -203,6 +210,7 @@ describe('the codex adapter in a microVM', () => {
       proc.kill = jest.fn();
       setTimeout(() => {
         if (write === 'file') fs.writeFileSync(hostReply, reply);
+        if (typeof write === 'function') write(hostReply);
         if (write === 'link') fs.symlinkSync(path.join(operatorHome, 'secret.txt'), hostReply);
         proc.stdout.emit('data', Buffer.from('{"type":"thread.started","thread_id":"thread-mv-1"}\n{"type":"turn.completed"}\n'));
         proc.emit('close', 0);
@@ -256,7 +264,7 @@ describe('the codex adapter in a microVM', () => {
     expect(result.newSessionId).toBe('thread-mv-1');
     expect(calls).toHaveLength(1);
     const [{
-      cmd, args, opts, turnDir, turn, turnFiles,
+      cmd, args, opts, turnDir, turn, turnFiles, config,
     }] = calls;
     expect(cmd).toBe(MSB);
     expect(args[0]).toBe('run');
@@ -281,21 +289,27 @@ describe('the codex adapter in a microVM', () => {
     expect(turn.env.COMMONLY_CODEX_PROVIDER_TOKEN).toBe(PROXY_TOKEN);
     expect(turn.env.CODEX_HOME).toBe('/home/seat/codex-home');
     expect(Object.keys(turn.env).sort()).toEqual(['CODEX_HOME', 'COMMONLY_CODEX_PROVIDER_TOKEN', 'HOME', 'LANG', 'PATH']);
-    // Read-only inside, whatever the workspace mount; the seat's config.toml is ignored.
-    expect(turn.argv).toContain('--ignore-user-config');
+    // Read-only inside, whatever the workspace mount. Codex reads the Codex
+    // home's config.toml, which the host writes for this turn alone.
+    expect(turn.argv).not.toContain('--ignore-user-config');
     expect(flags.find((f) => f.startsWith('permissions.commonly_public.filesystem='))).toContain('"."="read"');
     expect(flags).toContain('permissions.commonly_public.network.enabled=false');
     expect(turn.argv).not.toContain('--dangerously-bypass-approvals-and-sandbox');
 
     // The guest's MCP entry runs the shim, with its env table (codex passes
-    // its MCP children no environment of its own), and dials the fence's other port.
-    const envTable = flags.find((f) => f.startsWith('mcp_servers.commonly.env='));
-    const bridge = /COMMONLY_MCP_BRIDGE = "([^"]+)"/.exec(envTable)?.[1];
+    // its MCP children no environment of its own), and dials the fence's other
+    // port. It lives in config.toml, never in argv or the turn folder.
+    expect(config).toContain('[mcp_servers."commonly".env]');
+    const bridge = /COMMONLY_MCP_BRIDGE = "([^"]+)"/.exec(config)?.[1];
     expect(bridge).toMatch(new RegExp(`^${GUEST_HOST}:\\d+$`));
-    expect(envTable).toMatch(/COMMONLY_MCP_BRIDGE_SECRET = "[0-9a-f]{48}"/);
-    expect(flags).toContain('mcp_servers.commonly.command="node"');
-    expect(flags).toContain(`mcp_servers.commonly.args=["${GUEST_TURN_DIR}/mcp-shim.js","commonly"]`);
-    expect(flags.find((f) => f.startsWith('mcp_servers.commonly.disabled_tools='))).toContain('commonly_self_install_into_pod');
+    const secret = /COMMONLY_MCP_BRIDGE_SECRET = "([0-9a-f]{48})"/.exec(config)?.[1];
+    expect(secret).toEqual(expect.any(String));
+    expect(config).toContain('command = "node"');
+    expect(config).toContain(`args = ["${GUEST_TURN_DIR}/mcp-shim.js", "commonly"]`);
+    expect(/disabled_tools = \[[^\n]*commonly_self_install_into_pod/.test(config)).toBe(true);
+    expect(turn.argv.join('\n')).not.toContain(secret);
+    expect(turnFiles).not.toContain(secret);
+    expect(flags.some((f) => f.startsWith('mcp_servers.'))).toBe(false);
     const bridgePort = Number(bridge.split(':')[1]);
     expect(rules).toContain(`allow@host:tcp:${bridgePort}`);
     expect(bridgePort).not.toBe(PROXY_PORT);
@@ -321,6 +335,8 @@ describe('the codex adapter in a microVM', () => {
     expect(proxy.closed).toBe(1);
     expect(fs.existsSync(turnDir)).toBe(false);
     expect(fs.readdirSync(path.join(home, 'replies'))).toEqual([]);
+    // This turn's config.toml (it names the bridge secret) goes with the turn.
+    expect(fs.existsSync(path.join(home, 'codex-home', 'config.toml'))).toBe(false);
   });
 
   test.each(['workspace', 'read-only'])('a declared %s mode runs in the microVM, read-only', async (mode) => {
@@ -347,7 +363,129 @@ describe('the codex adapter in a microVM', () => {
     const { impl } = recorder({ write: 'link' });
     await withFlag('1', async () => {
       await expect(run(impl, { extra: { _startProviderProxy: proxyStub().start } }))
-        .rejects.toThrow(/something other than a file/);
+        .rejects.toThrow(/refusing to touch .* in the microVM seat home/);
+    });
+    expect(fs.readFileSync(path.join(operatorHome, 'secret.txt'), 'utf8')).toBe('host-only');
+  });
+
+  test('a reply past the cap is cut at it, and says so', async () => {
+    const { impl } = recorder({ write: (hostReply) => fs.writeFileSync(hostReply, 'a'.repeat(MICROVM_REPLY_MAX_BYTES + 5000)) });
+    const result = await withFlag('1', () => run(impl, { extra: { _startProviderProxy: proxyStub().start } }));
+    expect(result.text.startsWith('a'.repeat(1000))).toBe(true);
+    expect(result.text).toMatch(/\[reply truncated at 256 KB\]$/);
+    expect(result.text.length).toBeLessThan(MICROVM_REPLY_MAX_BYTES + 100);
+  });
+
+  test('what a turn leaves in its Codex home for the next is cleared before it', async () => {
+    const codexHome = path.join(home, 'codex-home');
+    fs.mkdirSync(path.join(codexHome, 'skills', 'evil'), { recursive: true });
+    fs.writeFileSync(path.join(codexHome, 'skills', 'evil', 'SKILL.md'), 'planted');
+    fs.writeFileSync(path.join(codexHome, 'AGENTS.override.md'), 'planted');
+    fs.writeFileSync(path.join(codexHome, 'hooks.json'), '{}');
+    fs.mkdirSync(path.join(codexHome, 'sessions'));
+    fs.writeFileSync(path.join(codexHome, 'sessions', 'keep.jsonl'), '{}');
+    const seen = [];
+    const { impl } = recorder({ write: (hostReply) => { seen.push(fs.readdirSync(codexHome).sort()); fs.writeFileSync(hostReply, 'ok'); } });
+    await withFlag('1', () => run(impl, { extra: { _startProviderProxy: proxyStub().start } }));
+    for (const name of GUEST_CODEX_HOME_LOADED.filter((n) => n !== 'config.toml')) expect(seen[0]).not.toContain(name);
+    expect(seen[0]).toEqual(expect.arrayContaining(['config.toml', 'sessions', 'tmp']));
+    expect(fs.existsSync(path.join(codexHome, 'sessions', 'keep.jsonl'))).toBe(true);
+  });
+
+  // A link planted in the seat HOME, where a turn can write: every host write,
+  // removal and folder creation refuses it, and the file it points to is untouched.
+  describe('links planted in the seat home', () => {
+    let outside;
+    beforeEach(() => {
+      outside = fs.mkdtempSync(path.join(os.tmpdir(), 'cli-cmv-outside-'));
+      fs.writeFileSync(path.join(outside, 'AGENTS.md'), 'host file');
+      fs.writeFileSync(path.join(outside, 'AGENTS.override.md'), 'host file');
+      fs.writeFileSync(path.join(outside, 'victim.txt'), 'host file');
+      fs.mkdirSync(path.join(outside, 'skills'));
+      fs.writeFileSync(path.join(outside, 'skills', 'keep.md'), 'host file');
+    });
+    afterEach(() => { fs.rmSync(outside, { recursive: true, force: true }); });
+
+    const untouched = () => {
+      expect(fs.readdirSync(outside).sort()).toEqual(['AGENTS.md', 'AGENTS.override.md', 'skills', 'victim.txt']);
+      for (const name of ['AGENTS.md', 'AGENTS.override.md', 'victim.txt']) {
+        expect(fs.readFileSync(path.join(outside, name), 'utf8')).toBe('host file');
+      }
+      expect(fs.readFileSync(path.join(outside, 'skills', 'keep.md'), 'utf8')).toBe('host file');
+    };
+
+    const refusedBeforeAnything = async (plant) => {
+      plant();
+      const proxy = proxyStub();
+      const prepare = jest.fn(async () => ({ msb: MSB }));
+      const { calls, impl } = recorder();
+      await withFlag('1', async () => {
+        await expect(run(impl, {
+          extra: { _startProviderProxy: proxy.start, _prepareMicrovmHost: prepare },
+          // Skills declared, so AGENTS.md would be written.
+          sandbox: { trust: 'public' },
+        })).rejects.toThrow(/refusing to touch .* in the microVM seat home/);
+      });
+      expect(calls).toHaveLength(0);
+      expect(prepare).not.toHaveBeenCalled();
+      expect(proxy.started).toHaveLength(0);
+      untouched();
+    };
+
+    test('at codex-home', async () => {
+      await refusedBeforeAnything(() => fs.symlinkSync(outside, path.join(home, 'codex-home'), 'dir'));
+    });
+
+    test('at a parent inside it (codex-home/tmp)', async () => {
+      fs.mkdirSync(path.join(home, 'codex-home'));
+      await refusedBeforeAnything(() => fs.symlinkSync(outside, path.join(home, 'codex-home', 'tmp'), 'dir'));
+    });
+
+    test('at the seat home itself', async () => {
+      fs.rmSync(home, { recursive: true, force: true });
+      await refusedBeforeAnything(() => fs.symlinkSync(outside, home, 'dir'));
+    });
+
+    test('at AGENTS.override.md', async () => {
+      fs.mkdirSync(path.join(home, 'codex-home'));
+      await refusedBeforeAnything(() => fs.symlinkSync(path.join(outside, 'AGENTS.override.md'), path.join(home, 'codex-home', 'AGENTS.override.md')));
+    });
+
+    test('at AGENTS.md', async () => {
+      fs.mkdirSync(path.join(home, 'codex-home'));
+      await refusedBeforeAnything(() => fs.symlinkSync(path.join(outside, 'AGENTS.md'), path.join(home, 'codex-home', 'AGENTS.md')));
+    });
+
+    test('at skills, and at a link inside skills', async () => {
+      fs.mkdirSync(path.join(home, 'codex-home'));
+      await refusedBeforeAnything(() => fs.symlinkSync(path.join(outside, 'skills'), path.join(home, 'codex-home', 'skills'), 'dir'));
+      fs.unlinkSync(path.join(home, 'codex-home', 'skills'));
+      fs.mkdirSync(path.join(home, 'codex-home', 'skills'));
+      await refusedBeforeAnything(() => fs.symlinkSync(path.join(outside, 'skills'), path.join(home, 'codex-home', 'skills', 'inner'), 'dir'));
+    });
+
+    test('at the replies folder', async () => {
+      await refusedBeforeAnything(() => fs.symlinkSync(outside, path.join(home, 'replies'), 'dir'));
+    });
+
+    test('a staged name planted at the old guessable path is never written through', async () => {
+      fs.mkdirSync(path.join(home, 'codex-home'), { recursive: true });
+      const skill = path.join(scratch, 'a-skill');
+      fs.mkdirSync(skill);
+      fs.writeFileSync(path.join(skill, 'SKILL.md'), '---\nname: a-skill\n---\n# a skill\n');
+      const guessed = path.join(home, 'codex-home', `AGENTS.md.${process.pid}.tmp`);
+      fs.symlinkSync(path.join(outside, 'victim.txt'), guessed);
+      const { impl } = recorder();
+      await withFlag('1', () => codex.spawn('hi', {
+        agentName: 'cmv-seat', cwd, runtimeToken: SEAT_TOKEN, instanceUrl: 'http://127.0.0.1:9',
+        env: { PATH: process.env.PATH, CODEX_HOME: operatorHome, CODEX_API_KEY: HOST_KEY },
+        environment: { model: 'test-model', sandbox: { trust: 'public' }, mcp: [], skills: { claude: [skill] } },
+        _platform: 'win32', _spawnImpl: impl, _turnReap: false, _probeWhp: () => ({ available: true }),
+        _prepareMicrovmHost: async () => ({ msb: MSB }), _microvmHome: home, _startProviderProxy: proxyStub().start,
+      }));
+      expect(fs.readFileSync(path.join(home, 'codex-home', 'AGENTS.md'), 'utf8')).toContain('# a skill');
+      expect(fs.lstatSync(guessed).isSymbolicLink()).toBe(true);
+      untouched();
     });
   });
 
@@ -437,14 +575,15 @@ describe('the codex adapter in a microVM', () => {
   });
 });
 
-describe('microvmGuestMcpFlags', () => {
+describe('microvmGuestCodexConfig', () => {
   test('every entry carries its env table and the public withheld tools', () => {
-    const flags = microvmGuestMcpFlags({
+    const text = microvmGuestCodexConfig({
       mcpServers: {
         commonly: { command: 'node', args: ['/run/commonly/mcp-shim.js', 'commonly'], env: { COMMONLY_MCP_BRIDGE: 'h:1', COMMONLY_MCP_BRIDGE_SECRET: 's' } },
       },
     });
-    expect(flags).toContain('mcp_servers.commonly.env={COMMONLY_MCP_BRIDGE = "h:1", COMMONLY_MCP_BRIDGE_SECRET = "s"}');
-    expect(flags.some((f) => f.startsWith('mcp_servers.commonly.disabled_tools=['))).toBe(true);
+    expect(text).toContain('[mcp_servers."commonly".env]\nCOMMONLY_MCP_BRIDGE = "h:1"\nCOMMONLY_MCP_BRIDGE_SECRET = "s"');
+    expect(text).toMatch(/\[mcp_servers\."commonly"\]\ncommand = "node"/);
+    expect(text).toMatch(/disabled_tools = \["/);
   });
 });

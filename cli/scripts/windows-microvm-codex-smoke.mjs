@@ -12,16 +12,20 @@
  *   1. WHP is on.
  *   2. msb, pinned and checksum-verified.
  *   3. The pinned Codex on the agents volume.
+ *   4a. A junction planted in a seat HOME is refused before anything runs, and
+ *      the folder it points to is untouched.
  *   4. A Codex turn: the adapter boots the VM, Codex answers through the proxy,
- *      the stub sees the host key, and neither the guest's turn files nor the
- *      reply carry it.
+ *      the stub's own request log (a host file) shows the host key arrived in
+ *      the Authorization header of every request, and neither msb nor the
+ *      guest's turn files carry the key.
  *   5. The same fence, probed from inside: the public internet and a
  *      loopback-only host service are unreachable, the fenced port is
- *      reachable, and the workspace and agents volume refuse writes.
+ *      reachable, and the workspace and agents volume refuse writes. The host
+ *      first reaches the same public URLs, or the step is inconclusive.
  */
 import { spawn } from 'child_process';
 import {
-  mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync,
+  appendFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, symlinkSync, writeFileSync,
 } from 'fs';
 import http from 'http';
 import { tmpdir } from 'os';
@@ -53,15 +57,19 @@ const listenOn = (port, body) => new Promise((resolve, reject) => {
 });
 
 // The stub model: the Responses wire (from scripts/spikes/sandbox-front.mjs),
-// echoing the bearer it was sent.
-const upstreamRequests = [];
+// echoing the bearer it was sent. The proxy redacts the key from every
+// response body, so the echo proves nothing; what the stub received is
+// written, one JSON line per request, to a host file the checks read back.
+let requestLogPath = null;
 const stubUpstream = (req, res) => {
   let raw = '';
   req.on('data', (chunk) => { raw += chunk; });
   req.on('end', () => {
     const bearer = String(req.headers.authorization || '').replace(/^Bearer /, '');
     const path = req.url.split('?')[0];
-    upstreamRequests.push({ method: req.method, path, bearerIsKey: bearer === FAKE_UPSTREAM_KEY });
+    appendFileSync(requestLogPath, `${JSON.stringify({
+      method: req.method, path, bearerIsKey: bearer === FAKE_UPSTREAM_KEY, bearerPresent: Boolean(bearer),
+    })}\n`);
     if (req.method === 'GET' && path.endsWith('/models')) {
       res.writeHead(200, { 'content-type': 'application/json' });
       res.end(JSON.stringify({ data: [{ id: 'spike-model', object: 'model' }], models: [] }));
@@ -152,6 +160,8 @@ const main = async () => {
   console.log(JSON.stringify(ensureGuestCodex({ msb, root, log: console.log })));
 
   const scratch = mkdtempSync(join(tmpdir(), 'commonly-cmv-smoke-'));
+  requestLogPath = join(scratch, 'upstream-requests.jsonl');
+  writeFileSync(requestLogPath, '');
   const workspace = join(scratch, 'workspace');
   const home = join(scratch, 'home');
   mkdirSync(join(workspace, '.git', 'hooks'), { recursive: true });
@@ -160,6 +170,33 @@ const main = async () => {
   const other = await listen((req, res) => { res.writeHead(200); res.end('loopback-only-service'); });
   let captured = null;
   try {
+    step('4a. a junction planted in the seat home is refused, and its target untouched');
+    {
+      const plantedHome = join(scratch, 'planted-home');
+      const target = join(scratch, 'junction-target');
+      mkdirSync(plantedHome);
+      mkdirSync(target);
+      writeFileSync(join(target, 'AGENTS.override.md'), 'host file');
+      symlinkSync(target, join(plantedHome, 'codex-home'), 'junction');
+      const refused = await codex.spawn('hi', {
+        agentName: 'ci-codex-junction',
+        cwd: workspace,
+        runtimeToken: FAKE_SEAT_TOKEN,
+        env: { ...process.env, CODEX_API_KEY: FAKE_UPSTREAM_KEY },
+        environment: { model: 'spike-model', sandbox: { trust: 'public' }, mcp: [] },
+        _microvmHome: plantedHome,
+        _prepareMicrovmHost: () => { throw new Error('prepared despite a planted junction'); },
+      }).then(() => null, (error) => error);
+      console.log(refused?.message);
+      if (!refused || !/refusing to touch .* in the microVM seat home/.test(refused.message)) {
+        fail(`a junction at codex-home was not refused: ${refused?.message || 'the turn ran'}`);
+      }
+      if (readdirSync(target).join(',') !== 'AGENTS.override.md'
+        || readFileSync(join(target, 'AGENTS.override.md'), 'utf8') !== 'host file') {
+        fail('the folder behind the junction was changed');
+      }
+    }
+
     step('4. a public Codex turn through the codex adapter, inside the microVM');
     const started = Date.now();
     // A failed turn is recorded, and the fence it was given is still probed.
@@ -200,7 +237,10 @@ const main = async () => {
     });
     console.log(`turn finished after ${((Date.now() - started) / 1000).toFixed(1)} s`);
     console.log(JSON.stringify({ text: result.text, newSessionId: result.newSessionId }));
-    console.log(`upstream saw: ${JSON.stringify(upstreamRequests)}`);
+    const upstreamRequests = existsSync(requestLogPath)
+      ? readFileSync(requestLogPath, 'utf8').split('\n').filter(Boolean).map((line) => JSON.parse(line))
+      : [];
+    console.log(`upstream request log: ${JSON.stringify(upstreamRequests)}`);
 
     if (!captured) fail('the adapter never spawned msb');
     else {
@@ -214,11 +254,12 @@ const main = async () => {
       if (exposed.includes(FAKE_SEAT_TOKEN)) fail('the seat token reached msb or the guest turn files');
     }
     if (!String(result.text).includes('OK from the stub model')) fail(`Codex did not answer through the proxy: ${JSON.stringify(result.text)}`);
-    if (String(result.text).includes(FAKE_UPSTREAM_KEY)) fail('the reply carries the host key: the proxy let it into the VM');
     if (!upstreamRequests.some((r) => r.method === 'POST' && r.path.endsWith('/responses') && r.bearerIsKey)) {
-      fail('the stub never received a Responses call carrying the host key from the proxy');
+      fail('the stub logged no Responses call whose Authorization header carried the host key');
     }
-    if (upstreamRequests.some((r) => !r.bearerIsKey)) fail('a request reached the stub without the host key (sent around the proxy)');
+    if (upstreamRequests.some((r) => !r.bearerIsKey)) {
+      fail('the stub logged a request whose Authorization header was not the host key (the proxy did not put it there)');
+    }
     if (!result.newSessionId) fail('the turn reported no thread id');
 
     step('5. the same fence, probed from inside the guest');
@@ -226,6 +267,17 @@ const main = async () => {
     const rules = captured.args[captured.args.indexOf('--net-rule') + 1].split(',');
     const fencedPorts = rules.filter((rule) => rule.startsWith('allow@host:tcp:')).map((rule) => Number(rule.split(':').pop()));
     if (fencedPorts.length !== 1) fail(`a turn with no MCP server should open exactly one host port (the proxy), got ${fencedPorts.join(', ')}`);
+    // Positive control for the internet: the host itself reaches the URLs the
+    // guest must not, or a runner with no internet would pass vacuously.
+    for (const url of ['https://example.com/', 'http://example.com/']) {
+      // eslint-disable-next-line no-await-in-loop
+      const reached = await fetch(url, { signal: AbortSignal.timeout(10000) })
+        .then((res) => `status ${res.status}`, (error) => `failed (${error?.cause?.code || error?.message})`);
+      console.log(`host -> ${url}: ${reached}`);
+      if (!reached.startsWith('status')) {
+        throw new Error(`inconclusive: this runner's host cannot reach ${url} (${reached}), so the guest's refusal proves nothing`);
+      }
+    }
     // The proxy closed with the turn; a stand-in takes its port as the positive control.
     const standIn = await listenOn(fencedPorts[0], 'fenced-port-ok');
     const probeDir = mkdtempSync(join(tmpdir(), 'commonly-cmv-probe-'));

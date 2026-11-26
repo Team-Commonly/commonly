@@ -17,6 +17,7 @@ on:
       - 'cli/src/lib/sandbox/microsandbox.js'
       - 'cli/src/lib/sandbox/microsandbox-mcp-bridge.js'
       - 'cli/src/lib/sandbox/mode.js'
+      - 'cli/src/lib/sandbox/guest-home.js'
       - 'cli/src/lib/sandbox/host-check.js'
       - 'cli/src/lib/adapters/claude.js'
       - 'cli/src/lib/adapters/codex.js'
@@ -27,6 +28,7 @@ on:
       - 'cli/__tests__/sandbox.microsandbox*.test.mjs'
       - 'cli/__tests__/sandbox.microvm-mode.test.mjs'
       - 'cli/__tests__/adapters.codex.microvm.test.mjs'
+      - 'cli/__tests__/sandbox.guest-home.test.mjs'
       - 'cli/package-lock.json'
       - '.github/workflows/cli-microsandbox-windows.yml'
   workflow_dispatch:
@@ -56,6 +58,7 @@ jobs:
           __tests__/sandbox.microsandbox-mcp-bridge.test.mjs
           __tests__/sandbox.microvm-mode.test.mjs
           __tests__/adapters.codex.microvm.test.mjs
+          __tests__/sandbox.guest-home.test.mjs
           --runInBand
       - name: Boot a fenced microVM and probe it from inside
         if: ${{ !cancelled() }}
