@@ -113,9 +113,11 @@ describe('saving', () => {
     await renderPage();
     mockGet.mockClear();
     mockPost.mockRejectedValueOnce({ response: { data: { error: 'Policy store unavailable' } } });
+    await act(async () => { fireEvent.change(screen.getByLabelText('Social Mode'), { target: { value: 'repost' } }); });
 
     await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Save Policy' })); });
     await waitFor(() => expect(screen.getByRole('alert')).toHaveTextContent('Policy store unavailable'));
+    expect(screen.getByLabelText('Social Mode')).toHaveValue('repost');
     expect(screen.getByRole('button', { name: 'Save Policy' })).toBeEnabled();
     expect(screen.getByRole('button', { name: 'Save Model Policy' })).toBeEnabled();
     expect(mockGet).not.toHaveBeenCalled();
@@ -124,6 +126,9 @@ describe('saving', () => {
     await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Save Policy' })); });
     await waitFor(() => expect(screen.getByText('Global social publishing policy saved.')).toBeInTheDocument());
     expect(mockGet).toHaveBeenCalledTimes(1);
+    // The retry sends the edit the refused save kept.
+    expect(mockPost).toHaveBeenLastCalledWith('/api/admin/integrations/global/policy',
+      { socialMode: 'repost', publishEnabled: true, strictAttribution: false }, AUTH);
   });
 
   test('the forms stay locked until the post-save re-read lands, so no edit is overwritten by it', async () => {

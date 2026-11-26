@@ -5910,7 +5910,10 @@ test('Global Integrations grids shrink inside the column and stack on a phone', 
   expect(ruleBody(css, '.v2-global-int__pair')).toContain('grid-template-columns: repeat(2, minmax(0, 1fr));');
   expect(ruleBody(css, '.v2-global-int__grid')).toContain('grid-template-columns: repeat(3, minmax(0, 1fr));');
   expect(ruleBody(css, '.v2-global-int__stats')).toContain('grid-template-columns: repeat(3, minmax(0, 1fr));');
-  ['.v2-global-int__card', '.v2-global-int__field', '.v2-global-int__input'].forEach((selector) => {
+  // The fieldset that locks the forms during a save lays out as the page column does.
+  const form = ruleBody(css, '.v2-global-int__form');
+  ['display: flex;', 'flex-direction: column;', 'gap: 20px;', 'border: 0;', 'padding: 0;'].forEach((decl) => expect(form).toContain(decl));
+  ['.v2-global-int__form', '.v2-global-int__card', '.v2-global-int__field', '.v2-global-int__input'].forEach((selector) => {
     expect(ruleBody(css, selector)).toContain('min-width: 0;');
   });
   const phone = css.slice(css.indexOf('@media (max-width: 760px)'));
