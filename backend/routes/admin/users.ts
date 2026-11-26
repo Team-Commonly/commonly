@@ -10,7 +10,10 @@ const adminAuth = require('../../middleware/adminAuth');
 const User = require('../../models/User');
 const { clearCloudRuntimeCache } = require('../../services/cloudRuntimeOwnership');
 const InvitationCode = require('../../models/InvitationCode');
-const WaitlistRequest = require('../../models/WaitlistRequest');
+const {
+  assertWaitlistWritable, listWaitlistRequests, setWaitlistRequestStatus, findWaitlistRequestForInvitation,
+  markWaitlistRequestInvited, findWaitlistRequestPopulated,
+} = require('../../repositories/waitlistRequestRepository');
 const { cloudflareIpRateLimitKeyGenerator } = require('../../middleware/ipRateLimit');
 const { sendEmail } = require('../../services/emailService');
 const Integration = require('../../models/Integration');
@@ -569,29 +572,9 @@ router.get('/waitlist', auth, adminAuth, async (req: any, res: any) => {
     const requestedLimit = parsePositiveInt(req.query.limit, 20);
     const limit = Math.min(requestedLimit, 100);
     const skip = (page - 1) * limit;
-    const query: any = {};
-
-    if (q) {
-      query.$or = [
-        { email: { $regex: q, $options: 'i' } },
-        { name: { $regex: q, $options: 'i' } },
-        { organization: { $regex: q, $options: 'i' } },
-      ];
-    }
-    if (['pending', 'invited', 'closed'].includes(status)) {
-      query.status = status;
-    }
-
-    const [requests, total] = await Promise.all([
-      WaitlistRequest.find(query)
-        .populate('invitationCode', 'code')
-        .populate('invitedBy', 'username email')
-        .sort({ createdAt: -1 })
-        .skip(skip)
-        .limit(limit)
-        .lean(),
-      WaitlistRequest.countDocuments(query),
-    ]);
+    const { requests, total } = await listWaitlistRequests({
+      q, status, skip, limit,
+    });
     const totalPages = Math.max(1, Math.ceil(total / limit));
 
     return res.json({
@@ -623,13 +606,7 @@ router.patch('/waitlist/:requestId', auth, adminAuth, async (req: any, res: any)
       update.invitedBy = null;
     }
 
-    const request = await WaitlistRequest.findByIdAndUpdate(
-      req.params.requestId,
-      { $set: update },
-      { new: true },
-    )
-      .populate('invitationCode', 'code')
-      .populate('invitedBy', 'username email');
+    const request = await setWaitlistRequestStatus(req.params.requestId, update);
 
     if (!request) {
       return res.status(404).json({ error: 'Waitlist request not found' });
@@ -648,7 +625,9 @@ router.patch('/waitlist/:requestId', auth, adminAuth, async (req: any, res: any)
 // POST /api/admin/users/waitlist/:requestId/send-invitation
 router.post('/waitlist/:requestId/send-invitation', auth, adminAuth, async (req: any, res: any) => {
   try {
-    const waitlistRequest = await WaitlistRequest.findById(req.params.requestId);
+    // pg refuses before an invitation code is created or an email goes out.
+    assertWaitlistWritable('sendInvitation');
+    const waitlistRequest = await findWaitlistRequestForInvitation(req.params.requestId);
     if (!waitlistRequest) {
       return res.status(404).json({ error: 'Waitlist request not found' });
     }
@@ -741,17 +720,15 @@ router.post('/waitlist/:requestId/send-invitation', auth, adminAuth, async (req:
       htmlBody,
     });
 
-    waitlistRequest.status = 'invited';
-    waitlistRequest.invitationCode = invitation._id;
-    waitlistRequest.invitedAt = now;
-    waitlistRequest.invitationSentAt = now;
-    waitlistRequest.invitedBy = req.user.id;
-    await waitlistRequest.save();
+    await markWaitlistRequestInvited(waitlistRequest, {
+      status: 'invited',
+      invitationCode: invitation._id,
+      invitedAt: now,
+      invitationSentAt: now,
+      invitedBy: req.user.id,
+    });
 
-    const hydrated = await WaitlistRequest.findById(waitlistRequest._id)
-      .populate('invitationCode', 'code')
-      .populate('invitedBy', 'username email')
-      .lean();
+    const hydrated = await findWaitlistRequestPopulated(waitlistRequest._id);
 
     return res.json({
       message: 'Invitation email sent',

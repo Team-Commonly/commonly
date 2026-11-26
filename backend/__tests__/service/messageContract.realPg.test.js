@@ -64,7 +64,8 @@ real('message contract columns on real PostgreSQL', () => {
       '0017_agent_first_contacts.sql', '0018_agent_digest_states.sql', '0019_agent_task_wake_states.sql',
       '0020_needs_you_email_quotas.sql', '0021_agent_computer_takeovers.sql', '0022_billing_events.sql',
       '0023_discord_summary_histories.sql', '0024_needs_you_emails.sql', '0025_agent_task_row_wake_states.sql',
-      '0026_agent_provider_keys.sql', '0027_hosted_mcp_dcr_registrations.sql']);
+      '0026_agent_provider_keys.sql', '0027_hosted_mcp_dcr_registrations.sql',
+      '0028_waitlist_requests.sql']);
     expect((await pool.query('SELECT content, summary, kind, receipt FROM messages')).rows)
       .toEqual([{
         content: 'kept', summary: null, kind: null, receipt: null,

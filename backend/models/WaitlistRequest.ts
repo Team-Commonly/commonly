@@ -1,4 +1,5 @@
 import mongoose, { Document, Schema, Types } from 'mongoose';
+import { dualStorePlugin } from '../repositories/dualStore';
 
 export type WaitlistStatus = 'pending' | 'invited' | 'closed';
 
@@ -39,6 +40,8 @@ const waitlistRequestSchema = new Schema<IWaitlistRequest>(
 );
 
 waitlistRequestSchema.index({ createdAt: -1 });
+// ADR-034 step 2: the repair markers (pgVersion, pgPending, pgDeleted) and their sparse index.
+dualStorePlugin(waitlistRequestSchema);
 
 export default mongoose.model<IWaitlistRequest>('WaitlistRequest', waitlistRequestSchema);
 // CJS compat: let require() return the default export directly
