@@ -30,7 +30,7 @@
  */
 import { spawn } from 'child_process';
 import {
-  appendFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, symlinkSync, writeFileSync,
+  appendFileSync, copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, symlinkSync, writeFileSync,
 } from 'fs';
 import http from 'http';
 import { tmpdir } from 'os';
@@ -38,7 +38,7 @@ import { join } from 'path';
 
 import {
   GUEST_CODEX, GUEST_CODEX_VERSION, GUEST_HOST, GUEST_IMAGE, GUEST_TURN_DIR, MICROVM_FLAG_ENV, ensureGuestCodex, ensureMsb,
-  microvmSeatLabel, msbHostEnv, prepareMicrovmHost, probeWhp, writeMicrovmTurn,
+  ensureNoSeatVm, microvmSeatLabel, msbHostEnv, prepareMicrovmHost, probeWhp, writeMicrovmTurn,
 } from '../src/lib/sandbox/microsandbox.js';
 
 const codex = (await import('../src/lib/adapters/codex.js')).default;
@@ -60,6 +60,41 @@ const listenOn = (port, body) => new Promise((resolve, reject) => {
   server.once('error', reject);
   server.listen(port, '127.0.0.1', () => resolve(server));
 });
+
+// The tool-call probe (step 4b). The command runs through Codex's own shell
+// tool, so under the public permission profile inside the guest: the
+// workspace reads, and a workspace write, a Codex-home write, a read of the
+// config.toml that carries the bridge secret, and a network call all fail.
+const TOOL_PROBE_MARKER = 'RUN_TOOL_PROBE';
+const TOOL_CALL_ID = 'call_ci_probe';
+const TOOL_PROBE_INPUT = 'PROBE_INPUT_OK';
+const TOOL_PROBE_SCRIPT = [
+  'cat /workspace/probe-input.txt; echo',
+  'if echo x > /workspace/tool-planted 2>/dev/null; then echo WS_WRITE=written; else echo WS_WRITE=refused; fi',
+  'if echo x > /home/seat/codex-home/tool-planted 2>/dev/null; then echo HOME_WRITE=written; else echo HOME_WRITE=refused; fi',
+  'if cat /home/seat/codex-home/config.toml >/dev/null 2>&1; then echo SECRET_READ=read; else echo SECRET_READ=refused; fi',
+  "node -e \"const r=require('https').get('https://example.com/',{timeout:5000},()=>{console.log('NET=reached');process.exit(0)});"
+    + "r.on('timeout',()=>{console.log('NET=blocked');process.exit(0)});r.on('error',()=>{console.log('NET=blocked');process.exit(0)})\"",
+].join('\n');
+const toolProbe = { offered: null, unusable: false, output: null };
+
+// One shell call in the shape of the shell tool Codex offered, or null.
+const toolCallItem = (tools = []) => {
+  const names = new Set(tools.filter((tool) => tool?.type === 'function').map((tool) => tool.name));
+  const call = (name, args) => ({
+    type: 'function_call', id: 'fc_ci_probe', call_id: TOOL_CALL_ID, name, arguments: JSON.stringify(args), status: 'completed',
+  });
+  if (names.has('shell_command')) return call('shell_command', { command: TOOL_PROBE_SCRIPT, workdir: '/workspace' });
+  if (names.has('shell')) return call('shell', { command: ['bash', '-lc', TOOL_PROBE_SCRIPT], workdir: '/workspace' });
+  if (names.has('exec_command')) return call('exec_command', { cmd: TOOL_PROBE_SCRIPT, workdir: '/workspace' });
+  if (tools.some((tool) => tool?.type === 'local_shell')) {
+    return {
+      type: 'local_shell_call', id: 'lsh_ci_probe', call_id: TOOL_CALL_ID, status: 'completed',
+      action: { type: 'exec', command: ['bash', '-lc', TOOL_PROBE_SCRIPT], working_directory: '/workspace' },
+    };
+  }
+  return null;
+};
 
 // The stub model: the Responses wire (from scripts/spikes/sandbox-front.mjs),
 // echoing the bearer it was sent. The proxy redacts the key from every
@@ -83,10 +118,29 @@ const stubUpstream = (req, res) => {
     if (path.endsWith('/responses')) {
       let body = {};
       try { body = JSON.parse(raw || '{}'); } catch { /* not json */ }
-      const text = `OK from the stub model. key-echo=${bearer}`;
-      const item = {
-        type: 'message', id: 'msg_ci', role: 'assistant', status: 'completed', content: [{ type: 'output_text', text, annotations: [] }],
-      };
+      const input = JSON.stringify(body.input || '');
+      const toolOutput = (Array.isArray(body.input) ? body.input : [])
+        .find((entry) => entry?.call_id === TOOL_CALL_ID && String(entry?.type || '').endsWith('_output'));
+      let item;
+      if (input.includes(TOOL_PROBE_MARKER) && !toolOutput) {
+        // The tool-call probe (step 4b): ask for one shell command, in the
+        // shape of whichever shell tool this Codex offered.
+        item = toolCallItem(body.tools);
+        toolProbe.offered = (body.tools || []).map((tool) => (tool.type === 'function' ? tool.name : tool.type));
+        if (!item) {
+          toolProbe.unusable = true;
+          item = {
+            type: 'message', id: 'msg_ci', role: 'assistant', status: 'completed', content: [{ type: 'output_text', text: 'no shell tool offered', annotations: [] }],
+          };
+        }
+      } else {
+        if (toolOutput) toolProbe.output = typeof toolOutput.output === 'string' ? toolOutput.output : JSON.stringify(toolOutput.output);
+        const text = toolOutput ? `TOOL_OUTPUT ${toolProbe.output}` : `OK from the stub model. key-echo=${bearer}`;
+        item = {
+          type: 'message', id: 'msg_ci', role: 'assistant', status: 'completed', content: [{ type: 'output_text', text, annotations: [] }],
+        };
+      }
+      const text = item.type === 'message' ? item.content[0].text : '';
       const usage = {
         input_tokens: 12, input_tokens_details: { cached_tokens: 0 }, output_tokens: 8, output_tokens_details: { reasoning_tokens: 0 }, total_tokens: 20,
       };
@@ -97,11 +151,13 @@ const stubUpstream = (req, res) => {
       for (const [event, data] of [
         ['response.created', { type: 'response.created', response }],
         ['response.output_item.added', {
-          type: 'response.output_item.added', output_index: 0, item: { ...item, status: 'in_progress', content: [] },
+          type: 'response.output_item.added',
+          output_index: 0,
+          item: item.type === 'message' ? { ...item, status: 'in_progress', content: [] } : { ...item, status: 'in_progress' },
         }],
-        ['response.output_text.delta', {
+        ...(item.type === 'message' ? [['response.output_text.delta', {
           type: 'response.output_text.delta', item_id: 'msg_ci', output_index: 0, content_index: 0, delta: text,
-        }],
+        }]] : []),
         ['response.output_item.done', { type: 'response.output_item.done', output_index: 0, item }],
         ['response.completed', { type: 'response.completed', response: { ...response, status: 'completed', output: [item], usage } }],
       ]) res.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
@@ -284,6 +340,49 @@ const main = async () => {
     }
     if (!result.newSessionId) fail('the turn reported no thread id');
 
+    step('4b. a Codex shell call inside the guest runs under the read-only, no-network profile');
+    {
+      const toolHome = join(scratch, 'tool-home');
+      mkdirSync(toolHome);
+      writeFileSync(join(workspace, 'probe-input.txt'), TOOL_PROBE_INPUT);
+      let configAtSpawn = false;
+      const probed = await codex.spawn(`${TOOL_PROBE_MARKER}: run the probe.`, {
+        agentName: 'ci-codex-tool',
+        sessionId: null,
+        cwd: workspace,
+        runtimeToken: FAKE_SEAT_TOKEN,
+        instanceUrl: 'http://127.0.0.1:9',
+        timeoutMs: 5 * 60 * 1000,
+        env: {
+          ...process.env,
+          CODEX_API_KEY: FAKE_UPSTREAM_KEY,
+          OPENAI_BASE_URL: `http://127.0.0.1:${upstream.address().port}/v1`,
+        },
+        environment: { model: 'spike-model', sandbox: { trust: 'public' }, mcp: [] },
+        _microvmHome: toolHome,
+        _prepareMicrovmHost: (options) => prepareMicrovmHost({ ...options, root }),
+        _spawnImpl: (cmd, args, opts) => {
+          configAtSpawn = existsSync(join(toolHome, 'codex-home', 'config.toml'));
+          return spawn(cmd, args, opts);
+        },
+      }).catch((error) => { fail(`the tool-call turn failed: ${error?.message || error}`); return { text: '' }; });
+      console.log(`tools offered: ${JSON.stringify(toolProbe.offered)}`);
+      console.log(`tool output: ${JSON.stringify(toolProbe.output)}`);
+      console.log(`reply: ${JSON.stringify(probed.text)}`);
+      if (toolProbe.unusable) throw new Error(`inconclusive: Codex offered no shell tool this stub knows (${JSON.stringify(toolProbe.offered)})`);
+      if (toolProbe.output === null) fail('Codex never returned the shell call\'s output to the model');
+      const out = String(toolProbe.output || '');
+      if (!out.includes(TOOL_PROBE_INPUT)) fail('the shell could not read the workspace (the positive control)');
+      if (!out.includes('WS_WRITE=refused')) fail('the shell wrote into the workspace');
+      if (!out.includes('HOME_WRITE=refused')) fail('the shell wrote into the Codex home');
+      if (!configAtSpawn) fail('no config.toml was in the Codex home when the turn started, so the read check proves nothing');
+      if (!out.includes('SECRET_READ=refused')) fail('the shell read the config.toml that carries the bridge secret');
+      if (!out.includes('NET=blocked')) fail('the shell reached the internet');
+      if (existsSync(join(workspace, 'tool-planted'))) fail('a file the shell wrote is in the workspace');
+      if (existsSync(join(toolHome, 'codex-home', 'tool-planted'))) fail('a file the shell wrote is in the Codex home');
+      rmSync(join(workspace, 'probe-input.txt'), { force: true });
+    }
+
     step('5. the same fence, probed from inside the guest');
     if (!captured) throw new Error('no fence to probe: step 4 never spawned msb');
     const rules = captured.args[captured.args.indexOf('--net-rule') + 1].split(',');
@@ -426,6 +525,57 @@ const main = async () => {
       }
       await runMsb(msb, ['stop', '--force', '--quiet', '--', controlName]);
       await runMsb(msb, ['rm', '--', controlName]);
+    }
+
+    step('7. an orphaned msb.exe of a seat is killed before the next turn touches its HOME');
+    {
+      const orphanHome = join(scratch, 'orphan-home');
+      mkdirSync(orphanHome);
+      // A stand-in orphan: a process named msb.exe (a copy of node) whose
+      // command line carries the seat's label and HOME, as a real `msb run`'s does.
+      const fakeDir = join(scratch, 'fake-msb');
+      mkdirSync(fakeDir);
+      const fakeMsb = join(fakeDir, 'msb.exe');
+      copyFileSync(process.execPath, fakeMsb);
+      const orphan = spawn(fakeMsb, [
+        '-e', 'setInterval(() => {}, 1000)', 'run', '--label', microvmSeatLabel(orphanHome), '--mount-dir', `${orphanHome}:/home/seat`,
+      ], { stdio: 'ignore', windowsHide: true });
+      await new Promise((resolve) => { setTimeout(resolve, 1500); });
+      const alive = (pid) => { try { process.kill(pid, 0); return true; } catch { return false; } };
+      if (!alive(orphan.pid)) throw new Error('inconclusive: the stand-in orphan msb.exe did not start');
+      let atCheck = null;
+      const turnResult = await codex.spawn('Reply with OK.', {
+        agentName: 'ci-codex-orphan',
+        sessionId: null,
+        cwd: workspace,
+        runtimeToken: FAKE_SEAT_TOKEN,
+        instanceUrl: 'http://127.0.0.1:9',
+        timeoutMs: 5 * 60 * 1000,
+        env: {
+          ...process.env,
+          CODEX_API_KEY: FAKE_UPSTREAM_KEY,
+          OPENAI_BASE_URL: `http://127.0.0.1:${upstream.address().port}/v1`,
+        },
+        environment: { model: 'spike-model', sandbox: { trust: 'public' }, mcp: [] },
+        _microvmHome: orphanHome,
+        _prepareMicrovmHost: (options) => prepareMicrovmHost({ ...options, root }),
+        // The first VM check runs after the orphan sweep and before any HOME step.
+        _ensureNoSeatVm: (options) => {
+          if (!atCheck) atCheck = { orphanAlive: alive(orphan.pid), homeTouched: existsSync(join(orphanHome, 'codex-home')) };
+          return ensureNoSeatVm(options);
+        },
+      }).catch((error) => { fail(`the turn after the orphan did not run: ${error?.message || error}`); return { text: '' }; });
+      console.log(`at the first VM check: ${JSON.stringify(atCheck)}`);
+      if (!atCheck) fail('the turn never reached its VM check');
+      else {
+        if (atCheck.orphanAlive) fail('the orphaned msb.exe of the seat was still running at the VM check');
+        if (atCheck.homeTouched) fail('the HOME was touched before the orphan sweep and the VM check');
+      }
+      if (alive(orphan.pid)) {
+        fail('the orphaned msb.exe of the seat is still running');
+        try { process.kill(orphan.pid); } catch { /* gone */ }
+      }
+      if (!String(turnResult.text).includes('OK from the stub model')) fail(`the turn did not answer: ${JSON.stringify(turnResult.text)}`);
     }
   } finally {
     upstream.close();

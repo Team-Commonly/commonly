@@ -119,7 +119,9 @@ import { createClaimedWorkGate } from '../lib/claimed-work-gate.js';
 import { prepareCommitAttribution } from '../lib/commit-attribution.js';
 import { detectBwrap } from '../lib/sandbox/bwrap.js';
 import { resolveCodexSandboxMode, resolvePublicSandboxMode } from '../lib/sandbox/mode.js';
-import { checkMicrovmAttach, probeWhp as defaultProbeWhp } from '../lib/sandbox/microsandbox.js';
+import {
+  checkMicrovmAttach, probeWhp as defaultProbeWhp, refuseMicrovmMcpDeclarations,
+} from '../lib/sandbox/microsandbox.js';
 import {
   CODEX_OPTED_IN_PUBLIC_POD_MESSAGE, UNSANDBOXED_FLAG, bwrapRefusedMessage, hostSandboxRefusal, windowsSandboxMessage,
 } from '../lib/sandbox/host-check.js';
@@ -1676,6 +1678,9 @@ export const performAttach = async ({
       // Host-resolved on native Windows with COMMONLY_SANDBOX_MICROVM=1, never
       // stored: claude and codex only, and only where WHP is on.
       checkMicrovmAttach({ adapterName, platform, probe: probeWhp });
+      // An MCP server the Codex turn refuses every time is refused here, before
+      // anything is published.
+      if (adapterName === 'codex') refuseMicrovmMcpDeclarations(environment?.mcp);
       log('sandbox: microVM via microsandbox (network fenced to the model proxy and the MCP bridge)');
     } else if (sandboxMode !== 'none' && sandboxMode !== undefined) {
       throw new Error(

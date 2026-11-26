@@ -92,6 +92,29 @@ describe('writeGuestFile', () => {
     untouched();
   });
 
+  test('a write that fails after the stage is created leaves the target as it was and no stage behind', async () => {
+    fs.writeFileSync(path.join(home, 'AGENTS.md'), 'before');
+    let staged = null;
+    const io = {
+      lstat: fsp.lstat,
+      rename: fsp.rename,
+      unlink: fsp.unlink,
+      open: async (file, flags, mode) => {
+        staged = file;
+        const handle = await fsp.open(file, flags, mode);
+        return {
+          writeFile: async () => { await handle.writeFile('par', 'utf8'); throw new Error('disk full'); },
+          close: () => handle.close(),
+        };
+      },
+    };
+    await expect(writeGuestFile(home, 'AGENTS.md', 'after', { io })).rejects.toThrow('disk full');
+    expect(path.dirname(staged)).toBe(home);
+    expect(path.basename(staged)).toMatch(/^\.AGENTS\.md\.[0-9a-f]{24}\.tmp$/);
+    expect(fs.readFileSync(path.join(home, 'AGENTS.md'), 'utf8')).toBe('before');
+    expect(fs.readdirSync(home)).toEqual(['AGENTS.md']);
+  });
+
   test('a link at the old guessable staged name is never written through', async () => {
     const guessed = path.join(home, `AGENTS.md.${process.pid}.tmp`);
     fs.symlinkSync(path.join(outside, 'victim.txt'), guessed);
@@ -123,6 +146,7 @@ describe('removeGuestEntry', () => {
     fs.mkdirSync(path.join(home, 'skills'));
     fs.symlinkSync(outside, path.join(home, 'skills', 'inner'), 'dir');
     await refused(removeGuestEntry(home, 'skills'));
+    expect(fs.lstatSync(path.join(home, 'skills', 'inner')).isSymbolicLink()).toBe(true);
     untouched();
   });
 });

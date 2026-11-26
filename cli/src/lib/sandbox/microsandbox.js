@@ -193,6 +193,23 @@ export const checkMicrovmAttach = ({
   }
 };
 
+/**
+ * Refuses an MCP declaration the microVM Codex turn can never run: anything
+ * but a stdio server with a command (an HTTP or SSE server, the grant broker
+ * included). Run at attach, before any registry write, and on every turn.
+ */
+export const refuseMicrovmMcpDeclarations = (servers) => {
+  for (const server of servers || []) {
+    if (!server?.name) continue;
+    const transport = typeof server.transport === 'string' ? server.transport.trim().toLowerCase() : 'stdio';
+    if (transport !== 'stdio' || !Array.isArray(server.command) || !server.command.length) {
+      throw new Error(`The microVM sandbox runs only the Commonly MCP server, over stdio, and ${server.name} `
+        + `is ${transport === 'stdio' ? 'declared without a command' : `a ${transport} server`}. `
+        + 'Remove it to run this seat in the microVM.');
+    }
+  }
+};
+
 // ── msb, pinned ─────────────────────────────────────────────────────────────
 
 const sha256 = (buffer) => createHash('sha256').update(buffer).digest('hex');
@@ -303,6 +320,16 @@ export const GUEST_AGENTS = Object.freeze({
  * The install sandbox has microsandbox's default network (the public internet,
  * nothing on the host) and no secrets; every turn after runs fenced.
  */
+/**
+ * Whether `--version` output reports exactly `version`: some line's version
+ * token (`2.1.331 (Claude Code)`, `codex-cli 0.172.0`) equals it, so
+ * `10.172.0` or `0.172.01` never passes for `0.172.0`.
+ */
+export const reportsVersion = (stdout, version) => String(stdout || '').split(/\r?\n/).some((line) => {
+  const token = /(?:^|\s)v?(\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?)(?=\s|$)/.exec(line.trim());
+  return token?.[1] === version;
+});
+
 export const ensureGuestAgent = ({
   agent = 'claude', msb, root = microsandboxRoot(), run = spawnSync, log = () => {},
 }) => {
@@ -316,7 +343,7 @@ export const ensureGuestAgent = ({
     'run', '--mount-named', GUEST_VOLUME_SPEC, GUEST_IMAGE, '--', 'sh', '-c', command,
   ], { encoding: 'utf8', timeout, windowsHide: true });
   const probe = runGuest(`${spec.bin} --version 2>/dev/null || true`, 180000);
-  if (String(probe?.stdout || '').includes(spec.version)) {
+  if (reportsVersion(probe?.stdout, spec.version)) {
     writeFileSync(marker, `${GUEST_IMAGE}\n`);
     return { installed: false };
   }
@@ -326,7 +353,7 @@ export const ensureGuestAgent = ({
       + ` && ${spec.bin} --version || (tail -20 /tmp/npm.log; exit 1)`,
     600000,
   );
-  if (install?.error || install?.status !== 0 || !String(install?.stdout || '').includes(spec.version)) {
+  if (install?.error || install?.status !== 0 || !reportsVersion(install?.stdout, spec.version)) {
     throw new Error(`installing ${spec.label} into the microVM volume failed: ${install?.error?.message
       || String(install?.stdout || install?.stderr || '').trim().slice(-600) || `exit ${install?.status}`}`);
   }
@@ -422,7 +449,9 @@ export const ensureNoSeatVm = ({
     }
     let entries;
     try {
-      entries = JSON.parse(String(listed.stdout || '').trim() || '[]');
+      // msb list --format json prints an array even when nothing matches, so a
+      // blank answer is no inventory, never an empty one.
+      entries = JSON.parse(String(listed.stdout || '').trim());
     } catch {
       entries = null;
     }
@@ -443,6 +472,66 @@ export const ensureNoSeatVm = ({
       + 'running after msb stop --force; stop or remove it (msb stop, msb rm) and the next turn runs');
   }
   return { stopped: names };
+};
+
+// Every msb.exe on this computer with its command line, as a JSON array
+// (`[]` when there is none, so a blank answer is never read as "none").
+export const MSB_PROCESS_LIST_SCRIPT = "$ErrorActionPreference = 'Stop'; "
+  + 'ConvertTo-Json -Compress -Depth 2 -InputObject @(Get-CimInstance Win32_Process '
+  + "-Filter \"Name='msb.exe'\" | Select-Object ProcessId,CommandLine)";
+
+const sleepSync = (ms) => Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
+
+/**
+ * Kills every msb.exe whose command line names this seat (its label, or its
+ * HOME as a mount source), and confirms they are gone. Such a process is an
+ * `msb run` whose `agent run` died (a hard kill): it takes no seat lock and
+ * could boot a VM after ensureNoSeatVm has looked. Called under the seat lock,
+ * before that check, so once it returns nothing can start a VM of the seat.
+ * Windows only (the mode runs nowhere else); the listing goes through
+ * PowerShell's Get-CimInstance, and a listing that fails or can't be read
+ * refuses the turn (`microvm_seat_busy`).
+ */
+export const stopOrphanSeatMsb = ({
+  label, home, platform = process.platform, run = spawnSync, kill = (pid) => process.kill(pid),
+  env = process.env, log = () => {}, attempts = 25, pollMs = 200,
+}) => {
+  if (platform !== 'win32') return { stopped: [] };
+  if (!label || !home) throw seatBusy('there is no seat label or HOME to find its msb processes by');
+  const powershell = join(env.SystemRoot || 'C:\\Windows', 'System32', 'WindowsPowerShell', 'v1.0', 'powershell.exe');
+  const escape = (text) => text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const names = new RegExp(`(?:${escape(label)}(?=$|[\\s"'])|${escape(home)}(?=[:"'\\s]))`, 'i');
+  const seatMsb = () => {
+    const listed = run(powershell, [
+      '-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-Command', MSB_PROCESS_LIST_SCRIPT,
+    ], { encoding: 'utf8', timeout: 30000, windowsHide: true });
+    if (listed?.error || listed?.status !== 0) {
+      throw seatBusy(`the msb processes could not be listed (${listed?.error?.message
+        || String(listed?.stderr || '').trim().slice(-300) || `exit ${listed?.status}`})`);
+    }
+    let entries = null;
+    try {
+      entries = JSON.parse(String(listed.stdout || '').trim());
+    } catch { /* below */ }
+    if (!Array.isArray(entries)) throw seatBusy('the list of msb processes could not be read');
+    return entries
+      .filter((entry) => names.test(String(entry?.CommandLine || '')))
+      .map((entry) => Number(entry?.ProcessId))
+      .filter((pid) => Number.isInteger(pid) && pid > 0 && pid !== process.pid);
+  };
+  const found = seatMsb();
+  if (!found.length) return { stopped: [] };
+  for (const pid of found) {
+    log(`microvm: killing msb.exe ${pid}, left running for this seat by an earlier agent run`);
+    try { kill(pid); } catch { /* confirmed below */ }
+  }
+  let left = seatMsb();
+  for (let i = 1; i < attempts && left.length; i += 1) {
+    sleepSync(pollMs);
+    left = seatMsb();
+  }
+  if (left.length) throw seatBusy(`msb.exe ${left.join(', ')} of this seat is still running after being killed`);
+  return { stopped: found };
 };
 
 // Runs inside the guest. Reads the turn, starts the agent with exactly that
@@ -633,39 +722,52 @@ export const withInstallLock = (root, fn, {
   waitMs,
   pollMs,
   now,
-  pidAlive,
+  abandoned: (content, mtimeMs) => lockAbandoned(content, mtimeMs, { now, pidAlive }),
   busy: (lock) => new Error(`another turn is still installing the microVM sandbox (${lock}); try again shortly`),
 });
 
-// The lock withInstallLock describes, at `<root>/<name>`; `busy(lock)` is the
-// error once `waitMs` has passed with a live holder. `maxMs`/`staleMs`: see
-// lockAbandoned.
+// The lock withInstallLock describes, at `<root>/<name>`. `abandoned(content,
+// mtimeMs)` judges a held lock; `busy(lock)` is the error once `waitMs` has
+// passed; `suffix` is extra holder text after `<pid> <token>`.
+//
+// A takeover judges the lock twice: once unguarded, then again under the guard
+// from a fresh stat and read of the same file, and it deletes only when the
+// guarded pair is still abandoned and reads exactly what was judged. So the age
+// of a lock that was replaced in between (its new holder still writing an
+// empty file) is never applied to the replacement.
 const withFileLock = async (root, name, fn, {
-  waitMs, pollMs = 500, now = Date.now, pidAlive = defaultPidAlive, busy, maxMs, staleMs,
+  waitMs, pollMs = 500, now = Date.now, busy, abandoned, suffix = () => '',
 }) => {
   await mkdir(root, { recursive: true });
   const lock = join(root, name);
   const guard = join(root, `${name}.guard`);
-  const mine = `${process.pid} ${randomBytes(8).toString('hex')}\n`;
+  const token = randomBytes(8).toString('hex');
+  let mine = null;
   const deadline = now() + waitMs;
+  const observe = async () => {
+    const held = await stat(lock).catch(() => null);
+    const content = held ? await readFile(lock, 'utf8').catch(() => null) : null;
+    return held && content !== null ? { held, content } : null;
+  };
   for (;;) {
     try {
+      // Built at each try, so a suffix naming a time counts from the take.
+      mine = `${process.pid} ${token}${suffix()}\n`;
       // eslint-disable-next-line no-await-in-loop
       await writeFile(lock, mine, { flag: 'wx' });
       break;
     } catch (error) {
       if (error?.code !== 'EEXIST') throw error;
       // eslint-disable-next-line no-await-in-loop
-      const held = await stat(lock).catch(() => null);
-      // eslint-disable-next-line no-await-in-loop
-      const judged = held ? await readFile(lock, 'utf8').catch(() => null) : null;
-      if (held && judged !== null && lockAbandoned(judged, held.mtimeMs, {
-        now, pidAlive, maxMs, staleMs,
-      })) {
+      const seen = await observe();
+      if (seen && abandoned(seen.content, seen.held.mtimeMs)) {
         // eslint-disable-next-line no-await-in-loop
         await withLockGuard(guard, async () => {
-          const current = await readFile(lock, 'utf8').catch(() => null);
-          if (current === judged) await rm(lock, { force: true });
+          const again = await observe();
+          if (again && again.content === seen.content && again.held.ino === seen.held.ino
+            && again.held.mtimeMs === seen.held.mtimeMs && abandoned(again.content, again.held.mtimeMs)) {
+            await rm(lock, { force: true });
+          }
         }, { now });
       } else if (now() > deadline) {
         throw busy(lock);
@@ -690,29 +792,60 @@ const withFileLock = async (root, name, fn, {
 // How long a second turn of a seat waits for the first before refusing.
 export const SEAT_LOCK_WAIT_MS = 2 * 60 * 1000;
 
+// A lock file that names no holder yet is one whose holder is between its
+// exclusive create and its write; only past this age is it taken as left by a
+// process that died in that window.
+const SEAT_LOCK_EMPTY_GRACE_MS = 60 * 1000;
+
 /**
- * Runs `fn` holding the seat's turn lock, so two `agent run` processes of one
- * seat (the daemon's and a foreground one) never interleave their HOME steps
- * with each other's VM. The lock sits beside the HOME, in the host-owned seats
- * folder the guest never mounts, as `.<seat folder>.lock`. It works as
- * withInstallLock's: it names its holder, only an exclusive create takes it,
- * and a waiter reclaims it only once the holder's process is gone (or past
- * `maxMs`, which the caller sets past its turn's own timeout), by an atomic
- * re-read-and-delete under the guard. A waiter past `waitMs` refuses with
- * `microvm_seat_busy`; it never runs unlocked.
+ * Whether a seat lock reading `content` can be taken over. Never on age alone,
+ * and never from a holder that may still act on the HOME:
+ * - its pid is gone (pidAlive false; EPERM counts as alive), or
+ * - the deadline the holder wrote has passed. The holder itself never touches
+ *   the HOME after its own deadline (withSeatLock hands it `pastDeadline`), so
+ *   a live pid past it is a reused pid or a holder that has stopped acting.
+ * A lock with no readable pid is abandoned only past SEAT_LOCK_EMPTY_GRACE_MS
+ * (a holder still writing it).
+ */
+export const seatLockAbandoned = (content, mtimeMs, { now = Date.now, pidAlive = defaultPidAlive } = {}) => {
+  const [pidText, , deadlineText] = String(content).trim().split(/\s+/);
+  const pid = Number.parseInt(pidText, 10);
+  if (!(Number.isInteger(pid) && pid > 0)) return now() - mtimeMs > SEAT_LOCK_EMPTY_GRACE_MS;
+  let alive = true;
+  try { alive = pidAlive(pid); } catch { alive = true; }
+  if (!alive) return true;
+  const deadline = Number.parseInt(deadlineText, 10);
+  return Number.isInteger(deadline) && deadline > 0 && now() > deadline;
+};
+
+/**
+ * Runs `fn({ pastDeadline })` holding the seat's turn lock, so two `agent run`
+ * processes of one seat (the daemon's and a foreground one) never interleave
+ * their HOME steps with each other's VM. The lock sits beside the HOME, in the
+ * host-owned seats folder the guest never mounts, as `.<seat folder>.lock`,
+ * reading `<pid> <token> <deadline>`. `holdMs` sets the deadline; the caller
+ * checks `pastDeadline()` before every HOME step and stops touching the HOME
+ * once it is true. A waiter reclaims the lock only as seatLockAbandoned says,
+ * by the guarded re-check withFileLock makes, and past `waitMs` refuses with
+ * `microvm_seat_busy`: it never runs unlocked.
  */
 export const withSeatLock = (home, fn, {
-  waitMs = SEAT_LOCK_WAIT_MS, maxMs = INSTALL_LOCK_MAX_MS, pollMs = 250, now = Date.now, pidAlive = defaultPidAlive,
-} = {}) => withFileLock(dirname(home), `.${basename(home)}.lock`, fn, {
-  waitMs,
-  pollMs,
-  now,
-  pidAlive,
-  maxMs,
-  staleMs: maxMs,
-  busy: (lock) => Object.assign(new Error(`the microVM sandbox will not touch this seat's HOME: another turn `
-    + `of this seat still holds ${lock}; try again when it ends`), { code: 'microvm_seat_busy' }),
-});
+  waitMs = SEAT_LOCK_WAIT_MS, holdMs = INSTALL_LOCK_MAX_MS, pollMs = 250, now = Date.now, pidAlive = defaultPidAlive,
+} = {}) => {
+  let deadline = 0;
+  return withFileLock(dirname(home), `.${basename(home)}.lock`, () => fn({ pastDeadline: () => now() > deadline }), {
+    waitMs,
+    pollMs,
+    now,
+    suffix: () => {
+      deadline = now() + holdMs;
+      return ` ${deadline}`;
+    },
+    abandoned: (content, mtimeMs) => seatLockAbandoned(content, mtimeMs, { now, pidAlive }),
+    busy: (lock) => Object.assign(new Error(`the microVM sandbox will not touch this seat's HOME: another turn `
+      + `of this seat still holds ${lock}; try again when it ends`), { code: 'microvm_seat_busy' }),
+  });
+};
 
 /** msb and the guest's agent (Claude unless named), ready to run a turn. */
 export const prepareMicrovmHost = async ({

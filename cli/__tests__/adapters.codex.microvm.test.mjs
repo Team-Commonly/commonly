@@ -164,7 +164,7 @@ describe('the codex adapter in a microVM', () => {
     fs.writeFileSync(path.join(scratch, 'src', 'index.js'), '');
     fs.writeFileSync(path.join(scratch, 'package.json'), JSON.stringify({ name: '@commonlyai/mcp', version: '0.4.0' }));
     fs.writeFileSync(MSB, '');
-    spawnSync.mockImplementation(() => ({ status: 0, stdout: '' }));
+    spawnSync.mockImplementation(() => ({ status: 0, stdout: '[]' }));
   });
   afterEach(() => {
     spawnSync.mockReset();
@@ -381,16 +381,71 @@ describe('the codex adapter in a microVM', () => {
     const codexHome = path.join(home, 'codex-home');
     fs.mkdirSync(path.join(codexHome, 'skills', 'evil'), { recursive: true });
     fs.writeFileSync(path.join(codexHome, 'skills', 'evil', 'SKILL.md'), 'planted');
-    fs.writeFileSync(path.join(codexHome, 'AGENTS.override.md'), 'planted');
-    fs.writeFileSync(path.join(codexHome, 'hooks.json'), '{}');
+    // An independent list: what Codex 0.172.0 loads from its home without
+    // --ignore-user-config, each planted, each expected gone.
+    const planted = [
+      'AGENTS.override.md', 'managed_config.toml', 'environments.toml', 'hooks.json',
+      'prompts', 'rules', 'hooks', 'plugins',
+    ];
+    for (const name of planted) {
+      if (name.includes('.')) fs.writeFileSync(path.join(codexHome, name), 'planted = "x"');
+      else fs.mkdirSync(path.join(codexHome, name));
+    }
+    fs.writeFileSync(path.join(codexHome, 'config.toml'), 'model = "planted"');
     fs.mkdirSync(path.join(codexHome, 'sessions'));
     fs.writeFileSync(path.join(codexHome, 'sessions', 'keep.jsonl'), '{}');
+    // A reply a killed turn left behind goes too.
+    fs.mkdirSync(path.join(home, 'replies'));
+    fs.writeFileSync(path.join(home, 'replies', 'killed-turn.txt'), 'an old pod reply');
     const seen = [];
-    const { impl } = recorder({ write: (hostReply) => { seen.push(fs.readdirSync(codexHome).sort()); fs.writeFileSync(hostReply, 'ok'); } });
+    let configDuring = null;
+    const { impl } = recorder({
+      write: (hostReply) => {
+        seen.push(fs.readdirSync(codexHome).sort());
+        configDuring = fs.readFileSync(path.join(codexHome, 'config.toml'), 'utf8');
+        expect(fs.readdirSync(path.join(home, 'replies'))).toEqual([]);
+        fs.writeFileSync(hostReply, 'ok');
+      },
+    });
     await withFlag('1', () => run(impl, { extra: { _startProviderProxy: proxyStub().start } }));
-    for (const name of GUEST_CODEX_HOME_LOADED.filter((n) => n !== 'config.toml')) expect(seen[0]).not.toContain(name);
+    for (const name of [...planted, 'skills']) expect(seen[0]).not.toContain(name);
+    expect(configDuring).not.toContain('planted');
     expect(seen[0]).toEqual(expect.arrayContaining(['config.toml', 'sessions', 'tmp']));
     expect(fs.existsSync(path.join(codexHome, 'sessions', 'keep.jsonl'))).toBe(true);
+    expect(GUEST_CODEX_HOME_LOADED).toEqual(expect.arrayContaining([...planted, 'config.toml', 'skills']));
+  });
+
+  describe('a thread stored before the seat ran in the microVM', () => {
+    const SESSION = '0199aaaa-bbbb-7ccc-8ddd-eeeeffff0001';
+    const resumes = (turn) => turn.argv.includes('resume') && turn.argv.includes(SESSION);
+
+    test('is absent from the guest Codex home, so the turn starts a new thread', async () => {
+      const { calls, impl } = recorder();
+      await withFlag('1', () => run(impl, { extra: { _startProviderProxy: proxyStub().start, sessionId: SESSION } }));
+      expect(resumes(calls[0].turn)).toBe(false);
+    });
+
+    test('is resumed when its rollout is in the guest Codex home', async () => {
+      const day = path.join(home, 'codex-home', 'sessions', '2026', '11', '25');
+      fs.mkdirSync(day, { recursive: true });
+      fs.writeFileSync(path.join(day, `rollout-2026-11-25T10-00-00-${SESSION}.jsonl`), '{}\n');
+      const { calls, impl } = recorder();
+      await withFlag('1', () => run(impl, { extra: { _startProviderProxy: proxyStub().start, sessionId: SESSION } }));
+      expect(resumes(calls[0].turn)).toBe(true);
+    });
+
+    test('a rollout reached only through a link counts as absent', async () => {
+      const elsewhere = fs.mkdtempSync(path.join(os.tmpdir(), 'cli-cmv-rollouts-'));
+      try {
+        fs.mkdirSync(path.join(elsewhere, '11', '25'), { recursive: true });
+        fs.writeFileSync(path.join(elsewhere, '11', '25', `rollout-x-${SESSION}.jsonl`), '{}\n');
+        fs.mkdirSync(path.join(home, 'codex-home', 'sessions'), { recursive: true });
+        fs.symlinkSync(elsewhere, path.join(home, 'codex-home', 'sessions', '2026'), 'dir');
+        expect(await codexModule.guestRolloutExists(path.join(home, 'codex-home'), SESSION)).toBe(false);
+      } finally {
+        fs.rmSync(elsewhere, { recursive: true, force: true });
+      }
+    });
   });
 
   // A link planted in the seat HOME, where a turn can write: every host write,
@@ -506,7 +561,7 @@ describe('the codex adapter in a microVM', () => {
     const fakeMsb = (vms, { stops = true } = {}) => {
       const stopped = [];
       spawnSync.mockImplementation((cmd, args) => {
-        if (cmd !== MSB) return { status: 0, stdout: '' };
+        if (cmd !== MSB) return { status: 0, stdout: '[]' };
         if (args[0] === 'list') {
           const label = args[args.indexOf('--label') + 1];
           return {
@@ -591,6 +646,61 @@ describe('the codex adapter in a microVM', () => {
       });
       expect(noSeatVm).toHaveBeenCalledTimes(1);
       expect(leftBehind()).toEqual({ config: true, reply: true });
+    });
+
+    test('a cancel whose msb then exits cleanly, with no signal, still leaves the HOME alone', async () => {
+      const noSeatVm = jest.fn(() => ({ stopped: [] }));
+      const controller = new AbortController();
+      const { impl } = stalled({
+        onStart: (proc) => {
+          controller.abort(new Error('cancelled by the pod'));
+          proc.stdout.emit('data', Buffer.from('{"type":"turn.completed"}\n'));
+          proc.emit('close', 0, null);
+        },
+      });
+      await withFlag('1', async () => {
+        await expect(run(impl, {
+          extra: { _startProviderProxy: proxyStub().start, _ensureNoSeatVm: noSeatVm, signal: controller.signal },
+        })).rejects.toThrow('cancelled by the pod');
+      });
+      expect(noSeatVm).toHaveBeenCalledTimes(1);
+      expect(leftBehind()).toEqual({ config: true, reply: true });
+    });
+
+    test('an orphaned msb.exe of the seat is killed before the VM check and any HOME step', async () => {
+      const order = [];
+      const orphan = jest.fn((options) => { order.push(['orphan', options.label, options.home]); return { stopped: [4242] }; });
+      const noSeatVm = jest.fn(() => { order.push(['check']); return { stopped: [] }; });
+      const { impl } = recorder({ write: (hostReply) => { order.push(['vm']); fs.writeFileSync(hostReply, 'ok'); } });
+      await withFlag('1', () => run(impl, {
+        extra: { _startProviderProxy: proxyStub().start, _ensureNoSeatVm: noSeatVm, _stopOrphanSeatMsb: orphan },
+      }));
+      expect(order[0]).toEqual(['orphan', seatLabel(), home]);
+      expect(order.slice(1).map(([step]) => step)).toEqual(['check', 'vm', 'check']);
+    });
+
+    test('an orphan listing that fails refuses the turn before the HOME is touched', async () => {
+      fs.mkdirSync(path.join(home, 'codex-home'));
+      fs.writeFileSync(path.join(home, 'codex-home', 'AGENTS.override.md'), 'from the guest');
+      const { calls, impl } = recorder();
+      spawnSync.mockImplementation((cmd) => (String(cmd).endsWith('powershell.exe')
+        ? { status: 1, stderr: 'Get-CimInstance failed' } : { status: 0, stdout: '[]' }));
+      await withFlag('1', async () => {
+        await expect(run(impl, { extra: { _startProviderProxy: proxyStub().start } }))
+          .rejects.toMatchObject({ code: 'microvm_seat_busy', message: expect.stringMatching(/Get-CimInstance failed/) });
+      });
+      expect(calls).toHaveLength(0);
+      expect(fs.readFileSync(path.join(home, 'codex-home', 'AGENTS.override.md'), 'utf8')).toBe('from the guest');
+    });
+
+    test('past its seat lock\'s deadline the turn reads no reply and cleans nothing', async () => {
+      const lockedPast = (dir, fn) => fn({ pastDeadline: () => true });
+      const { impl } = recorder({ reply: 'late' });
+      await withFlag('1', async () => {
+        await expect(run(impl, { extra: { _startProviderProxy: proxyStub().start, _withSeatLock: lockedPast } }))
+          .rejects.toThrow(/past its seat lock's deadline/);
+      });
+      expect(leftBehind().config).toBe(true);
     });
 
     test('a VM msb could not confirm gone after its own exit: no reply is read and nothing is cleaned', async () => {

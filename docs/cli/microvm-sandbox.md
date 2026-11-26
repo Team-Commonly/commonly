@@ -117,8 +117,8 @@ whole and the arg0 helper lives in the Codex home.
 
 **Nothing a turn writes persists into the next.** Before every turn the host
 clears what Codex would load from its home (`AGENTS.override.md`, `config.toml`,
-`managed_config.toml`, `hooks.json`, and the `skills`, `prompts`, `rules`,
-`hooks` and `plugins` folders), rewrites `AGENTS.md` from the seat's declared
+`managed_config.toml`, `environments.toml`, `hooks.json`, and the `skills`,
+`prompts`, `rules`, `hooks` and `plugins` folders), rewrites `AGENTS.md` from the seat's declared
 skills, and then writes the turn's own `config.toml`. Codex runs with
 `--ignore-rules`. It does not run with `--ignore-user-config`, since it reads
 that host-written `config.toml`; every other setting rides in `-c` overrides,
@@ -157,16 +157,35 @@ One `agent run` process runs its turns one at a time, but two processes of one
 seat can coexist (the daemon's and a foreground one). So the whole stretch, from
 the first check through the cleanup, holds the seat's lock:
 `.<seat folder>.lock`, beside the HOME in the host-owned `seats` folder that the
-guest never mounts. It works like the install lock. The file names its holder
-(pid and a per-take token), and only an exclusive create takes it. A waiter
-reclaims it only when the holder's process is gone, or when the lock is older
-than the turn's timeout plus 15 minutes (a reused pid). The reclaim re-reads the
-file under a guard and deletes only the exact lock it judged. A second turn of
-the seat waits up to two minutes, then refuses with `microvm_seat_busy`. It
-never runs unlocked. So a VM of the seat still running at the check is always a
-leftover. A Windows job object would tie the VM to the CLI's process, but Node
-has no way to make one without a native addon, so the check above is the
-mechanism.
+guest never mounts. The file names its holder (pid, a per-take token, and a
+deadline: the turn's timeout plus 15 minutes from the take), and only an
+exclusive create takes it. Age alone never frees it. A waiter reclaims it only
+when the holder's pid is gone, or when the holder's own deadline has passed.
+The holder checks that deadline before every HOME step and touches the HOME no
+more after it, so a live pid past it is a reused pid or a holder that has
+stopped acting. A pid check that fails counts as alive. A lock that names no
+holder yet (between its create and its write) is left alone for a minute. A
+reclaim re-reads the file under a guard and deletes it only if the same file,
+with the same content and age, is still abandoned. A second turn of the seat
+waits up to two minutes, then refuses with `microvm_seat_busy`. It never runs
+unlocked.
+
+An `msb.exe` whose `agent run` was hard-killed takes no lock, and it could boot
+its VM after the check. So, holding the lock and before the first check, the
+host lists every `msb.exe` with its command line (PowerShell
+`Get-CimInstance Win32_Process`) and kills each whose command line names this
+seat's label or HOME. It then lists again until none is left. A listing that
+fails or can't be read, or a process that survives, refuses the turn. After
+that sweep nothing can start a VM of the seat, so a VM still running at the
+check is a leftover, and the check stops it. A Windows job object would tie the
+VM to the CLI's process, but Node has no way to make one without a native
+addon.
+
+Under the lock and after the check, the host also removes replies a killed turn
+left, and checks that the seat's stored thread has its rollout in the guest
+Codex home (walked without following links). A thread from before the seat ran
+in the microVM lives in another Codex home, so the turn starts a new thread
+instead of failing to resume it on every turn.
 
 **Other differences.**
 - The host-side git check for a public Codex workspace
@@ -191,13 +210,7 @@ mechanism.
   the seat HOME mounted until something stops it. For a Codex seat, the next
   turn stops it before touching the HOME, or refuses (see above). Until that
   turn, it runs inside the fence and uses memory and CPU.
-- The seat lock follows the `agent run` process, not `msb.exe`. If that process
-  dies mid-turn, its `msb.exe` can live on, and the lock is reclaimed. If that
-  orphaned msb boots its VM only after the next turn's check, the VM runs while
-  the next turn touches the HOME. That window is short: the process is gone
-  within seconds of spawning msb, and the restarted turn's check comes later.
-  Nothing covers it. A Claude turn's VM
-  carries no label and nothing stops it. The host never writes into a Claude
+- A Claude turn's VM carries no label and nothing stops it. The host never writes into a Claude
   seat's HOME (it only makes the folder; the reply comes over stdout), so that
   leftover can reach nothing outside its fence and its mounts, but it runs
   until msb's own maintenance or someone stops it.
@@ -214,9 +227,6 @@ mechanism.
   The transcript lives in the seat HOME under a guest path.
 - The guest Codex reading its MCP entries from the host-written `config.toml`
   is untested end to end: the CI turn declares no MCP server.
-- Codex's tool calls inside the guest are untested in CI: the stub model asks
-  for none. The spike ran a command through Codex's own sandbox in the guest;
-  the CI turn proves Codex starts and answers under the profile.
 - `attach` and `agent run` still detect Codex on the host, as they detect
   Claude, though the turn runs the guest's copy.
 - Tested on GitHub's `windows-latest` runner, not yet on a Windows desktop.
@@ -238,9 +248,14 @@ mechanism.
   the seat's VMs: a killed or cancelled turn leaves the HOME alone; a live VM
   of the seat is stopped before the HOME is touched, or the turn refuses; and
   another seat's VM neither blocks nor is stopped. Two concurrent turns of one
-  seat: the second waits at the lock without touching the HOME, or refuses.
+  seat: the second waits at the lock without touching the HOME, or refuses. An
+  orphaned `msb.exe` is swept before the VM check, and a failed sweep refuses;
+  a stale reply is removed; a stored thread with no guest rollout starts fresh.
   `sandbox.microsandbox.test.mjs` covers the lock itself: a dead holder's lock
-  is reclaimed, a live holder's is left as it was.
+  is reclaimed, and so is one past its holder's deadline; a live holder's is
+  never taken on age; an empty lock waits out its grace period; a lock replaced
+  during the judgement survives. It also covers the orphan sweep, the exact
+  version match, and the MCP declaration check `attach` shares with the turn.
 - `.github/workflows/cli-microsandbox-windows.yml` runs these on Windows. It then
   boots a real fenced VM with `cli/scripts/windows-microvm-smoke.mjs` and probes
   from inside: the proxy answers; another loopback service, the internet and a
@@ -264,3 +279,10 @@ mechanism.
   seat must still answer. msb must then list no running VM with the seat's
   label, and the control VM must be untouched. The log shows whether the VM
   outlived `msb.exe`.
+- The Codex smoke also has the stub model ask for one shell command through
+  Codex's own shell tool in the guest. That command must read a workspace file,
+  and must fail to write the workspace or the Codex home, to read the
+  `config.toml` that carries the bridge secret (present when the turn started),
+  and to reach the internet. Finally a stand-in orphan, a copy of node named
+  `msb.exe` whose command line carries a seat's label and HOME, must be killed
+  before that seat's next turn reaches its VM check, and that turn must answer.

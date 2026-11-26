@@ -125,14 +125,16 @@ export const writeGuestFile = async (dir, name, text, { io = defaultIo } = {}) =
   if (existing && (existing.isSymbolicLink() || !existing.isFile())) throw refuse(target, 'a file');
   const staged = join(dir, `.${name}.${randomBytes(12).toString('hex')}.tmp`);
   const handle = await io.open(staged, constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL | NOFOLLOW, 0o600);
+  // One cleanup scope from the exclusive open on: a failed write, close or
+  // rename removes the staged file and rethrows; only the rename replaces the target.
+  let closed = false;
   try {
     await handle.writeFile(text, 'utf8');
-  } finally {
+    closed = true;
     await handle.close();
-  }
-  try {
     await io.rename(staged, target);
   } catch (err) {
+    if (!closed) await handle.close().catch(() => {});
     await io.unlink(staged).catch(() => {});
     throw err;
   }

@@ -54,6 +54,7 @@ import {
   mkdir,
   mkdtemp,
   readFile,
+  readdir,
   readlink,
   realpath,
   rename,
@@ -98,7 +99,8 @@ import {
 import {
   GUEST_CODEX, GUEST_HOME, GUEST_PATH, GUEST_WORKSPACE, buildMicrovmRunArgs, checkMicrovmAttach,
   ensureNoSeatVm, guestProxyBaseUrl, microvmSeatHome, microvmSeatLabel, msbHostEnv, prepareMicrovmHost,
-  probeWhp, startMicrovmTurn, withSeatLock, writeMicrovmTurn,
+  refuseMicrovmMcpDeclarations,
+  probeWhp, startMicrovmTurn, stopOrphanSeatMsb, withSeatLock, writeMicrovmTurn,
 } from '../sandbox/microsandbox.js';
 import { MCP_BRIDGE_SECRET_ENV } from '../sandbox/microsandbox-mcp-bridge.js';
 import { adapterFailure, spawnCredentials } from '../upstream-refusal.js';
@@ -1506,14 +1508,11 @@ const proxyPortOf = (proxy) => {
 export const microvmHostMcpConfig = (servers, ctx = {}) => {
   const mcpServers = {};
   const unavailable = [];
+  // The declaration-level refusal attach runs too, so a seat it would refuse
+  // here on every turn is never published.
+  refuseMicrovmMcpDeclarations(servers);
   for (const server of servers || []) {
     if (!server?.name) continue;
-    const transport = typeof server.transport === 'string' ? server.transport.trim().toLowerCase() : 'stdio';
-    if (transport !== 'stdio' || !Array.isArray(server.command) || !server.command.length) {
-      throw new Error(`The microVM sandbox runs only the Commonly MCP server, over stdio, and ${server.name} `
-        + `is ${transport === 'stdio' ? 'declared without a command' : `a ${transport} server`}. `
-        + 'Remove it to run this seat in the microVM.');
-    }
     const spawnCommand = prepareMcpSpawn(server.command, { apiUrl: ctx.instanceUrl, publicSeat: true });
     if (!spawnCommand) {
       unavailable.push(server.name);
@@ -1557,7 +1556,7 @@ export const microvmHostMcpConfig = (servers, ctx = {}) => {
 // its home extends the next one.
 export const GUEST_CODEX_HOME_LOADED = Object.freeze([
   'AGENTS.override.md', 'config.toml', 'managed_config.toml', 'hooks.json', 'skills', 'prompts', 'rules', 'hooks',
-  'plugins',
+  'plugins', 'environments.toml',
 ]);
 
 // The reply is posted to a pod: more than this is cut, and says so.
@@ -1632,6 +1631,9 @@ export const prepareMicrovmCodexHome = async (home, ctx) => {
   await ensureGuestDir(home);
   await ensureGuestDir(home, [GUEST_CODEX_HOME_NAME, 'tmp', 'arg0-linux']);
   const codexHome = await ensureGuestDir(home, [GUEST_CODEX_HOME_NAME]);
+  // Replies a killed turn left behind (its HOME was not touched then) go now,
+  // under the seat lock with no VM of the seat running: no turn is active.
+  await removeGuestEntry(home, GUEST_REPLIES_NAME);
   const replies = await ensureGuestDir(home, [GUEST_REPLIES_NAME]);
   for (const name of GUEST_CODEX_HOME_LOADED) {
     // eslint-disable-next-line no-await-in-loop
@@ -1663,12 +1665,42 @@ const cleanMicrovmHome = async (home, replyName) => {
   } catch { /* left in place */ }
 };
 
-// The seat lock's age past a turn's timeout before a live pid's lock counts as
-// leaked: msb's own stop, the reply read and the cleanup fit well inside it.
+// Whether the guest Codex home holds the rollout of `sessionId`
+// (sessions/YYYY/MM/DD/*-<id>.jsonl), walked without following any link: a
+// linked folder or file counts as absent. Run under the seat lock, with no VM
+// of the seat running.
+export const guestRolloutExists = async (codexHome, sessionId) => {
+  if (!sessionId) return false;
+  const suffix = `-${sessionId}.jsonl`;
+  const dirsIn = async (dir) => {
+    const info = await lstat(dir).catch(() => null);
+    if (!info || info.isSymbolicLink() || !info.isDirectory()) return null;
+    return (await readdir(dir, { withFileTypes: true }).catch(() => []))
+      .sort((a, b) => b.name.localeCompare(a.name));
+  };
+  const walk = async (dir, depth) => {
+    const entries = await dirsIn(dir);
+    if (!entries) return false;
+    for (const entry of entries) {
+      if (entry.isSymbolicLink()) continue;
+      if (depth === 3) {
+        if (entry.isFile() && entry.name.endsWith(suffix)) return true;
+      } else if (entry.isDirectory()) {
+        // eslint-disable-next-line no-await-in-loop
+        if (await walk(join(dir, entry.name), depth + 1)) return true;
+      }
+    }
+    return false;
+  };
+  return walk(join(codexHome, 'sessions'), 0);
+};
+
+// How far past a turn's timeout the seat lock's deadline sits: the checks, the
+// prepare, msb's own stop, the reply read and the cleanup fit well inside it.
 const MICROVM_SEAT_LOCK_MARGIN_MS = 15 * 60 * 1000;
 
 const runMicrovmTurn = async ({
-  ctx, sandbox, sessionId, prompt, seatModel, credential, workspace,
+  ctx, sandbox, sessionId: storedSessionId, prompt: storedPrompt, freshPrompt = null, seatModel, credential, workspace,
 }) => {
   const platform = ctx._platform || process.platform;
   // Checked at every spawn, whatever attach saw: off Windows, without the flag
@@ -1721,9 +1753,25 @@ const runMicrovmTurn = async ({
   // and this turn's last HOME step, and two `agent run` processes of one seat
   // can coexist (the daemon's and a foreground one). So the whole stretch,
   // from the first check through the cleanup, holds the seat's lock.
-  return (ctx._withSeatLock || withSeatLock)(home, async () => {
+  return (ctx._withSeatLock || withSeatLock)(home, async ({ pastDeadline = () => false } = {}) => {
+    // An msb.exe of this seat that outlived its `agent run` (a hard kill)
+    // takes no lock and could boot a VM after the check below. It is found by
+    // its command line and killed first, so nothing can start one after.
+    (ctx._stopOrphanSeatMsb || stopOrphanSeatMsb)({
+      label: seatLabel, home, platform, env: source, log,
+    });
     confirmNoSeatVm();
     const { codexHome } = await prepareMicrovmCodexHome(home, ctx);
+    // A thread stored before this seat ran in the microVM lives in another
+    // Codex home; resuming it here would fail every turn, so it starts fresh.
+    let sessionId = storedSessionId || null;
+    let prompt = storedPrompt;
+    if (sessionId && !(await guestRolloutExists(codexHome, sessionId))) {
+      log('this agent now runs in the microVM sandbox, with its own Codex home, so it starts a new thread; '
+        + 'what it is meant to remember is in its Commonly memory.');
+      sessionId = null;
+      if (freshPrompt) prompt = freshPrompt();
+    }
     const replyName = `${randomBytes(16).toString('hex')}.txt`;
     let providerProxy = null;
     let turn = null;
@@ -1808,6 +1856,11 @@ const runMicrovmTurn = async ({
         killed = true;
         throw ctx.signal.reason || new Error('codex turn cancelled');
       }
+      // Past the lock's deadline another turn may hold the seat: hands off.
+      if (pastDeadline()) {
+        killed = true;
+        throw new Error('the codex turn ran past its seat lock\'s deadline; its reply is left unread');
+      }
       // msb exited on its own, but it only warns when it can't stop its VM, so
       // the reply is read only once no VM of this seat is confirmed alive.
       confirmNoSeatVm();
@@ -1829,7 +1882,7 @@ const runMicrovmTurn = async ({
       // After a kill the HOME is left as it is; otherwise it is cleaned once no
       // VM of this seat is confirmed alive. A leftover reply or config.toml is
       // cleared by the next turn's prepare, after its own check.
-      if (!killed) {
+      if (!killed && !pastDeadline()) {
         try {
           if (!vmGone) confirmNoSeatVm();
           await cleanMicrovmHome(home, replyName);
@@ -1840,8 +1893,9 @@ const runMicrovmTurn = async ({
     }
   }, {
     ...(ctx._seatLockWaitMs ? { waitMs: ctx._seatLockWaitMs } : {}),
-    // A live holder is never cut in on before its own turn could have ended.
-    maxMs: timeoutMs + MICROVM_SEAT_LOCK_MARGIN_MS,
+    // The deadline this holder writes into its lock. Past it the holder
+    // touches the HOME no more, and only then may a waiter take a live pid's lock.
+    holdMs: timeoutMs + MICROVM_SEAT_LOCK_MARGIN_MS,
   });
 };
 
@@ -2007,12 +2061,13 @@ export default {
         + 'what it is meant to remember is in its Commonly memory.\n');
       sessionId = null;
     }
-    const fullPrompt = buildPrompt(prompt, ctx.memoryLongTerm, {
-      freshSession: !sessionId,
+    const promptFor = (freshSession) => buildPrompt(prompt, ctx.memoryLongTerm, {
+      freshSession,
       workCues: sandbox?.trust === 'public' ? [] : [ROW_SLICING_CUE, BACKGROUND_PROCESS_CUE],
       // F118: a public seat reads its memory but is not offered a write.
       memoryReadOnly: sandbox?.trust === 'public' && ctx.ownerWoken !== true,
     });
+    const fullPrompt = promptFor(!sessionId);
 
     // Native Windows, opt-in: a public seat runs inside a microVM
     // (sandbox/microsandbox.js, docs/cli/microvm-sandbox.md), whatever access
@@ -2054,7 +2109,8 @@ export default {
       // spawn on this computer, nor to Codex's own Windows sandbox.
       if (microvmSandbox) {
         return await runMicrovmTurn({
-          ctx, sandbox, sessionId, prompt: fullPrompt, seatModel, credential, workspace: workspacePath,
+          ctx, sandbox, sessionId, prompt: fullPrompt, freshPrompt: () => promptFor(true), seatModel, credential,
+          workspace: workspacePath,
         });
       }
       // A public seat can't run git from its shell on macOS: Homebrew's git is
