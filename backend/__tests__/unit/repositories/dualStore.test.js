@@ -7,7 +7,7 @@
  */
 const mongoose = require('mongoose');
 const {
-  createDualStore, dualStorePlugin, storeMode, dualStoreStats, resetDualStoreStats,
+  createDualStore, dualStorePlugin, storeMode, dualStoreStats, resetDualStoreStats, pgTableAdapter,
 } = require('../../../repositories/dualStore');
 const { setupMongoDb, closeMongoDb } = require('../../utils/testUtils');
 const { fakePg } = require('../../utils/fakePgAdapter');
@@ -1024,6 +1024,456 @@ describe('dual-store helper (ADR-034 D3)', () => {
       await expect(s.setWhere(key, { 'seen.p1': at(1) })).rejects.toThrow(/not supported in pg mode until step 4/);
       expect(await Pair.countDocuments({})).toBe(0);
       expect(pg.calls).toEqual([]);
+    });
+  });
+
+  describe('18. $in, $exists and updateManyWhere', () => {
+    const FILTERS = {
+      _id: 'id', title: 'title', count: 'count', note: 'note',
+    };
+    // note is never written as an explicit null, so it may be tested with $exists.
+    const filtered = (pg) => store(pg, { filterColumns: FILTERS, sampleRate: 0 });
+    const presencePg = () => fakePg({ presenceColumns: ['note'] });
+    const seed = async (s) => {
+      const a = await s.create({ title: 'a', count: 1 });
+      const b = await s.create({ title: 'b', count: 2, note: 'held' });
+      const c = await s.create({ title: 'c', count: 3 });
+      return { a, b, c };
+    };
+    const titles = (docs) => docs.map((doc) => doc.title).sort();
+
+    it('pg-read: $in reads Postgres, each element cast as equality casts it', async () => {
+      process.env[ENV] = 'pg-read';
+      const pg = presencePg();
+      const s = filtered(pg);
+      const { a, c } = await seed(s);
+      pg.calls.length = 0;
+      // ObjectIds and their hex strings both cast to the id column's hex.
+      expect(titles(await s.findWhere({ _id: { $in: [a._id, String(c._id)] } }))).toEqual(['a', 'c']);
+      expect(titles(await s.findWhere({ title: { $in: ['b', 'c', 'zz'] }, count: { $gte: 3 } }))).toEqual(['c']);
+      expect(pg.calls).toEqual(['findWhere', 'findWhere']);
+    });
+
+    it('pg-read: $exists false is a missing field and true a present one, on a presence column', async () => {
+      process.env[ENV] = 'pg-read';
+      const pg = presencePg();
+      const s = filtered(pg);
+      await seed(s);
+      pg.calls.length = 0;
+      expect(titles(await s.findWhere({ note: { $exists: false } }))).toEqual(['a', 'c']);
+      expect(titles(await s.findWhere({ note: { $exists: true } }))).toEqual(['b']);
+      expect(pg.calls).toEqual(['findWhere', 'findWhere']);
+      // Mongo answers the same in dual.
+      process.env[ENV] = 'dual';
+      expect(titles(await s.findWhere({ note: { $exists: false } }))).toEqual(['a', 'c']);
+      expect(titles(await s.findWhere({ note: { $exists: true } }))).toEqual(['b']);
+    });
+
+    it.each(['dual', 'pg-read'])('%s: refuses a $in or $exists Postgres could not run the same, before any read',
+      async (mode) => {
+        process.env[ENV] = mode;
+        const pg = presencePg();
+        const s = filtered(pg);
+        await seed(s);
+        pg.calls.length = 0;
+        const find = jest.spyOn(Widget, 'find');
+        await expect(s.findWhere({ title: { $in: [] } })).rejects.toThrow(/non-empty array/);
+        await expect(s.findWhere({ title: { $in: 'a' } })).rejects.toThrow(/non-empty array/);
+        await expect(s.findWhere({ title: { $in: ['a', null] } })).rejects.toThrow(/holding null/);
+        // Mongo would match a RegExp as a pattern; the cast would make it a literal "/^a/" in Postgres.
+        await expect(s.findWhere({ title: { $in: ['b', /^a/] } })).rejects.toThrow(/regular expression/);
+        await expect(s.findWhere({ title: /^a/ })).rejects.toThrow(/regular expression/);
+        await expect(s.findWhere({ title: { $gte: /^a/ } })).rejects.toThrow(/regular expression/);
+        await expect(s.findWhere({ count: { $in: [1], $gt: 0 } })).rejects.toThrow(/cannot combine \$in/);
+        // title can be written as null, so Postgres could not tell it from missing.
+        await expect(s.findWhere({ title: { $exists: false } })).rejects.toThrow(/not a declared presence column/);
+        await expect(s.findWhere({ note: { $exists: 0 } })).rejects.toThrow(/true or false/);
+        await expect(s.findOneWhere({ note: { $exists: true, $gt: 'a' } })).rejects.toThrow(/cannot combine \$exists/);
+        expect(find).not.toHaveBeenCalled();
+        expect(pg.calls).toEqual([]);
+      });
+
+    it('refuses $exists on every column of a store that declares no presence columns', async () => {
+      process.env[ENV] = 'pg-read';
+      const pg = fakePg();
+      const s = filtered(pg);
+      await expect(s.findWhere({ note: { $exists: false } })).rejects.toThrow(/not a declared presence column/);
+      expect(pg.calls).toEqual([]);
+    });
+
+    describe("the Postgres adapter's $in and $exists", () => {
+      const recordingPool = () => {
+        const queries = [];
+        return {
+          queries,
+          query: async (sql, params) => {
+            queries.push({ sql, params });
+            return { rows: [], rowCount: 0 };
+          },
+        };
+      };
+      const adapter = (pool) => pgTableAdapter({
+        pool,
+        table: 'widgets',
+        idColumn: 'id',
+        columns: ['title', 'seen_at', 'payload'],
+        jsonColumns: ['payload'],
+        presenceColumns: ['seen_at'],
+      });
+
+      it('binds a $in list as one array parameter and $exists as IS [NOT] NULL', async () => {
+        const pool = recordingPool();
+        const since = new Date('2026-01-01T00:00:00Z');
+        await adapter(pool).findWhere({
+          title: { $in: ["a'; DROP TABLE x; --", 'b'] }, id: { $in: ['x1'] }, seen_at: { $exists: false },
+        });
+        await adapter(pool).findWhere({ seen_at: { $exists: true }, title: { $in: [since] } }, 2);
+        const [first, second] = pool.queries;
+        expect(first.sql).toContain('WHERE title = ANY($1) AND id = ANY($2) AND seen_at IS NULL ORDER BY');
+        expect(first.params).toEqual([["a'; DROP TABLE x; --", 'b'], ['x1']]);
+        expect(first.sql).not.toContain('DROP');
+        expect(second.sql).toContain('WHERE seen_at IS NOT NULL AND title = ANY($1) ORDER BY id COLLATE "C" LIMIT $2');
+        expect(second.params).toEqual([[since], 2]);
+        expect(adapter(pool).presenceColumns).toEqual(['seen_at']);
+      });
+
+      it.each([
+        ['an empty $in', { title: { $in: [] } }, /\$in needs a non-empty array/],
+        ['a $in that is not an array', { title: { $in: 'a' } }, /\$in needs a non-empty array/],
+        ['a null $in element', { title: { $in: ['a', null] } }, /never null/],
+        ['an object $in element', { title: { $in: [{ $literal: 'a' }] } }, /never null/],
+        ['$in on a JSON column', { payload: { $in: ['a'] } }, /is JSON/],
+        ['$in mixed with a range', { title: { $in: ['a'], $gt: 'a' } }, /\$in cannot be combined/],
+        ['$exists on an undeclared presence column', { title: { $exists: false } },
+          /\$exists is not allowed on widgets.title/],
+        ['$exists on the id column', { id: { $exists: true } }, /\$exists is not allowed/],
+        ['a $exists that is not a boolean', { seen_at: { $exists: 1 } }, /true or false/],
+        ['$exists mixed with a range', { seen_at: { $exists: true, $lt: new Date() } }, /\$exists cannot be combined/],
+      ])('refuses %s before any query', async (_, where, message) => {
+        const pool = recordingPool();
+        await expect(adapter(pool).findWhere(where)).rejects.toThrow(message);
+        expect(pool.queries).toEqual([]);
+      });
+
+      it('refuses a presence column that is not a plain declared column', () => {
+        const pool = recordingPool();
+        const base = {
+          pool, table: 'widgets', idColumn: 'id', columns: ['title', 'payload'], jsonColumns: ['payload'],
+        };
+        expect(() => pgTableAdapter({ ...base, presenceColumns: ['missing'] })).toThrow(/presenceColumns/);
+        expect(() => pgTableAdapter({ ...base, presenceColumns: ['payload'] })).toThrow(/presenceColumns/);
+        expect(() => pgTableAdapter({ ...base, presenceColumns: ['id'] })).toThrow(/presenceColumns/);
+      });
+    });
+
+    describe('updateManyWhere', () => {
+      const tag = [{ $set: { note: { $literal: 'tagged' } } }];
+
+      it('mongo: one updateMany, no markers and no Postgres call', async () => {
+        const pg = presencePg();
+        const s = filtered(pg);
+        await seed(s);
+        const updateMany = jest.spyOn(Widget, 'updateMany');
+        expect(await s.updateManyWhere({ count: { $gte: 2 }, note: { $exists: false } }, tag)).toBe(1);
+        expect(updateMany).toHaveBeenCalledTimes(1);
+        expect((await Widget.findOne({ title: 'c' }).lean())).toMatchObject({ note: 'tagged' });
+        expect((await Widget.findOne({ title: 'c' }).lean()).pgVersion).toBeUndefined();
+        expect(pg.calls).toEqual([]);
+      });
+
+      it.each(['dual', 'pg-read'])('%s: changes only matching documents, each with its own version and one copy',
+        async (mode) => {
+          process.env[ENV] = mode;
+          const pg = presencePg();
+          const s = filtered(pg);
+          const { a, b, c } = await seed(s);
+          pg.calls.length = 0;
+          expect(await s.updateManyWhere(
+            { _id: { $in: [a._id, b._id, c._id] }, note: { $exists: false } }, tag,
+          )).toBe(2);
+          expect(pg.calls.filter((call) => call === 'upsert')).toHaveLength(2);
+          for (const doc of [a, c]) {
+            // eslint-disable-next-line no-await-in-loop
+            const raw = await Widget.findById(doc._id).lean();
+            expect(raw).toMatchObject({ note: 'tagged', pgVersion: 2 });
+            expect(raw.pgPending).toBeUndefined();
+            expect(pg.rows.get(String(doc._id))).toEqual({ row: toRow(raw), version: 2 });
+          }
+          const untouched = await Widget.findById(b._id).lean();
+          expect(untouched).toMatchObject({ note: 'held', pgVersion: 1 });
+          expect(pg.rows.get(String(b._id)).version).toBe(1);
+          // A second pass matches nothing and writes nothing.
+          pg.calls.length = 0;
+          expect(await s.updateManyWhere({ _id: { $in: [a._id, c._id] }, note: { $exists: false } }, tag)).toBe(0);
+          expect(pg.calls).toEqual([]);
+        });
+
+      it('dual: a document that stops matching between the find and its write is skipped', async () => {
+        process.env[ENV] = 'dual';
+        const pg = presencePg();
+        const s = filtered(pg);
+        const { a, c } = await seed(s);
+        // Hold a's copy; c changes under the loop before its own write.
+        const hold = pg.hold('upsert');
+        const running = s.updateManyWhere({ title: { $in: ['a', 'c'] }, note: { $exists: false } }, tag);
+        await hold.arrived;
+        await s.update(c._id, { note: 'someone else' });
+        hold.release();
+        expect(await running).toBe(1);
+        expect(await Widget.findById(a._id).lean()).toMatchObject({ note: 'tagged', pgVersion: 2 });
+        const raw = await Widget.findById(c._id).lean();
+        expect(raw).toMatchObject({ note: 'someone else', pgVersion: 2 });
+        expect(pg.rows.get(String(c._id))).toEqual({ row: toRow(raw), version: 2 });
+      });
+
+      it('dual: a failed copy counts the write and leaves its marker for repair', async () => {
+        process.env[ENV] = 'dual';
+        const pg = presencePg();
+        const s = filtered(pg);
+        const { a, c } = await seed(s);
+        pg.failNext('upsert');
+        expect(await s.updateManyWhere({ note: { $exists: false } }, tag)).toBe(2);
+        expect((await Widget.findById(a._id).lean()).pgPending).toBe(2);
+        expect(pg.rows.get(String(a._id)).version).toBe(1);
+        expect((await Widget.findById(c._id).lean()).pgPending).toBeUndefined();
+        expect(await s.repair()).toMatchObject({ copied: 1, failed: 0 });
+        const raw = await Widget.findById(a._id).lean();
+        expect(pg.rows.get(String(a._id))).toEqual({ row: toRow(raw), version: 2 });
+      });
+
+      it('refuses empty stages, and pg mode before any write', async () => {
+        process.env[ENV] = 'dual';
+        const pg = presencePg();
+        const s = filtered(pg);
+        await seed(s);
+        await expect(s.updateManyWhere({ title: 'a' }, [])).rejects.toThrow(/needs pipeline stages/);
+        process.env[ENV] = 'pg';
+        pg.calls.length = 0;
+        await expect(s.updateManyWhere({ title: 'a' }, tag)).rejects.toThrow(/not supported in pg mode until step 4/);
+        expect(pg.calls).toEqual([]);
+        expect(await Widget.countDocuments({ note: 'tagged' })).toBe(0);
+      });
+    });
+  });
+
+  describe('19. fields the schema hides with select: false', () => {
+    const hiddenSchema = new mongoose.Schema({
+      title: String, secret: { type: String, select: false }, note: String,
+    }, { timestamps: true });
+    dualStorePlugin(hiddenSchema);
+    const Locker = mongoose.models.DualStoreTestLocker || mongoose.model('DualStoreTestLocker', hiddenSchema);
+    const LOCKER_ENV = 'STORE_MODE_DUAL_STORE_TEST_LOCKER';
+    const lockerRow = (doc) => ({
+      id: String(doc._id),
+      title: doc.title ?? null,
+      secret: doc.secret ?? null,
+      note: doc.note ?? null,
+      created_at: doc.createdAt ?? null,
+      updated_at: doc.updatedAt ?? null,
+    });
+    const lockerFromRow = (row) => ({
+      _id: new mongoose.Types.ObjectId(row.id),
+      ...(row.title != null && { title: row.title }),
+      ...(row.secret != null && { secret: row.secret }),
+      ...(row.note != null && { note: row.note }),
+      ...(row.created_at != null && { createdAt: new Date(row.created_at) }),
+      ...(row.updated_at != null && { updatedAt: new Date(row.updated_at) }),
+    });
+    const lockers = (pg) => createDualStore({
+      name: 'DualStoreTestLocker',
+      model: Locker,
+      pg,
+      toRow: lockerRow,
+      fromRow: lockerFromRow,
+      sampleRate: 1,
+      filterColumns: { _id: 'id', title: 'title', note: 'note' },
+    });
+    // Obviously fake secrets.
+    const SECRET = 'fake-secret-0001';
+    const rawWithSecret = (id) => Locker.findById(id).select('+secret').lean();
+    const secretOf = (pg, id) => pg.rows.get(String(id))?.row.secret;
+
+    beforeEach(async () => { await Locker.deleteMany({}); });
+    afterEach(() => { delete process.env[LOCKER_ENV]; });
+
+    it.each(['dual', 'pg-read'])('%s: every copy keeps the hidden field, and no write hands it back', async (mode) => {
+      process.env[LOCKER_ENV] = mode;
+      const pg = fakePg();
+      const s = lockers(pg);
+      const created = await s.create({ title: 'a', secret: SECRET });
+      // create answers as Mongoose's create does: with what the caller just wrote.
+      expect(created.secret).toBe(SECRET);
+      expect(secretOf(pg, created._id)).toBe(SECRET);
+
+      const updated = await s.update(created._id, { title: 'b' });
+      expect(updated).toMatchObject({ title: 'b' });
+      expect('secret' in updated).toBe(false);
+      expect(pg.rows.get(String(created._id)))
+        .toEqual({ row: lockerRow(await rawWithSecret(created._id)), version: 2 });
+
+      // Each write's row is checked before the next write, which would restore a lost secret.
+      expect(await s.updateWhere({ _id: created._id }, [{ $set: { note: { $literal: 'n' } } }])).toBe(true);
+      expect(pg.rows.get(String(created._id)))
+        .toEqual({ row: lockerRow(await rawWithSecret(created._id)), version: 3 });
+      expect(await s.setWhere({ _id: created._id }, { title: 'c' })).toBe(true);
+      expect(pg.rows.get(String(created._id)))
+        .toEqual({ row: lockerRow(await rawWithSecret(created._id)), version: 4 });
+      const upserted = await s.upsert(created._id, {
+        pipeline: [{ $set: { note: { $literal: 'u' } } }], merge: (current) => ({ ...current, note: 'u' }),
+      });
+      expect('secret' in upserted).toBe(false);
+      expect(pg.rows.get(String(created._id)))
+        .toEqual({ row: lockerRow(await rawWithSecret(created._id)), version: 5 });
+      const other = await s.create({ title: 'z', secret: 'fake-secret-0002' });
+      expect(await s.updateManyWhere({ title: { $in: ['c', 'z'] } }, [{ $set: { note: { $literal: 'm' } } }])).toBe(2);
+      expect(secretOf(pg, created._id)).toBe(SECRET);
+      expect(secretOf(pg, other._id)).toBe('fake-secret-0002');
+      expect(pg.rows.get(String(created._id)))
+        .toEqual({ row: lockerRow(await rawWithSecret(created._id)), version: 6 });
+      expect(await s.insertIfAbsent({ title: 'fresh' }, { secret: 'fake-secret-0003' })).toEqual({ inserted: true });
+      const fresh = await Locker.findOne({ title: 'fresh' }).lean();
+      expect(secretOf(pg, fresh._id)).toBe('fake-secret-0003');
+      expect(dualStoreStats('DualStoreTestLocker')).toMatchObject({ differs: 0, missing: 0, 'pg-write-failed': 0 });
+    });
+
+    it('dual: repair and backfill, its deferred re-read included, copy the hidden field', async () => {
+      process.env[LOCKER_ENV] = 'dual';
+      const pg = fakePg();
+      const s = lockers(pg);
+      const doc = await s.create({ title: 'a', secret: SECRET });
+      pg.failNext('upsert');
+      await s.update(doc._id, { title: 'b' });
+      expect(secretOf(pg, doc._id)).toBe(SECRET);
+      expect(pg.rows.get(String(doc._id)).version).toBe(1);
+      expect(await s.repair()).toMatchObject({ copied: 1, failed: 0 });
+      expect(pg.rows.get(String(doc._id))).toEqual({ row: lockerRow(await rawWithSecret(doc._id)), version: 2 });
+
+      // Written before dual, one of them still flagged, so backfill defers and re-reads it.
+      const plainOne = await Locker.collection.insertOne({ title: 'old', secret: 'fake-secret-0004' });
+      const pendingOne = await Locker.collection.insertOne({
+        title: 'pending', secret: 'fake-secret-0005', pgVersion: 1, pgPending: 1,
+      });
+      expect(await s.backfill({ dryRun: false })).toMatchObject({ scanned: 3, deferredPending: 1 });
+      expect(secretOf(pg, plainOne.insertedId)).toBe('fake-secret-0004');
+      expect(secretOf(pg, pendingOne.insertedId)).toBe('fake-secret-0005');
+    });
+
+    it('dual: verify compares the hidden field: equal stores equal, a changed secret different', async () => {
+      process.env[LOCKER_ENV] = 'dual';
+      const pg = fakePg();
+      const s = lockers(pg);
+      const doc = await s.create({ title: 'a', secret: SECRET });
+      await s.create({ title: 'b', secret: 'fake-secret-0006' });
+      const equal = await s.verify();
+      expect(equal).toMatchObject({
+        mongo: 2, pg: 2, missing: 0, differs: 0, extra: 0,
+      });
+      expect(equal.checksumMongo).toBe(equal.checksumPg);
+      pg.rows.get(String(doc._id)).row.secret = 'fake-secret-tampered';
+      const changed = await s.verify();
+      expect(changed).toMatchObject({ differs: 1 });
+      expect(changed.checksumMongo).not.toBe(changed.checksumPg);
+      expect(logged()).toContain('fields=secret');
+    });
+
+    it.each(['mongo', 'dual', 'pg-read'])('%s: reads leave the hidden field out unless named', async (mode) => {
+      process.env[LOCKER_ENV] = 'dual';
+      const pg = fakePg();
+      const s = lockers(pg);
+      const doc = await s.create({ title: 'a', secret: SECRET, note: 'n' });
+      if (mode === 'mongo') delete process.env[LOCKER_ENV];
+      else process.env[LOCKER_ENV] = mode;
+      pg.calls.length = 0;
+      const byId = await s.findById(doc._id);
+      expect(byId).toMatchObject({ title: 'a', note: 'n' });
+      expect('secret' in byId).toBe(false);
+      const one = await s.findOneWhere({ title: 'a' });
+      expect(one).toMatchObject({ title: 'a' });
+      expect('secret' in one).toBe(false);
+      const [listed] = await s.findWhere({ note: 'n' });
+      expect('secret' in listed).toBe(false);
+      expect(await s.findOneWhere({ title: 'a' }, { fields: ['note'] })).toEqual({ _id: doc._id, note: 'n' });
+      expect(await s.findOneWhere({ title: 'a' }, { fields: ['secret'] })).toEqual({ _id: doc._id, secret: SECRET });
+      expect(pg.calls.includes('findWhere')).toBe(mode === 'pg-read');
+    });
+
+    it('pg: writes and reads from Postgres leave the hidden field out too', async () => {
+      process.env[LOCKER_ENV] = 'pg';
+      const pg = fakePg();
+      const s = lockers(pg);
+      const doc = await s.create({ title: 'a', secret: SECRET });
+      expect(secretOf(pg, doc._id)).toBe(SECRET);
+      const updated = await s.update(doc._id, { title: 'b' });
+      expect('secret' in updated).toBe(false);
+      expect(secretOf(pg, doc._id)).toBe(SECRET);
+      expect('secret' in await s.findById(doc._id)).toBe(false);
+    });
+
+    it('refuses a nested hidden path, which it could not strip', () => {
+      const nested = new mongoose.Schema({ inner: { key: { type: String, select: false } } });
+      dualStorePlugin(nested);
+      const Nested = mongoose.models.DualStoreTestNested || mongoose.model('DualStoreTestNested', nested);
+      expect(() => createDualStore({
+        name: 'DualStoreTestNested', model: Nested, pg: fakePg(), toRow, fromRow,
+      })).toThrow(/nested path/);
+    });
+
+    it.each([
+      ['a sub-document', (sub) => ({ sub })],
+      ['an array of sub-documents', (sub) => ({ subs: [sub] })],
+      ['a sub-document two levels down', (sub) => ({ outer: new mongoose.Schema({ sub }) })],
+    ])('refuses a hidden path inside %s, which eachPath alone would miss', (label, shape) => {
+      const sub = new mongoose.Schema({ key: { type: String, select: false } });
+      const schema = new mongoose.Schema(shape(sub));
+      dualStorePlugin(schema);
+      const modelName = `DualStoreTestHiddenInside${label.replace(/[^a-z]/gi, '')}`;
+      const Inside = mongoose.models[modelName] || mongoose.model(modelName, schema);
+      expect(() => createDualStore({
+        name: modelName, model: Inside, pg: fakePg(), toRow, fromRow,
+      })).toThrow(/nested path/);
+    });
+
+    it('accepts sub-documents with nothing hidden', () => {
+      const sub = new mongoose.Schema({ key: String });
+      const schema = new mongoose.Schema({ sub, subs: [sub] });
+      dualStorePlugin(schema);
+      const Plain = mongoose.models.DualStoreTestPlainSubs || mongoose.model('DualStoreTestPlainSubs', schema);
+      expect(() => createDualStore({
+        name: 'DualStoreTestPlainSubs', model: Plain, pg: fakePg(), toRow, fromRow,
+      })).not.toThrow();
+    });
+
+    it('a model with no hidden path never adds a projection: the old query runs unchanged', async () => {
+      // The seven live models have no select: false path, so this is their path.
+      process.env[ENV] = 'dual';
+      const select = jest.spyOn(mongoose.Query.prototype, 'select');
+      const pg = fakePg();
+      const s = store(pg, { sampleRate: 1, filterColumns: { _id: 'id', title: 'title' } });
+      const doc = await s.create({ title: 'a' });
+      await s.update(doc._id, { count: 1 });
+      await s.updateWhere({ _id: doc._id }, [{ $set: { note: { $literal: 'x' } } }]);
+      await s.setWhere({ _id: doc._id }, { title: 'b' });
+      await s.upsert(doc._id, { pipeline: [{ $set: { count: 2 } }], merge: (c) => ({ ...c, count: 2 }) });
+      await s.insertIfAbsent({ title: 'c' }, {});
+      await s.updateManyWhere({ title: { $in: ['b', 'c'] } }, [{ $set: { note: { $literal: 'y' } } }]);
+      await s.findById(doc._id);
+      await s.findWhere({ title: 'b' });
+      pg.failNext('upsert');
+      await s.update(doc._id, { count: 3 });
+      await s.repair();
+      await s.backfill({ dryRun: false });
+      await s.verify();
+      process.env[ENV] = 'pg-read';
+      await s.findOneWhere({ title: 'b' });
+      await s.findById(doc._id);
+      // Mongoose calls select itself for a projection argument; the helper's
+      // reveal is the only caller that passes a +path.
+      const reveals = select.mock.calls.filter(([projection]) => typeof projection === 'string'
+        && projection.includes('+'));
+      expect(reveals).toEqual([]);
+      // Positive control: the spy does see a reveal on a model with a hidden path.
+      await lockers(fakePg()).findById(new mongoose.Types.ObjectId());
+      expect(select.mock.calls.filter(([projection]) => projection === '+secret')).toHaveLength(1);
     });
   });
 });
