@@ -5,6 +5,7 @@ import Machine, { IMachine, IMachineAgentState, IMachineHost } from '../models/M
 import AgentCredential from '../models/AgentCredential';
 import User from '../models/User';
 import { issueDaemonCredential } from './daemonCredentialService';
+import { DaemonRevokedReason, isDaemonRevokedReason } from './daemonRevokeReasons';
 
 // A daemon reports regularly; read paths derive offline from the last report
 // rather than writing stale state merely because somebody opened the page.
@@ -30,6 +31,9 @@ interface MachineView {
   // instance of an agent only to a computer whose daemon keeps a key per
   // instance (F427).
   cliVersion: string | null;
+  // F641: why an operator revoked this computer's key, as a stable code, while
+  // no live key has replaced it. Absent for a revoke that gave no reason.
+  revokedReason?: DaemonRevokedReason;
 }
 
 // D5 heartbeat payload bounds. A daemon reports every agent it supervises;
@@ -233,11 +237,49 @@ export async function registerMachine({
   }
 }
 
+// F641: for each of an owner's computers that has no live daemon key, the
+// reason its most recently revoked key carries, when that key carries one.
+// Running the setup command again registers a NEW machine (a new machineId),
+// so the old entry keeps its reason until the person removes it or moves its
+// agents; a live key on the same machineId (an operator restoring one) clears it.
+export async function daemonRevokedReasonsForMachines(
+  ownerUserId: Types.ObjectId | string,
+  machineIds: string[],
+): Promise<Map<string, DaemonRevokedReason>> {
+  const reasons = new Map<string, DaemonRevokedReason>();
+  if (!machineIds.length) return reasons;
+  const now = new Date();
+  type RevokeRow = { machineId?: string | null; status: string; expiresAt?: Date | null; revokedReason?: unknown };
+  const credentials: RevokeRow[] = await AgentCredential
+    .find({ kind: 'daemon', ownerUserId, machineId: { $in: machineIds } })
+    .select('machineId status expiresAt revokedAt revokedReason')
+    .sort({ revokedAt: -1 })
+    .lean();
+  const live = new Set(credentials
+    .filter((c) => c.status === 'active' && (!c.expiresAt || c.expiresAt > now))
+    .map((c) => String(c.machineId)));
+  const decided = new Set<string>();
+  for (const credential of credentials) {
+    const machineId = String(credential.machineId);
+    if (credential.status !== 'revoked' || live.has(machineId) || decided.has(machineId)) continue;
+    decided.add(machineId);
+    if (isDaemonRevokedReason(credential.revokedReason)) reasons.set(machineId, credential.revokedReason);
+  }
+  return reasons;
+}
+
 export async function listMachinesForOwner(ownerUserId: Types.ObjectId | string): Promise<MachineListView> {
   const machines = await Machine.find({ ownerUserId }).sort({ lastSeenAt: -1 }).lean();
   const now = new Date();
+  const reasons = await daemonRevokedReasonsForMachines(
+    ownerUserId, machines.map((machine: Record<string, unknown>) => String(machine.machineId)),
+  );
   return {
-    machines: machines.map((machine: Record<string, unknown>) => serializeMachine(machine, now)),
+    machines: machines.map((machine: Record<string, unknown>) => {
+      const view = serializeMachine(machine, now);
+      const revokedReason = reasons.get(view.machineId);
+      return revokedReason ? { ...view, revokedReason } : view;
+    }),
     offlineAfterMs: MACHINE_OFFLINE_AFTER_MS,
   };
 }
@@ -389,6 +431,7 @@ export async function removeMachinesForDeviceToken(ownerUserId: string, deviceTo
 module.exports = {
   normalizeAgentStates,
   listMachinesForOwner,
+  daemonRevokedReasonsForMachines,
   getMachineForDaemon,
   machineHasLiveAuthorization,
   recordMachineHeartbeat,

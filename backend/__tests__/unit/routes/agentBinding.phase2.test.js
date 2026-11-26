@@ -192,6 +192,30 @@ describe('placement request', () => {
     expect((await User.findById(bot._id)).botMetadata).toMatchObject({ machineId: null, requestedMachineId: 'machine-b' });
   });
 
+  // F641: the placement read names why the bound computer's key was revoked,
+  // as a stable code, only when the revoke carried a reason.
+  it('names the reason a bound computer was revoked with, and nothing for a plain revoke', async () => {
+    await User.updateOne({ _id: bot._id }, { $set: { 'botMetadata.machineId': 'machine-a' } });
+    const placement = () => request(app).get('/api/agent-binding/placement')
+      .query({ agentName: 'wren-test', instanceId: 'default' });
+
+    expect((await placement().expect(200)).body.boundMachineRevokedReason ?? null).toBeNull();
+
+    await AgentCredential.revokeCascade(daemonCredA._id);
+    const plain = await placement().expect(200);
+    expect(plain.body.boundMachineRevoked).toBe(true);
+    expect(plain.body.boundMachineRevokedReason ?? null).toBeNull();
+
+    await AgentCredential.updateOne({ _id: daemonCredA._id }, { $set: { revokedReason: 'cli_duplicate_daemons' } });
+    const withReason = await placement().expect(200);
+    expect(withReason.body).toMatchObject({ boundMachineRevoked: true, boundMachineRevokedReason: 'cli_duplicate_daemons' });
+
+    global.__CALLER_ID = String(new mongoose.Types.ObjectId());
+    const outsider = await placement().expect(403);
+    expect(outsider.body).not.toHaveProperty('boundMachineRevokedReason');
+    global.__CALLER_ID = String(owner._id);
+  });
+
   it('ignores agent-DM projections but names a second human installation before releasing', async () => {
     await User.updateOne({ _id: bot._id }, { $set: { 'botMetadata.machineId': 'machine-a' } });
     await AgentCredential.updateOne({ _id: daemonCredA._id }, { $set: { status: 'revoked', revokedAt: new Date() } });

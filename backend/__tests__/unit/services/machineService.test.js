@@ -224,6 +224,54 @@ describe('ADR-026 machine lifecycle service', () => {
     expect(machines).toEqual([expect.objectContaining({ machineId: 'mach-round-trip', createdAt: saved.createdAt })]);
   });
 
+  // F641: a computer whose key an operator revoked with a reason names that
+  // reason as a stable code, so the app can say what to do. Never for a revoke
+  // without a reason, and not while the machine holds a live key (an operator
+  // restoring one; the person's own re-setup registers a new machine).
+  it('names the revoke reason of a computer with no live key, and only then', async () => {
+    const ownerUserId = new mongoose.Types.ObjectId();
+    const revoked = await machineService.registerMachine({ ownerUserId, name: 'Windows PC' });
+    const plain = await machineService.registerMachine({ ownerUserId, name: 'Old Mac' });
+    const restored = await machineService.registerMachine({ ownerUserId, name: 'Laptop' });
+    const live = await machineService.registerMachine({ ownerUserId, name: 'Studio' });
+    const credFor = (m) => AgentCredential.findOne({ machineId: m.machine.machineId, kind: 'daemon' });
+    await AgentCredential.revokeCascade((await credFor(revoked))._id, { reason: 'cli_duplicate_daemons' });
+    await AgentCredential.revokeCascade((await credFor(plain))._id);
+    await AgentCredential.revokeCascade((await credFor(restored))._id, { reason: 'cli_duplicate_daemons' });
+    await AgentCredential.create({
+      tokenHash: `restored-${Date.now()}`, kind: 'daemon', ownerUserId, machineId: restored.machine.machineId,
+    });
+
+    const { machines } = await machineService.listMachinesForOwner(ownerUserId);
+    const byName = Object.fromEntries(machines.map((m) => [m.name, m]));
+
+    expect(byName['Windows PC'].revokedReason).toBe('cli_duplicate_daemons');
+    expect(byName['Old Mac']).not.toHaveProperty('revokedReason');
+    expect(byName.Laptop).not.toHaveProperty('revokedReason');
+    expect(byName.Studio).not.toHaveProperty('revokedReason');
+    expect(live.machine).not.toHaveProperty('revokedReason');
+  });
+
+  it('reads the most recent revoke: a newer one without a reason beats an older one with a reason', async () => {
+    const ownerUserId = new mongoose.Types.ObjectId();
+    const { machine } = await machineService.registerMachine({ ownerUserId, name: 'Windows PC' });
+    const first = await AgentCredential.findOne({ machineId: machine.machineId, kind: 'daemon' });
+    await AgentCredential.updateOne({ _id: first._id }, {
+      $set: { status: 'revoked', revokedAt: new Date('2026-11-01T00:00:00Z'), revokedReason: 'cli_duplicate_daemons' },
+    });
+    await AgentCredential.create({
+      tokenHash: `newer-${Date.now()}`, kind: 'daemon', ownerUserId, machineId: machine.machineId,
+      status: 'revoked', revokedAt: new Date('2026-11-20T00:00:00Z'),
+    });
+
+    const { machines } = await machineService.listMachinesForOwner(ownerUserId);
+    expect(machines[0]).not.toHaveProperty('revokedReason');
+
+    await AgentCredential.updateOne({ _id: first._id }, { $set: { revokedAt: new Date('2026-11-25T00:00:00Z') } });
+    const again = await machineService.listMachinesForOwner(ownerUserId);
+    expect(again.machines[0].revokedReason).toBe('cli_duplicate_daemons');
+  });
+
   it('returns only the credential-bound machine for daemon status', async () => {
     const ownerUserId = new mongoose.Types.ObjectId();
     const first = await machineService.registerMachine({ ownerUserId, name: 'First Mac' });

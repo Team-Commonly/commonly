@@ -85,6 +85,44 @@ test('revoked Runtime row offers an active computer and moves in one request', a
   expect(axios.post).toHaveBeenCalledTimes(1);
 });
 
+// F641: a key revoked with a reason tells the person what to do. The line sits
+// in the panel body, never inside <summary>, so its link can't toggle it.
+test('a computer revoked because of a CLI bug points at the setup command on Bring your own agent', async () => {
+  axios.get.mockImplementation((url) => Promise.resolve({ data: url.includes('/agent-binding/placement')
+    ? { boundMachineId: 'old', requestedMachineId: null, boundMachineRevoked: true, boundMachineRevokedReason: 'cli_duplicate_daemons',
+      activeMachines: [{ machineId: 'new', name: 'New Mac' }] } : response }));
+  renderSection();
+  const line = await screen.findByTestId('agent-machine-revoked-reason');
+  expect(line).toHaveTextContent('This computer was disconnected because of a bug in our CLI. Run the computer setup command again from Bring your own agent to get the fixed version.');
+  expect(within(line).getByRole('link', { name: 'Bring your own agent' })).toHaveAttribute('href', '/v2/agents/byo');
+  expect(line.closest('summary')).toBeNull();
+  expect(screen.getByTestId('agent-machine-placement').querySelector('summary'))
+    .toHaveTextContent('This computer’s key was revoked. Choose another computer to run this agent.');
+});
+
+test('with no computer left, the reason points at the setup command the panel already shows', async () => {
+  axios.get.mockImplementation((url) => Promise.resolve({ data: url.includes('/agent-binding/placement')
+    ? { boundMachineId: 'old', requestedMachineId: null, boundMachineRevoked: true, boundMachineRevokedReason: 'cli_duplicate_daemons',
+      activeMachines: [] } : response }));
+  renderSection();
+  const line = await screen.findByTestId('agent-machine-revoked-reason');
+  expect(line).toHaveTextContent('This computer was disconnected because of a bug in our CLI. Run the computer setup command below on it again to get the fixed version.');
+  expect(within(line).queryByRole('link')).not.toBeInTheDocument();
+  expect(screen.getByTestId('agent-machine-placement')).toHaveTextContent(daemonSetupCommandFor('unix'));
+});
+
+test('a revoke without a reason keeps the generic line and no connect link', async () => {
+  axios.get.mockImplementation((url) => Promise.resolve({ data: url.includes('/agent-binding/placement')
+    ? { boundMachineId: 'old', requestedMachineId: null, boundMachineRevoked: true, boundMachineRevokedReason: null,
+      activeMachines: [{ machineId: 'new', name: 'New Mac' }] } : response }));
+  renderSection();
+  const row = await screen.findByTestId('agent-machine-placement');
+  await waitFor(() => expect(row).toHaveTextContent('This computer’s key was revoked. Choose another computer to run this agent.'));
+  expect(row).not.toHaveTextContent('bug in our CLI');
+  expect(screen.queryByTestId('agent-machine-revoked-reason')).not.toBeInTheDocument();
+  expect(within(row).queryByRole('link')).not.toBeInTheDocument();
+});
+
 test('a revoked machine tells the page the body needs attention; a healthy one does not', async () => {
   const runtime = { runtimeType: 'wrapper', adapter: 'claude', model: 'sonnet', managed: true };
   const renderBody = (onNeedsAttention) => render(

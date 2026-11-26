@@ -5,6 +5,7 @@
 import { Request, Response, NextFunction } from 'express';
 import AgentCredential from '../models/AgentCredential';
 import { machineHasLiveAuthorization } from '../services/machineService';
+import { daemonRevokedReasonText } from '../services/daemonRevokeReasons';
 
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const { hash } = require('../utils/secret') as { hash: (value: string) => string };
@@ -39,7 +40,13 @@ export default function daemonAuth(requiredScope?: string) {
       }
       const credential = await AgentCredential.findOne({ tokenHash: hash(token), kind: 'daemon' });
       if (!credential || credential.status !== 'active') {
-        return res.status(401).json({ message: 'Daemon token revoked or unknown' });
+        // Old CLIs stop on this exact `message`, so it never changes. A revoke
+        // with a known reason (F641) adds the person's text as `error`, which
+        // a CLI's error line prefers; a revoke without one answers as before.
+        const reasonText = credential ? daemonRevokedReasonText(credential.revokedReason) : null;
+        return res.status(401).json(reasonText
+          ? { message: 'Daemon token revoked or unknown', error: reasonText }
+          : { message: 'Daemon token revoked or unknown' });
       }
       if (credential.expiresAt && credential.expiresAt < new Date()) {
         return res.status(401).json({ message: 'Daemon token expired' });

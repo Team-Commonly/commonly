@@ -2431,6 +2431,7 @@
     "machine": {
       "online": "在线",
       "offline": "离线",
+      "revokedCliBug": "我们的 CLI 有个 Bug，这台电脑因此断开了连接。请在这台电脑上重新运行这行设置命令，获取修复后的版本：",
       "addedOn": "添加于 {{date}}",
       "heading": "正在启动：",
       "running": "已在 {{machine}} 上运行——去 pod 里打个招呼吧。",
@@ -3426,6 +3427,8 @@
       "save": "保存运行设置",
       "saveError": "无法保存模型。",
       "machineRevoked": "这台电脑的密钥已撤销。请选择另一台电脑运行此智能体。",
+      "machineRevokedCliBug": "我们的 CLI 有个 Bug，这台电脑因此断开了连接。请到「<byo>接入你自己的智能体</byo>」页面重新运行电脑设置命令，获取修复后的版本。",
+      "machineRevokedCliBugBelow": "我们的 CLI 有个 Bug，这台电脑因此断开了连接。请在这台电脑上重新运行下面的电脑设置命令，获取修复后的版本。",
       "machineRemoved": "{{name}} 已移除。请选择另一台电脑运行此智能体。",
       "currentMachine": "正在 {{name}} 上运行",
       "machineRequested": "等待 {{name}} 启动此智能体",

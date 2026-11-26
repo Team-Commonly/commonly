@@ -11,6 +11,7 @@ import ConnectorLogo, { connectorName } from '../connectors/ConnectorLogo';
 import V2RuntimeControls, { runtimeNotReady, RuntimeSettings, RuntimeUpdate } from './V2RuntimeControls';
 import { browserIsWindows, daemonSetupCommandFor } from '../utils/daemonSetupCommand';
 import { usePhone } from '../connectors/usePhone';
+import V2DaemonRevokedReason, { hasDaemonRevokedReasonText } from './V2DaemonRevokedReason';
 
 export interface Runtime extends RuntimeSettings {}
 
@@ -34,6 +35,8 @@ interface Placement {
   boundMachineId: string | null;
   requestedMachineId: string | null;
   boundMachineRevoked: boolean;
+  // F641: why the bound computer's key was revoked, as a stable code, or null.
+  boundMachineRevokedReason?: string | null;
   // F476: the computer whose removal unbound this agent, while it sits unplaced.
   removedMachine?: { name: string; at: string } | null;
   activeMachines: Array<{ machineId: string; name: string; createdAt?: string | null }>;
@@ -182,6 +185,12 @@ const V2AgentRuntimeBody: React.FC<Props> = ({
                 <V2AgentSettingsIcon name="chev" className="chev" />
               </summary>
               <div className="dbody">
+                {/* F641: why the key was revoked, outside <summary> so its link never toggles the disclosure. */}
+                {placement.boundMachineRevoked && hasDaemonRevokedReasonText(placement.boundMachineRevokedReason) && (
+                  <p className="v2-agent-settings-page__live" data-testid="agent-machine-revoked-reason">
+                    <V2DaemonRevokedReason reason={placement.boundMachineRevokedReason} commandBelow={placement.activeMachines.length === 0} />
+                  </p>
+                )}
                 {placement.activeMachines.length > 0 ? <div className="v2-agent-settings-page__move">
                   <label className="mu" htmlFor="agent-runtime-machine">{t('agentManage.runtime.moveLabel')}</label>
                   <span className="sel">

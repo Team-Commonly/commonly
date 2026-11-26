@@ -18,6 +18,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { Trans, useTranslation } from 'react-i18next';
+import { hasDaemonRevokedReasonText } from './V2DaemonRevokedReason';
 import axios from '../../utils/axiosConfig';
 import { recordByoStep, type ByoCopyType, type ByoStallReason, type ByoStep } from '../utils/byoTelemetry';
 import getApiBaseUrl from '../../utils/apiBaseUrl';
@@ -220,6 +221,8 @@ type MachineRow = {
   hostUnconfined?: boolean;
   // The CLI version its daemon last reported running; null when too old to say.
   cliVersion?: string | null;
+  // F641: why an operator revoked its key, as a stable code, while no live key replaced it.
+  revokedReason?: string;
 };
 const MACHINE_STATUS_POLL_MS = 4000;
 const HARNESS_RECHECK_MS = 10_000;
@@ -1938,7 +1941,10 @@ const V2AgentBYO: React.FC = () => {
   // A new computer's setup installs the current CLI, so it takes any instance.
   // Computers already on file that can't take this instance get the same line,
   // which is also how a set-up computer updates (docs/cli/daemon-setup.md).
-  const addComputerBlock = machines.length === 0 || machinesNeedUpdate ? (
+  // F641: a computer whose key was revoked with a reason is fixed by this same
+  // setup command, so the page shows it then too, with its fold open on arrival.
+  const machineRevokedWithReason = machines.some((m) => hasDaemonRevokedReasonText(m.revokedReason));
+  const addComputerBlock = machines.length === 0 || machinesNeedUpdate || machineRevokedWithReason ? (
     <div className="v2-byo__add-computer" data-testid="byo-add-computer">
       <span className="v2-byo__label">{t(machinesNeedUpdate ? 'agentByo.addComputer.updateTitle' : 'agentByo.addComputer.title')}</span>
       <p className="v2-byo__hint" data-testid="byo-add-computer-recommended">
@@ -2413,6 +2419,12 @@ const V2AgentBYO: React.FC = () => {
               </select>
             </label>
           )}
+          {/* F641: outside the <label>, so nothing here selects the picker. */}
+          {mode === 'machine' && hasDaemonRevokedReasonText(selectedMachine?.revokedReason) && (
+            <p className="v2-byo__needs" data-testid="byo-machine-revoked-reason">
+              {t('agentByo.machine.revokedCliBug')} <code>{daemonCommand}</code>
+            </p>
+          )}
           {mode === 'machine' && (
             <label className="v2-byo__field">
               <span className="v2-byo__label">{t('agentByo.form.adapterLabel')}</span>
@@ -2617,7 +2629,7 @@ const V2AgentBYO: React.FC = () => {
           {/* One command is THE path (QA BYO walk 1): the daemon and the SDK
               are real alternatives, but shown as equals beside the button they
               read as a choice a stranger has to make before starting. */}
-          <details className="v2-byo__more" data-testid="byo-more-ways"
+          <details className="v2-byo__more" data-testid="byo-more-ways" open={machineRevokedWithReason || undefined}
             onMouseDownCapture={(event) => {
               if ((event.target as Element).closest('summary, button, a')) event.preventDefault();
             }}>

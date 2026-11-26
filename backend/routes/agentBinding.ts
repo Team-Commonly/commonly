@@ -17,7 +17,7 @@ import {
 } from '../services/seatEnvironmentProjection';
 import { ownsRuntimeIdentity, OwnershipFailure, describeRuntimeIdentityBlockers } from '../services/runtimeIdentityOwnership';
 import { logAgentInstallRefusal } from '../middleware/logAgentInstallRefusal';
-import { machineHasLiveAuthorization } from '../services/machineService';
+import { daemonRevokedReasonsForMachines, machineHasLiveAuthorization } from '../services/machineService';
 import { createRateLimitRejectionLog, RateLimitedRequest } from '../utils/rateLimitLog';
 import { DUPLICATE_DAEMON_429_ERROR } from '../utils/daemonDuplicates';
 
@@ -121,10 +121,17 @@ router.get('/placement', bindingRateLimit, auth, async (req: express.Request & {
         && await machineHasLiveAuthorization(machine.machineId, req.user!.id!),
     })))).filter((machine) => machine.active).map(({ machineId, name, createdAt }) => ({ machineId, name, createdAt }));
     const boundMachineId = identity.botMetadata?.machineId || null;
+    const boundMachineRevoked = Boolean(boundMachineId && !activeMachines.some((machine) => machine.machineId === boundMachineId));
+    // F641: why the bound computer's key was revoked, as a code the app turns
+    // into text; null when the revoke gave no reason.
+    const boundMachineRevokedReason = boundMachineRevoked
+      ? (await daemonRevokedReasonsForMachines(req.user!.id!, [boundMachineId!])).get(boundMachineId!) || null
+      : null;
     return res.json({
       boundMachineId,
       requestedMachineId: identity.botMetadata?.requestedMachineId || null,
-      boundMachineRevoked: Boolean(boundMachineId && !activeMachines.some((machine) => machine.machineId === boundMachineId)),
+      boundMachineRevoked,
+      boundMachineRevokedReason,
       // F476: the computer whose removal unbound it, until a daemon adopts it.
       removedMachine: !boundMachineId && identity.removedMachine
         ? { name: identity.removedMachine.name, at: identity.removedMachine.at } : null,

@@ -95,6 +95,59 @@ describe('BYO on-my-computer mode', () => {
     expect(screen.getByTestId('byo-machine-select')).toHaveTextContent('Sam’s MacBook');
   });
 
+  // F641: a computer whose key was revoked with a reason says what to do and
+  // shows the setup command that fixes it. Unknown or no reason shows nothing new.
+  test('a computer revoked with a reason shows the setup command to run again', async () => {
+    const revoked = { id: 'm2', machineId: 'mach-b', name: 'Windows PC', status: 'offline', agentStates: [], revokedReason: 'cli_duplicate_daemons' };
+    mockGet({ machines: [machineRow, revoked] });
+    renderPage();
+    await waitFor(() => expect(screen.getByTestId('byo-mode-machine')).toBeInTheDocument());
+    fireEvent.click(screen.getByTestId('byo-mode-machine'));
+    expect(screen.queryByTestId('byo-machine-revoked-reason')).not.toBeInTheDocument();
+
+    fireEvent.change(screen.getByTestId('byo-machine-select'), { target: { value: 'mach-b' } });
+    const note = screen.getByTestId('byo-machine-revoked-reason');
+    expect(note).toHaveTextContent('This computer was disconnected because of a bug in our CLI. Run this setup command on it again to get the fixed version:');
+    expect(note.querySelector('code')).toHaveTextContent(/daemon setup/);
+    expect(note.closest('label')).toBeNull();
+    // The add-a-computer block, with the same command, shows for such a computer too.
+    expect(screen.getByTestId('byo-add-computer')).toBeInTheDocument();
+  });
+
+  // F641: arriving from the settings link with a live computer selected, the
+  // setup command is on screen without a click: its fold opens for such a computer.
+  test('a computer revoked with a reason shows the setup command on arrival, no clicks', async () => {
+    const revoked = { id: 'm2', machineId: 'mach-b', name: 'Windows PC', status: 'offline', agentStates: [], revokedReason: 'cli_duplicate_daemons' };
+    mockGet({ machines: [machineRow, revoked] });
+    renderPage();
+    // Before the machines answer, the page shows the block as for no computer; wait for the list.
+    await waitFor(() => expect(axios.get).toHaveBeenCalledWith('/api/machines', expect.anything()));
+    await waitFor(() => expect(screen.getByTestId('byo-more-ways')).toHaveAttribute('open'));
+    const block = screen.getByTestId('byo-add-computer');
+    expect(block.querySelector('code')).toHaveTextContent(/daemon setup/);
+    expect(block.querySelector('code')).toBeVisible();
+  });
+
+  test('without a revoke reason the other-ways fold stays closed as before', async () => {
+    const other = { id: 'm2', machineId: 'mach-b', name: 'Old Mac', status: 'offline', agentStates: [] };
+    mockGet({ machines: [machineRow, other] });
+    renderPage();
+    await waitFor(() => expect(screen.getByTestId('byo-mode-machine')).toBeInTheDocument());
+    expect(screen.getByTestId('byo-more-ways')).not.toHaveAttribute('open');
+    expect(screen.queryByTestId('byo-add-computer')).not.toBeInTheDocument();
+  });
+
+  test('a computer with an unknown or no reason shows no revoke note', async () => {
+    const other = { id: 'm2', machineId: 'mach-b', name: 'Old Mac', status: 'offline', agentStates: [], revokedReason: 'something_else' };
+    mockGet({ machines: [machineRow, other] });
+    renderPage();
+    await waitFor(() => expect(screen.getByTestId('byo-mode-machine')).toBeInTheDocument());
+    fireEvent.click(screen.getByTestId('byo-mode-machine'));
+    fireEvent.change(screen.getByTestId('byo-machine-select'), { target: { value: 'mach-b' } });
+    expect(screen.queryByTestId('byo-machine-revoked-reason')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('byo-add-computer')).not.toBeInTheDocument();
+  });
+
   test('adapter and model edits do not clear an unrelated field error', async () => {
     mockGet();
     renderPage();

@@ -93,4 +93,39 @@ describe('daemonAuth', () => {
     expect(res.statusCode).toBe(403);
     expect(req.machine).toBeUndefined();
   });
+
+  // F641: a revoke with a reason tells the person what to do, in a separate
+  // `error` field. Old CLIs stop only on the exact `message`, so it never moves.
+  const revokedWith = async (letter, fields) => {
+    const token = `cm_daemon_${letter.repeat(32)}`;
+    const ownerUserId = new mongoose.Types.ObjectId();
+    await Machine.create({ ownerUserId, machineId: `machine-${letter}`, name: 'Test machine' });
+    await AgentCredential.collection.insertOne({
+      tokenHash: hash(token), kind: 'daemon', ownerUserId, machineId: `machine-${letter}`,
+      scopes: ['machine:heartbeat'], status: 'revoked', revokedAt: new Date(), ...fields,
+    });
+    const req = { header: (name) => (name === 'Authorization' ? `Bearer ${token}` : undefined) };
+    const res = makeRes();
+    let nexted = false;
+    await daemonAuth('machine:heartbeat')(req, res, () => { nexted = true; });
+    expect(nexted).toBe(false);
+    expect(res.statusCode).toBe(401);
+    return res.body;
+  };
+
+  it('adds the reason text as `error` and keeps the exact message old CLIs match', async () => {
+    const body = await revokedWith('c', { revokedReason: 'cli_duplicate_daemons' });
+    expect(body).toEqual({
+      message: 'Daemon token revoked or unknown',
+      error: 'This computer was disconnected because of a bug in our CLI. Run the computer setup command again from Bring your own agent to get the fixed version.',
+    });
+  });
+
+  it('answers a revoke without a reason exactly as before', async () => {
+    expect(await revokedWith('d', {})).toEqual({ message: 'Daemon token revoked or unknown' });
+  });
+
+  it('ignores a stored reason it has no text for', async () => {
+    expect(await revokedWith('e', { revokedReason: 'something_else' })).toEqual({ message: 'Daemon token revoked or unknown' });
+  });
 });
