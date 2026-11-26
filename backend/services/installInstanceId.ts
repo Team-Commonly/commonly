@@ -62,4 +62,84 @@ export const resolveUnnamedInstanceId = async (displayName: unknown, agentName: 
   return (await identityInUse(name, derived)) ? derived : 'default';
 };
 
-module.exports = { deriveInstanceId, resolveUnnamedInstanceId };
+/**
+ * F653: the instances of this agent the caller already holds, so the answer can
+ * name them. Two sources: rows the caller installed (any status, since an
+ * uninstalled one keeps its User and memory) and bot Users they own.
+ *
+ * `installedBy` is not ownership. A mention writes a row naming whoever typed
+ * it (`config.autoJoinSource`), and a DM's row names a guest, so neither is
+ * read. Every candidate from either source is then dropped when anyone else
+ * owns that identity: an owner-naming row of another user (hasForeignOwner) or
+ * a bot User owned by someone else. Following the hint must never bind the
+ * caller's pod to another person's agent and its memory.
+ * 'default' sorts first: it is the one a person most often meant.
+ */
+export const callerInstanceIds = async (agentName: string, userId: unknown, exclude: string): Promise<string[]> => {
+  const name = agentName.toLowerCase();
+  const caller = String(userId);
+  // Loaded here for the same reason as in identityInUse above.
+  // eslint-disable-next-line @typescript-eslint/no-require-imports, global-require
+  const AgentIdentityService = require('./agentIdentityService');
+  // eslint-disable-next-line @typescript-eslint/no-require-imports, global-require
+  const User = require('../models/User');
+  // eslint-disable-next-line @typescript-eslint/no-require-imports, global-require
+  const Pod = require('../models/Pod');
+  // eslint-disable-next-line @typescript-eslint/no-require-imports, global-require
+  const { hasForeignOwner } = require('./agentPodAddition');
+  const agentType = AgentIdentityService.resolveAgentType(name);
+  const normalize = (id: unknown) => (id ? String(id).toLowerCase() : 'default');
+
+  const [rows, owned] = await Promise.all([
+    AgentInstallation.find({ agentName: name, installedBy: userId })
+      .select('instanceId podId config.autoJoinSource').lean(),
+    User.find({ isBot: true, 'botMetadata.agentName': agentType, 'botMetadata.ownerUserId': caller })
+      .select('botMetadata.instanceId').lean(),
+  ]);
+  type Row = { instanceId?: unknown; podId?: unknown; config?: { autoJoinSource?: unknown } | null };
+  const ownerRows = (rows as Row[]).filter((row) => !row.config?.autoJoinSource);
+  const dmPods = ownerRows.length
+    ? await Pod.find({
+      _id: { $in: ownerRows.map((row) => row.podId) },
+      type: { $in: [...AgentIdentityService.DM_POD_TYPES_GUARD] },
+    }).select('_id').lean()
+    : [];
+  const inDm = new Set(dmPods.map((pod: { _id: unknown }) => String(pod._id)));
+
+  const candidates = new Set<string>();
+  for (const row of ownerRows) if (!inDm.has(String(row.podId))) candidates.add(normalize(row.instanceId));
+  for (const bot of owned as Array<{ botMetadata?: { instanceId?: string } }>) {
+    candidates.add(normalize(bot.botMetadata?.instanceId));
+  }
+  candidates.delete(exclude);
+
+  const kept: string[] = [];
+  for (const instanceId of candidates) {
+    // A person holds few instances of one agent, so one read each is fine.
+    // eslint-disable-next-line no-await-in-loop
+    if (await hasForeignOwner(name, instanceId, userId)) continue;
+    // eslint-disable-next-line no-await-in-loop
+    const bot = await User.findOne({
+      username: AgentIdentityService.buildAgentUsername(agentType, instanceId), isBot: true,
+    }).select('botMetadata.ownerUserId').lean() as { botMetadata?: { ownerUserId?: unknown } } | null;
+    if (bot?.botMetadata?.ownerUserId && String(bot.botMetadata.ownerUserId) !== caller) continue;
+    kept.push(instanceId);
+  }
+  return kept.sort((a, b) => (a === 'default' ? -1 : b === 'default' ? 1 : a.localeCompare(b)));
+};
+
+/** F653: the install made an identity nobody held. Said on a 2xx, never a refusal. */
+export const newAgentIdentityWarning = (instanceId: string, existing: string[]) => ({
+  code: 'new_agent_identity',
+  instanceId,
+  ...(existing.length ? { existingInstanceIds: existing } : {}),
+  message: `This install created a new agent identity, instance '${instanceId}', with its own memory and no history.`
+    + (existing.length
+      ? ` You already have this agent as ${existing.map((id) => `'${id}'`).join(', ')}; `
+        + `pass instanceId '${existing[0]}' to install the agent you already have.`
+      : ''),
+});
+
+module.exports = {
+  deriveInstanceId, resolveUnnamedInstanceId, identityInUse, callerInstanceIds, newAgentIdentityWarning,
+};
