@@ -3,8 +3,8 @@
  * on one row. Decision-card rows never carry cardMessageId and stay free to
  * share a messageId.
  */
-const DecisionRequest = require('../../../models/DecisionRequest');
-const { setupMongoDb, closeMongoDb } = require('../../utils/testUtils');
+const DecisionRequest = require('../../models/DecisionRequest');
+const { setupMongoDb, closeMongoDb } = require('../utils/testUtils');
 
 const row = (overrides = {}) => ({
   podId: '64b000000000000000000001', agentUserId: '64b000000000000000000002', agentName: 'release-agent',

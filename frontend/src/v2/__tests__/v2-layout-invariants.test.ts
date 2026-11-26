@@ -5873,13 +5873,22 @@ test('revision 3 charts scale to the card and draw in v2 tokens only', () => {
 
 test('card motion (spinner, pulse, progress, chart draw-in) stops under prefers-reduced-motion', () => {
   const css = read('../cards/uiCard.css');
-  const reduced = css.slice(css.indexOf('@media (prefers-reduced-motion: reduce)'));
-  expect(reduced.length).toBeGreaterThan(40);
+  const start = css.indexOf('@media (prefers-reduced-motion: reduce)');
+  expect(start).toBeGreaterThan(-1);
+  // The media block's own rules, so a selector in a sibling rule that leaves
+  // the motion on cannot pass.
+  const block = css.slice(css.indexOf('{', start) + 1);
+  const rules = [...block.slice(0, block.search(/\n\}/)).matchAll(/([^{}]+)\{([^}]*)\}/g)]
+    .map(([, selectors, body]) => ({ selectors: selectors.split(',').map(s => s.trim()), body }));
   ['li.active .gl .arc', 'li.pending .gl', '.ui-pg-t > span', '.ui-ch-svg .mk'].forEach((selector) => {
     expect(css).toMatch(new RegExp(`${selector.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')} \\{[^}]*animation:ui-`));
-    expect(reduced).toContain(selector);
+    const own = rules.filter(rule => rule.selectors.some(s => s.endsWith(selector)));
+    expect(own.length).toBeGreaterThan(0);
+    own.forEach(rule => {
+      expect(rule.body).toMatch(/animation:\s*none/);
+      expect(rule.body).toMatch(/transition:\s*none/);
+    });
   });
-  expect(reduced).toContain('animation:none; transition:none;');
 });
 
 test('OpenUI table cells break only between words; a long token scrolls the table inside its card (F650)', () => {
