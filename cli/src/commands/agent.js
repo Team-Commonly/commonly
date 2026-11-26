@@ -2358,6 +2358,13 @@ export const performRun = ({
     .then(() => revokeOrphansImpl({ client, log }))
     .catch((err) => log(`spawn credential boot sweep failed (${err?.message ?? err})`));
 
+  // F661: Commonly keeps no copy of a person's Claude login. A CLI before F661
+  // left one in each Linux seat's state folder; this removes those, at their
+  // exact paths only, once per process. Best-effort, like the sweep above.
+  void Promise.resolve()
+    .then(() => adapter?.removeLegacyLoginCopies?.())
+    .catch((err) => log(`legacy login copy cleanup failed (${err?.message ?? err})`));
+
   // The bounds the server will clamp to. READ ONLY IF THERE IS AN ASK TO CLAMP:
   // with no `COMMONLY_SPAWN_TTL_SECONDS` the cli sends no `ttlSeconds` at all
   // and the server's default is what it is, so a per-run read would be a request

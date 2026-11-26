@@ -456,7 +456,8 @@ describe('a bwrap workspace seat\'s folder is held to the realpath it was first 
     agentName: 'f200-bwrap-seat',
     sessionId: null,
     cwd: dir,
-    env: { PATH: process.env.PATH, CLAUDE_CONFIG_DIR: operatorClaude },
+    // F661: a workspace seat signs in with the person's own token.
+    env: { PATH: process.env.PATH, CLAUDE_CONFIG_DIR: operatorClaude, CLAUDE_CODE_OAUTH_TOKEN: 'f200-own-token' },
     environment: { model: 'test-model', sandbox: { mode: 'bwrap', trust: 'workspace', allow: ['write'] } },
     memoryLongTerm: '',
     _publicClaudeState: state,
