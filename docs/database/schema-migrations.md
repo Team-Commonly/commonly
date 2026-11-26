@@ -420,6 +420,43 @@ duplicate check and the invitation's read are `findPageMongo` (each decides a
 write), and the response re-read is `findById`. `pg` refuses the writes and the
 list until step 4, before any write.
 
+## Fourteenth model: StalledConnectEpisode
+
+`StalledConnectEpisode` (a seat installed whose newest runtime token was never
+used: the stalled-connect nudge, its close, and the installer's digest and
+waiting-owner email lines) follows the same template. Its table is
+`stalled_connect_episodes` (`0029`): the Mongo `_id` as `id`,
+`installation_id` and `installed_by` (ObjectIds as hex), `pod_id`,
+`installer_username`, `agent_name`, `instance_id`, `display_name`,
+`token_issued_at`, `token_source`, `producer`, `nudged_at`,
+`nudge_message_id`, `resolved_at`, `resolution_message_id`, `digested_at`,
+`digested_again_at`, `status`, `created_at` and `updated_at`.
+`(installation_id, token_issued_at)` is unique, mirroring Mongo's one nudge
+per token-episode; `(status, nudged_at)` and `(installed_by, status)` are
+plain; there is no TTL. `STORE_MODE_STALLED_CONNECT_EPISODE` selects the store.
+Its callers, `services/stalledConnectService.ts`,
+`services/dailyDigestService.ts`, `services/digestEmailService.ts`,
+`services/waitingOwnerEmailService.ts` and
+`scripts/backfill-message-author-kind.ts`, import
+`repositories/stalledConnectEpisodeRepository`; ESLint fences the model.
+`0029` must be applied after `0028`, never before it.
+
+- `claimStalledConnectEpisode(fields)` claims a token-episode before the
+  nudge (null on a duplicate key); `recordNudgeMessage(id, messageId)` and
+  `resolveStalledConnectEpisode(id, fields)` record the nudge and the close.
+- `findExplainedEpisodes(agentNames)` and `findOpenEpisodesPage(after,
+  limit)` are the scan's reads.
+- `findDueStalledEpisodes(cutoff)`, `findInstallerStalledEpisodes(userId,
+  cutoff)` and `markStalledEpisodeDigested(id, fields)` are the digest's.
+- `findNewestOpenEpisodes(limit)` is the waiting-owner email's read, and
+  `findEpisodeMessageFields(filter, fields)` the author-kind backfill's.
+
+In `mongo` each makes its pre-step-2 Mongoose call. In `dual` and `pg-read`
+the claim is the helper's `create` (Mongo's unique index decides, before any
+copy), the record, close and marks are `setWhere`, and every read is
+`findPageMongo` on Mongo, since each decides what someone is told; the
+unbounded ones page in `_id` order. `pg` refuses them all until step 4.
+
 For the next aggregate, expose its domain operations, keep Mongoose queries
 inside its repository, and return plain values. Do not expose `find`, `save`,
 `populate`, or a generic query builder. Extract without changing storage first,

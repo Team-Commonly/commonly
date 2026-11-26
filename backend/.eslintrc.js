@@ -111,6 +111,9 @@ module.exports = {
           }, {
             group: ['**/models/WaitlistRequest', '**/models/WaitlistRequest.*'],
             message: 'Use repositories/waitlistRequestRepository.',
+          }, {
+            group: ['**/models/StalledConnectEpisode', '**/models/StalledConnectEpisode.*'],
+            message: 'Use repositories/stalledConnectEpisodeRepository.',
           }],
         }],
         'no-restricted-modules': ['error', {
@@ -128,6 +131,7 @@ module.exports = {
             '**/models/AgentProviderKey', '**/models/AgentProviderKey.*',
             '**/models/HostedMcpDcrRegistration', '**/models/HostedMcpDcrRegistration.*',
             '**/models/WaitlistRequest', '**/models/WaitlistRequest.*',
+            '**/models/StalledConnectEpisode', '**/models/StalledConnectEpisode.*',
           ],
         }],
       },

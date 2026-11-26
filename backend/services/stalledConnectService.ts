@@ -1,4 +1,7 @@
-import StalledConnectEpisode from '../models/StalledConnectEpisode';
+import {
+  claimStalledConnectEpisode, findExplainedEpisodes, findOpenEpisodesPage, recordNudgeMessage,
+  resolveStalledConnectEpisode,
+} from '../repositories/stalledConnectEpisodeRepository';
 import { deriveAgentState, keyOnlyOnPage } from './agentStateService';
 import { isGuestOfIdentity, ownsRuntimeIdentity } from './runtimeIdentityOwnership';
 import {
@@ -368,10 +371,7 @@ const tokenKey = (agentName: string, instanceId: string, installedBy: unknown, i
 const explainedTokens = async (agentNames: string[]): Promise<Map<string, ExplainedLine>> => {
   const explained = new Map<string, ExplainedLine>();
   try {
-    const episodes = await StalledConnectEpisode.find({
-      agentName: { $in: [...new Set(agentNames)] },
-      nudgeMessageId: { $nin: [null, ''] },
-    }).select('agentName instanceId installedBy tokenIssuedAt installationId podId').lean();
+    const episodes = await findExplainedEpisodes(agentNames);
     (episodes as Array<Record<string, any>>).forEach((episode) => {
       explained.set(
         tokenKey(episode.agentName, episode.instanceId, episode.installedBy, episode.tokenIssuedAt),
@@ -426,29 +426,24 @@ const nudgeOnce = async ({
   // already put a second message in the room — the failure that cannot be
   // undone. A post that then fails leaves a claimed episode and no message,
   // which is the safe direction: one missed nudge beats two delivered.
-  let episode;
-  try {
-    episode = await StalledConnectEpisode.create({
-      installationId: install._id,
-      podId,
-      installedBy: install.installedBy,
-      installerUsername: installer.username,
-      agentName: derived.agentName,
-      instanceId: derived.instanceId,
-      displayName: derived.displayName,
-      tokenIssuedAt: issuedAt,
-      tokenSource,
-      producer: 'timer',
-      nudgedAt: now,
-      status: 'open',
-    });
-  } catch (error: any) {
-    // 11000 means this token-episode was already explained — by an earlier
-    // pass, or by the reactive responder that shares this record. Correct
-    // outcome, not an error.
-    if (error?.code === 11000) return false;
-    throw error;
-  }
+  const episode = await claimStalledConnectEpisode({
+    installationId: install._id,
+    podId,
+    installedBy: install.installedBy,
+    installerUsername: installer.username,
+    agentName: derived.agentName,
+    instanceId: derived.instanceId,
+    displayName: derived.displayName,
+    tokenIssuedAt: issuedAt,
+    tokenSource,
+    producer: 'timer',
+    nudgedAt: now,
+    status: 'open',
+  });
+  // null (a duplicate key) means this token-episode was already explained — by
+  // an earlier pass, or by the reactive responder that shares this record.
+  // Correct outcome, not an error.
+  if (!episode) return false;
   // The episode stays open with no nudge, so the same one-per-token record
   // carries the MCP close on the next pass.
   if (mcpConnected) return false;
@@ -492,10 +487,7 @@ const nudgeOnce = async ({
       );
       return false;
     }
-    await StalledConnectEpisode.updateOne(
-      { _id: episode._id },
-      { $set: { nudgeMessageId: messageId } },
-    );
+    await recordNudgeMessage(episode._id, messageId);
     result.nudged.push({
       episodeId: String(episode._id),
       agentName: derived.agentName,
@@ -541,10 +533,7 @@ const resolveConnected = async ({
     // started the agent the nudge asked about.
     const closeQuietly = async (): Promise<void> => {
       if (ep.nudgeMessageId) await AttentionItemService.resolve('message', String(ep.nudgeMessageId));
-      await StalledConnectEpisode.updateOne(
-        { _id: ep._id, status: 'open' },
-        { $set: { status: 'resolved', resolvedAt: now } },
-      );
+      await resolveStalledConnectEpisode(ep._id, { status: 'resolved', resolvedAt: now });
       result.resolved.push({
         episodeId: String(ep._id), agentName: String(ep.agentName), podId: String(ep.podId),
       });
@@ -643,16 +632,11 @@ const resolveConnected = async ({
     // how this one got answered.
     if (ep.nudgeMessageId) await AttentionItemService.resolveActioned('message', String(ep.nudgeMessageId));
 
-    await StalledConnectEpisode.updateOne(
-      { _id: ep._id, status: 'open' },
-      {
-        $set: {
-          status: 'resolved',
-          resolvedAt: now,
-          ...(resolutionMessageId ? { resolutionMessageId } : {}),
-        },
-      },
-    );
+    await resolveStalledConnectEpisode(ep._id, {
+      status: 'resolved',
+      resolvedAt: now,
+      ...(resolutionMessageId ? { resolutionMessageId } : {}),
+    });
     result.resolved.push({
       episodeId: String(ep._id), agentName: String(ep.agentName), podId: String(ep.podId),
     });
@@ -665,8 +649,7 @@ const resolveConnected = async ({
   let after: unknown = null;
   for (;;) {
     // eslint-disable-next-line no-await-in-loop
-    const page = await StalledConnectEpisode.find({ status: 'open', ...(after ? { _id: { $gt: after } } : {}) })
-      .sort({ _id: 1 }).limit(RESOLVE_PAGE_SIZE).lean() as Array<Record<string, any>>;
+    const page = await findOpenEpisodesPage(after, RESOLVE_PAGE_SIZE) as Array<Record<string, any>>;
     if (!page.length) break;
     // eslint-disable-next-line no-await-in-loop
     const tokensBySeat = await botTokensForMany(page.map((ep) => ({

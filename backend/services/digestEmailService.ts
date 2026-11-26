@@ -16,7 +16,7 @@ const Pod = require('../models/Pod');
 // eslint-disable-next-line global-require
 const { isListedPodMember } = require('../utils/isPodMember');
 // eslint-disable-next-line global-require
-const StalledConnectEpisode = require('../models/StalledConnectEpisode');
+const { markStalledEpisodeDigested } = require('../repositories/stalledConnectEpisodeRepository');
 // eslint-disable-next-line global-require
 const emailReturns = require('./emailReturnService');
 
@@ -326,12 +326,9 @@ class DigestEmailService {
           if (!shown.get(key)) continue;
           shown.set(key, (shown.get(key) || 0) - 1);
           try {
-            await StalledConnectEpisode.updateOne(
-              { _id: mark.episodeId, status: 'open' },
-              { $set: Object.fromEntries((mark.fields || [])
-                .filter((field) => field === 'digestedAt' || field === 'digestedAgainAt')
-                .map((field) => [field, emailedAt])) },
-            );
+            await markStalledEpisodeDigested(mark.episodeId, Object.fromEntries((mark.fields || [])
+              .filter((field) => field === 'digestedAt' || field === 'digestedAgainAt')
+              .map((field) => [field, emailedAt])));
           } catch (markError) {
             console.warn('Digest sent but a stalled-connect line could not be marked:', (markError as Error).message);
           }
