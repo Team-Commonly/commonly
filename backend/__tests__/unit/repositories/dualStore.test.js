@@ -1749,6 +1749,18 @@ describe('dual-store helper (ADR-034 D3)', () => {
       expect(raw.secretRef).toBeNull();
     });
 
+    // The helper's own mongo branch built its $set the same way, so before the
+    // fix it dropped the null there too; it now clears the field as Mongoose does.
+    it('mongo: update() through the helper stores a null and makes no Postgres call', async () => {
+      delete process.env[KEY_ENV];
+      const pg = fakePg();
+      const s = keys(pg);
+      const doc = await s.create({ ...filter, secretRef: 'r1' });
+      expect(await s.update(doc._id, { secretRef: null })).toMatchObject({ secretRef: null });
+      expect((await stored()).secretRef).toBeNull();
+      expect(pg.calls).toEqual([]);
+    });
+
     it('refuses pg mode, and every unsupported filter or update, before any write', async () => {
       const pg = fakePg();
       const s = keys(pg);
