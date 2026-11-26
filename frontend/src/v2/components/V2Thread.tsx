@@ -2222,6 +2222,7 @@ const V2Thread: React.FC<V2ThreadProps> = ({ detail, podsState, firstRunVisible 
         );
         if (created) {
           rememberSentMessage(pod._id, created);
+          noteOwnPost();
           setReplyTarget(null);
           setThreadTarget(null);
         }

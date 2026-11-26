@@ -98,6 +98,15 @@ describe('V2DiscordCard', () => {
     expect(stepsSent()).toEqual(['discord-card-shown', 'discord-card-dismissed']);
   });
 
+  test('a different person signing in on the same tab starts fresh after someone else dismissed', () => {
+    const view = renderCard(person());
+    fireEvent.click(screen.getByRole('button', { name: 'Hide the Discord invite' }));
+    view.unmount();
+    renderCard(person({ _id: 'person-2' }));
+    expect(screen.getByRole('region', { name: 'Discord' })).toBeInTheDocument();
+    expect(stepsSent()).toEqual(['discord-card-shown', 'discord-card-dismissed', 'discord-card-shown']);
+  });
+
   test('an account that dismissed it on another device never sees it', () => {
     renderCard(person({ onboarding: { discordCardDismissedAt: new Date().toISOString() } }));
     expect(screen.queryByRole('region', { name: 'Discord' })).not.toBeInTheDocument();

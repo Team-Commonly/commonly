@@ -17,11 +17,13 @@ interface DiscordCardUser {
 }
 
 // A dismissal reaches the account mark at once, but the signed-in user is
-// only re-read on the next page load, so a remount in this load must remember it.
-let closedThisLoad = false;
-let shownSent = false;
-/** Test seam: forget a dismissal and the shown ping from this page load. */
-export const resetDiscordCardForTest = (): void => { closedThisLoad = false; shownSent = false; };
+// only re-read on the next page load, so a remount in this load must remember
+// it. Both are kept per account, so a sign-out and sign-in as someone else in
+// the same tab starts that person fresh.
+const closedThisLoad = new Set<string>();
+const shownSent = new Set<string>();
+/** Test seam: forget dismissals and shown pings from this page load. */
+export const resetDiscordCardForTest = (): void => { closedThisLoad.clear(); shownSent.clear(); };
 
 const startOfToday = (): number => {
   const now = new Date();
@@ -46,28 +48,30 @@ const V2DiscordCard: React.FC = () => {
   const { currentUser } = useAuth();
   const { t } = useTranslation();
   const postedThisLoad = useOwnPostThisLoad();
-  const [closed, setClosed] = useState(closedThisLoad);
   const user = (currentUser || null) as DiscordCardUser | null;
+  const userId = user?._id ? String(user._id) : '';
+  const [closedFor, setClosedFor] = useState<string | null>(null);
 
   // The email reminder takes the same strip; the card waits until it is gone.
-  const visible = Boolean(user?._id)
-    && !closed
+  const visible = Boolean(userId)
+    && closedFor !== userId
+    && !closedThisLoad.has(userId)
     && !user?.isBot
     && user?.verified !== false
     && !user?.onboarding?.discordCardDismissedAt
     && hasActed(user as DiscordCardUser, postedThisLoad);
 
   useEffect(() => {
-    if (!visible || shownSent) return;
-    shownSent = true;
+    if (!visible || shownSent.has(userId)) return;
+    shownSent.add(userId);
     recordStep('discord-card-shown');
-  }, [visible]);
+  }, [visible, userId]);
 
   if (!visible) return null;
 
   const close = () => {
-    closedThisLoad = true;
-    setClosed(true);
+    closedThisLoad.add(userId);
+    setClosedFor(userId);
     recordStep('discord-card-dismissed');
   };
 
