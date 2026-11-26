@@ -85,6 +85,12 @@ export const recordKeyFor = (row, loadToken) => {
   return scoped;
 };
 
+// F637: how long a 429 holds both loops off, at the least.
+export const RATE_LIMIT_MIN_WAIT_MS = 60_000;
+// ...and at the most, whatever Retry-After says.
+export const RATE_LIMIT_MAX_WAIT_MS = 10 * 60_000;
+export const RATE_LIMIT_NOTICE = "the server is rate-limiting this computer's daemon key; more than one Commonly daemon may be running on it";
+
 export const createDaemonSupervisor = ({
   record,
   client,
@@ -112,6 +118,15 @@ export const createDaemonSupervisor = ({
   let reconnectAfter = 0;
   const recentStarts = [];
 
+  // F637: true from a 429 until the next success, so the duplicate-daemon
+  // notice is logged once per stretch of rate limiting.
+  let rateLimited = false;
+  // F637 review: bumped by every failure that sets a wait. A request records
+  // it when it starts, and its success clears the wait only if no failure came
+  // after that start: a heartbeat in flight when a tick got a 429 must not
+  // cut the cooldown short by succeeding (or, below, by failing some other way).
+  let failureEpoch = 0;
+
   const connectionFailure = (error, label) => {
     if (isTerminalAuthError(error)) {
       stopped = true;
@@ -119,13 +134,34 @@ export const createDaemonSupervisor = ({
       return;
     }
     reconnectFailures += 1;
-    reconnectAfter = now() + reconnectDelayMs(reconnectFailures, random);
+    failureEpoch += 1;
+    if (error?.status === 429) {
+      // The server's limiter keys on this computer's daemon key. Retrying in
+      // a second or two keeps it shut, for every copy sharing the key, so wait
+      // at least a minute, or longer if the server asked for longer, but never
+      // past 10 minutes: a proxy or self-hosted limiter sending
+      // `Retry-After: 86400` must not silence the poll and heartbeat for a day.
+      const wait = Math.min(
+        Math.max(Number(error.retryAfterMs) || 0, RATE_LIMIT_MIN_WAIT_MS),
+        RATE_LIMIT_MAX_WAIT_MS,
+      );
+      reconnectAfter = Math.max(reconnectAfter, now() + wait);
+      if (!rateLimited) {
+        rateLimited = true;
+        log(RATE_LIMIT_NOTICE);
+      }
+    } else {
+      // Never shorter than a wait already set (a 429's cooldown).
+      reconnectAfter = Math.max(reconnectAfter, now() + reconnectDelayMs(reconnectFailures, random));
+    }
     log(`${label}: ${error.message}; reconnect after ${Math.round((reconnectAfter - now()) / 1000)}s`);
   };
 
-  const connectionRestored = () => {
+  const connectionRestored = (startedAtEpoch) => {
+    if (startedAtEpoch !== failureEpoch) return;
     reconnectFailures = 0;
     reconnectAfter = 0;
+    rateLimited = false;
   };
 
   const persist = () => {
@@ -503,6 +539,7 @@ export const createDaemonSupervisor = ({
 
   const tick = async () => {
     if (stopped || now() < reconnectAfter) return;
+    const startedAtEpoch = failureEpoch;
     let assigned;
     try {
       assigned = await client.get('/api/agent-binding/assigned');
@@ -510,7 +547,7 @@ export const createDaemonSupervisor = ({
       connectionFailure(error, 'work-list fetch failed');
       return;
     }
-    connectionRestored();
+    connectionRestored(startedAtEpoch);
     const rows = Array.isArray(assigned?.agents) ? assigned.agents : [];
 
     const bound = [];
@@ -601,13 +638,18 @@ export const createDaemonSupervisor = ({
 
   const heartbeat = async () => {
     if (stopped || now() < reconnectAfter) return;
+    const startedAtEpoch = failureEpoch;
     try {
+      const inventory = await runtimeInventory();
+      // F637 review: a 429 (or a stop) can land while the inventory is read;
+      // the post must honour it, not go out on the check made before.
+      if (stopped || now() < reconnectAfter) return;
       await client.post(`/api/machines/${record.machineDbId}/heartbeat`, {
         ...machineReport(),
         agents: agentStates(),
-        runtimeInventory: await runtimeInventory(),
+        runtimeInventory: inventory,
       });
-      connectionRestored();
+      connectionRestored(startedAtEpoch);
     } catch (error) {
       connectionFailure(error, 'heartbeat failed');
     }

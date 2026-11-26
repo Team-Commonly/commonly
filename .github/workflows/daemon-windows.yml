@@ -12,6 +12,7 @@ on:
       - 'cli/src/lib/daemon-service-windows.js'
       - 'cli/src/lib/daemon-store.js'
       - 'cli/src/lib/daemon-supervisor.js'
+      - 'cli/src/lib/daemon-lock.js'
       - 'cli/src/lib/windows-command.js'
       - 'cli/src/lib/sandbox/**'
       - 'cli/src/lib/adapters/claude.js'
@@ -27,6 +28,7 @@ on:
       - 'cli/scripts/windows-shim-smoke.mjs'
       - 'cli/scripts/windows-daemon-smoke.mjs'
       - 'cli/__tests__/daemon-service.windows.test.mjs'
+      - 'cli/__tests__/daemon-lock.test.mjs'
       - 'cli/__tests__/windows-*.test.mjs'
       - 'cli/__tests__/adapters.windows-launch.test.mjs'
       - 'cli/__tests__/fixtures/windows-shims.cjs'
@@ -57,6 +59,7 @@ jobs:
         run: >-
           node --experimental-vm-modules node_modules/jest/bin/jest.js
           __tests__/daemon-service.windows.test.mjs
+          __tests__/daemon-lock.test.mjs
           __tests__/windows-unsandboxed.test.mjs
           __tests__/windows-command.test.mjs
           __tests__/adapters.windows-launch.test.mjs
