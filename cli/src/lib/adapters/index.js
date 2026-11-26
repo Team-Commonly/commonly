@@ -16,6 +16,7 @@ import qwen from './qwen.js';
 import dsh from './dsh.js';
 import goose from './goose.js';
 import hermes from './hermes.js';
+import acp from './acp.js';
 
 const ADAPTERS = {
   [stub.name]: stub,
@@ -27,13 +28,18 @@ const ADAPTERS = {
   [dsh.name]: dsh,
   [goose.name]: goose,
   [hermes.name]: hermes,
+  [acp.name]: acp,
 };
 
 export const listAdapterNames = () => Object.keys(ADAPTERS);
 
 // The adapters a person can choose: every one but the internal test stub. Help
 // text and "Known:" lists read this, so they never drift from the registry.
-export const listPublicAdapterNames = () => listAdapterNames().filter((name) => name !== stub.name);
+// acp is left out too: its agent argv comes from the seat environment, which
+// attach can't pass yet, so `--adapter acp` there could only fail. The daemon
+// still resolves a configured acp seat through getAdapter.
+const NOT_CHOOSABLE = new Set([stub.name, acp.name]);
+export const listPublicAdapterNames = () => listAdapterNames().filter((name) => !NOT_CHOOSABLE.has(name));
 
 export const getAdapter = (name) => ADAPTERS[name] || null;
 

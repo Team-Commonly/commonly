@@ -22,7 +22,7 @@ describe('adapter registry and grant-broker admission stay explicit', () => {
     const withheld = names.filter((name) => !eligible.has(name));
 
     expect([...ADAPTERS_WITH_GRANT_BROKER].sort()).toEqual(['claude', 'codex', 'goose', 'opencode', 'pi', 'qwen']);
-    expect(withheld.sort()).toEqual(['dsh', 'hermes']);
+    expect(withheld.sort()).toEqual(['acp', 'dsh', 'hermes']);
   });
 
   // F175c, F175d: these hold a grant only on a public seat; naming never lifts

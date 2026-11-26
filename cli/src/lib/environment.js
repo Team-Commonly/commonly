@@ -45,6 +45,8 @@ import { resolveSkillSource } from './skill-prompt.js';
 // BYO seat, and what lets an identity card answer "what is this running".
 const ALLOWED_TOP_KEYS = new Set([
   'version', 'workspace', 'sandbox', 'skills', 'mcp', 'model', 'effort', 'provider',
+  // The argv of an Agent Client Protocol agent; adapters/acp.js checks its shape.
+  'acp',
 ]);
 const ALLOWED_SANDBOX_MODES = new Set([
   'none', 'workspace', 'read-only', 'bwrap', 'firejail', 'container', 'managed',
@@ -180,16 +182,18 @@ export const parseEnvironmentFile = async (absolutePath) => {
 };
 
 /**
- * Remove the host-local provider declaration before an environment spec is
+ * Remove the host-local provider and acp declarations before an environment spec is
  * sent to the Commonly API. The full spec remains in the local token record so
  * the daemon can bind it to this host and the adapter can resolve its key file.
  */
 export const environmentForServer = (environment) => {
+  const has = (key) => Object.prototype.hasOwnProperty.call(environment, key);
   if (!environment || typeof environment !== 'object' || Array.isArray(environment)
-    || !Object.prototype.hasOwnProperty.call(environment, 'provider')) {
+    || (!has('provider') && !has('acp'))) {
     return environment;
   }
-  const { provider: _hostLocalProvider, ...serverEnvironment } = environment;
+  // `acp` is host-local too: an agent's argv can carry a key (`--api-key …`).
+  const { provider: _hostLocalProvider, acp: _hostLocalAcp, ...serverEnvironment } = environment;
   return serverEnvironment;
 };
 

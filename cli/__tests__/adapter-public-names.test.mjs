@@ -5,8 +5,12 @@ import { registerAgent } from '../src/commands/agent.js';
 // The adapters a person can choose are the registry minus the test stub, and
 // the help text reads the same list, so a new adapter never goes unlisted.
 describe('public adapter names', () => {
-  test('every registered adapter but stub', () => {
-    expect(listPublicAdapterNames()).toEqual(listAdapterNames().filter((n) => n !== 'stub'));
+  test('every registered adapter but stub and acp', () => {
+    // acp needs its argv from the seat environment, which attach can't pass
+    // yet; the daemon still runs a configured acp seat through the registry.
+    expect(listPublicAdapterNames()).toEqual(listAdapterNames().filter((n) => n !== 'stub' && n !== 'acp'));
+    expect(listAdapterNames()).toContain('acp');
+    expect(listPublicAdapterNames()).not.toContain('acp');
     expect(listPublicAdapterNames()).toEqual(
       expect.arrayContaining(['claude', 'codex', 'pi', 'opencode', 'qwen', 'dsh', 'goose', 'hermes']),
     );

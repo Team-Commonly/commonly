@@ -35,7 +35,7 @@ describe('defaultMcpServers', () => {
   });
 
   test('ADAPTERS_WITH_DEFAULT_MCP matches the adapters this test names', () => {
-    expect([...ADAPTERS_WITH_DEFAULT_MCP].sort()).toEqual(['claude', 'codex', 'dsh', 'goose', 'opencode', 'pi', 'qwen']);
+    expect([...ADAPTERS_WITH_DEFAULT_MCP].sort()).toEqual(['acp', 'claude', 'codex', 'dsh', 'goose', 'opencode', 'pi', 'qwen']);
   });
 
   test('ADAPTERS_WITH_DEFAULT_SANDBOX is the derived-default subset, pi excluded', () => {
