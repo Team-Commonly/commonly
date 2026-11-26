@@ -83,6 +83,19 @@ describe('staging on the prod VM', () => {
     expect(override.services.frontend.image).toMatch(/-staging$/);
   });
 
+  // At its 0.15 CPU cap, staging mongo's ping timed out at 5s three times during a
+  // staging `up` (2026-11-26). Pin the floors so a revert to 5s / 30s fails here.
+  test('staging mongo healthcheck allows for its CPU cap', () => {
+    const secs = (v) => {
+      const m = String(v).match(/^(\d+)s$/);
+      if (!m) throw new Error(`unparsed duration ${v}`);
+      return Number(m[1]);
+    };
+    const hc = override.services.mongo.healthcheck;
+    expect(secs(hc.timeout)).toBeGreaterThanOrEqual(15);
+    expect(secs(hc.start_period)).toBeGreaterThanOrEqual(60);
+  });
+
   test('the tunnel config comes from the untracked staging-secrets dir', () => {
     for (const v of override.services.cloudflared.volumes) expect(v).toMatch(/^\.\/staging-secrets\//);
     expect(read('deploy/vm/.gitignore')).toMatch(/^staging-secrets\/$/m);
