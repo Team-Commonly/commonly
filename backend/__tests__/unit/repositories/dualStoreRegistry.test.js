@@ -42,7 +42,7 @@ describe('dual-store registry and repair pass', () => {
   it('lists the three moved models, whose stores have every operation the script and the job use', () => {
     expect(Object.keys(DUAL_STORED_MODELS)).toEqual(['AgentPodReadCursor', 'AgentFirstContact', 'AgentDigestState', 'AgentTaskWakeState',
       'NeedsYouEmailQuota', 'AgentComputerTakeover', 'BillingEvent', 'DiscordSummaryHistory',
-      'NeedsYouEmail']);
+      'NeedsYouEmail', 'AgentTaskRowWakeState']);
     Object.values(DUAL_STORED_MODELS).forEach((open) => {
       const store = open();
       ['repair', 'backfill', 'verify', 'upsert', 'findById'].forEach((op) => expect(typeof store[op]).toBe('function'));

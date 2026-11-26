@@ -26,6 +26,8 @@ export const DUAL_STORED_MODELS: Record<string, () => DualStore> = {
   DiscordSummaryHistory: () => require('./discordSummaryHistoryRepository').discordSummaryHistoryStore(),
   // eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
   NeedsYouEmail: () => require('./needsYouEmailRepository').needsYouEmailStore(),
+  // eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
+  AgentTaskRowWakeState: () => require('./agentTaskRowWakeStateRepository').rowWakeStateStore(),
 };
 
 type RepairCounts = Awaited<ReturnType<DualStore['repair']>>;
