@@ -490,6 +490,9 @@ const V2AgentBYO: React.FC = () => {
   // the machine they browse on is not always the one they set up.
   // A handoff card's link names the OS its person picked there.
   const [setupOs, setSetupOs] = useState<SetupOs>(() => prefill.os || browserOs());
+  // F667: an OS picked in the add-a-computer block itself. Until then a block
+  // opened for a revoked computer follows that computer's record, not setupOs.
+  const [addComputerOsPicked, setAddComputerOsPicked] = useState(false);
   const repoPod = pods.find((p) => p._id === (issued?.podId || podId));
   // The prompt says the key "hasn't been used" only when nothing has used it.
   const neverConnected = existingConnection?.connection.state === 'never' && !existingConnection.connection.keyUsed;
@@ -1956,7 +1959,27 @@ const V2AgentBYO: React.FC = () => {
   // which is also how a set-up computer updates (docs/cli/daemon-setup.md).
   // F641: a computer whose key was revoked with a reason is fixed by this same
   // setup command, so the page shows it then too, with its fold open on arrival.
-  const machineRevokedWithReason = machines.some((m) => hasDaemonRevokedReasonText(m.revokedReason));
+  const revokedWithReason = machines.filter((m) => hasDaemonRevokedReasonText(m.revokedReason));
+  const machineRevokedWithReason = revokedWithReason.length > 0;
+  // F667: open for a revoked computer, the block's line is for THAT computer:
+  // `daemon install` with --unsandboxed turns the Windows opt-in on, and
+  // without it turns it off, so the new-computer default (the browser's OS,
+  // the flag on for Windows) would undo an owner's opt-out. One revoked
+  // computer with its OS on record gets its OS and its own opt-in; several, no
+  // OS on record, or an OS the owner picked here gets no flag, and an owner who
+  // wants it adds it as the Windows note below says. A new computer (nothing
+  // revoked) keeps the default line.
+  const revokedHost = revokedWithReason.length === 1 && revokedWithReason[0].platform
+    ? revokedWithReason[0]
+    : null;
+  const addComputerOs: SetupOs = revokedHost && !addComputerOsPicked
+    ? (revokedHost.platform === 'win32' ? 'windows' : revokedHost.platform === 'darwin' ? 'mac' : 'linux')
+    : setupOs;
+  const addComputerCommand = machineRevokedWithReason
+    ? daemonSetupCommandFor(addComputerOs === 'windows' ? 'windows' : 'unix', apiUrl, {
+      unsandboxed: Boolean(revokedHost && !addComputerOsPicked && revokedHost.unsandboxedOptIn === true),
+    })
+    : daemonCommand;
   const addComputerBlock = machines.length === 0 || machinesNeedUpdate || machineRevokedWithReason ? (
     <div className="v2-byo__add-computer" data-testid="byo-add-computer">
       <span className="v2-byo__label">{t(machinesNeedUpdate ? 'agentByo.addComputer.updateTitle' : 'agentByo.addComputer.title')}</span>
@@ -1972,9 +1995,9 @@ const V2AgentBYO: React.FC = () => {
             key={os}
             type="button"
             className="v2-byo__link"
-            aria-pressed={setupOs === os}
+            aria-pressed={addComputerOs === os}
             data-testid={`byo-add-computer-os-${os}`}
-            onClick={() => setSetupOs(os)}
+            onClick={() => { setAddComputerOsPicked(true); setSetupOs(os); }}
           >
             {t(labelKey)}
           </button>
@@ -1985,7 +2008,7 @@ const V2AgentBYO: React.FC = () => {
             at a space and never inside `--unsandboxed` (F629). The single-space
             text nodes keep the selected text equal to the command. */}
         <code>
-          {daemonCommand.split(' ').map((token, i) => (
+          {addComputerCommand.split(' ').map((token, i) => (
             <React.Fragment key={i}>
               {i > 0 && ' '}
               <span className="v2-byo__token">{token}</span>
@@ -1995,12 +2018,12 @@ const V2AgentBYO: React.FC = () => {
         <button
           type="button"
           className="v2-byo__copy"
-          onClick={() => copy('daemon-setup', daemonCommand)}
+          onClick={() => copy('daemon-setup', addComputerCommand)}
         >
           {copied === 'daemon-setup' ? t('agentByo.addComputer.copied') : t('agentByo.addComputer.copy')}
         </button>
       </div>
-      {setupOs === 'windows' && (
+      {addComputerOs === 'windows' && (
         <p className="v2-byo__hint" data-testid="byo-add-computer-windows">
           <Trans i18nKey="agentByo.addComputer.windowsNote" components={{ cmd: <code /> }} />
         </p>

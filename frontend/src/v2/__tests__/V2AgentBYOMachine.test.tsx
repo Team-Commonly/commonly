@@ -186,6 +186,79 @@ describe('BYO on-my-computer mode', () => {
     expect(block.querySelector('code')).toBeVisible();
   });
 
+  // F667: the fold opens BECAUSE of the revoked computer, so its line is that
+  // computer's: its OS, and --unsandboxed only for a recorded opt-in. The
+  // browser's OS and the new-computer default must not turn an opt-out on.
+  describe('the add-a-computer line opened for a revoked computer (F667)', () => {
+    const realPlatform = Object.getOwnPropertyDescriptor(window.navigator, 'platform');
+    const asWindowsBrowser = () => Object.defineProperty(window.navigator, 'platform', { value: 'Win32', configurable: true });
+    afterEach(() => {
+      if (realPlatform) Object.defineProperty(window.navigator, 'platform', realPlatform);
+      else delete window.navigator.platform;
+    });
+    const revokedRow = (fields) => ({ id: 'm2', machineId: 'mach-b', name: 'Windows PC', status: 'offline', agentStates: [], revokedReason: 'cli_duplicate_daemons', ...fields });
+    const shownLine = async (machines) => {
+      mockGet({ machines });
+      renderPage();
+      await waitFor(() => expect(screen.getByTestId('byo-more-ways')).toHaveAttribute('open'));
+      return screen.getByTestId('byo-add-computer').querySelector('code').textContent;
+    };
+
+    test('a revoked Windows computer that opted out, on a Windows browser: no --unsandboxed', async () => {
+      asWindowsBrowser();
+      const line = await shownLine([machineRow, revokedRow({ platform: 'win32', unsandboxedOptIn: false })]);
+      expect(line).toMatch(/^npx\.cmd -y @commonlyai\/cli@latest daemon setup --instance \S+$/);
+    });
+
+    test('a revoked Windows computer that opted in keeps --unsandboxed', async () => {
+      asWindowsBrowser();
+      const line = await shownLine([machineRow, revokedRow({ platform: 'win32', unsandboxedOptIn: true })]);
+      expect(line).toMatch(/^npx\.cmd -y @commonlyai\/cli@latest daemon setup --instance \S+ --unsandboxed$/);
+    });
+
+    test('a Mac browser with a revoked Windows record shows the Windows line', async () => {
+      const line = await shownLine([machineRow, revokedRow({ platform: 'win32', unsandboxedOptIn: false })]);
+      expect(line).toMatch(/^npx\.cmd /);
+      expect(screen.getByTestId('byo-add-computer-os-windows')).toHaveAttribute('aria-pressed', 'true');
+    });
+
+    test('a revoked record with no OS falls back to a line without --unsandboxed', async () => {
+      asWindowsBrowser();
+      const line = await shownLine([machineRow, revokedRow({ platform: null, unsandboxedOptIn: true })]);
+      expect(line).toMatch(/^npx\.cmd -y @commonlyai\/cli@latest daemon setup --instance \S+$/);
+    });
+
+    test('several revoked computers fall back to a line without --unsandboxed', async () => {
+      asWindowsBrowser();
+      const line = await shownLine([
+        machineRow,
+        revokedRow({ platform: 'win32', unsandboxedOptIn: true }),
+        revokedRow({ id: 'm3', machineId: 'mach-c', name: 'Other PC', platform: 'win32', unsandboxedOptIn: true }),
+      ]);
+      expect(line).toMatch(/^npx\.cmd -y @commonlyai\/cli@latest daemon setup --instance \S+$/);
+    });
+
+    test('picking an OS in the block still switches the line, without the flag', async () => {
+      const line = await shownLine([machineRow, revokedRow({ platform: 'win32', unsandboxedOptIn: true })]);
+      expect(line).toMatch(/--unsandboxed$/);
+      fireEvent.click(screen.getByTestId('byo-add-computer-os-mac'));
+      expect(screen.getByTestId('byo-add-computer').querySelector('code').textContent)
+        .toMatch(/^npx -y @commonlyai\/cli@latest daemon setup --instance \S+$/);
+      fireEvent.click(screen.getByTestId('byo-add-computer-os-windows'));
+      expect(screen.getByTestId('byo-add-computer').querySelector('code').textContent)
+        .toMatch(/^npx\.cmd -y @commonlyai\/cli@latest daemon setup --instance \S+$/);
+    });
+
+    test('with no revoked computer the new-computer line is unchanged', async () => {
+      asWindowsBrowser();
+      mockGet({ machines: [] });
+      renderPage();
+      await waitFor(() => expect(axios.get).toHaveBeenCalledWith('/api/machines', expect.anything()));
+      const line = screen.getByTestId('byo-add-computer').querySelector('code').textContent;
+      expect(line).toMatch(/^npx\.cmd -y @commonlyai\/cli@latest daemon setup --instance \S+ --unsandboxed$/);
+    });
+  });
+
   test('without a revoke reason the other-ways fold stays closed as before', async () => {
     const other = { id: 'm2', machineId: 'mach-b', name: 'Old Mac', status: 'offline', agentStates: [] };
     mockGet({ machines: [machineRow, other] });
