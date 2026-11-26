@@ -44,7 +44,7 @@ import { describeTurnReap, markTurn, turnReapEnabled } from '@commonlyai/seats/t
 import { requireSeatModel, seatModelRequired } from './seat-model.js';
 import { meetsMinimumVersion, probeVersion, publicCodexVersionError } from './tested-version.js';
 import { spawn as childSpawn, spawnSync } from 'child_process';
-import { createHash } from 'crypto';
+import { createHash, randomBytes } from 'crypto';
 import {
   accessSync, constants, existsSync, readFileSync, readdirSync, realpathSync, statSync,
 } from 'fs';
@@ -80,13 +80,23 @@ import { brokerBridgeEntry } from './broker-bridge-entry.js';
 import { supportedGitHooks } from '../commit-attribution.js';
 import { WORKSPACE_GIT_SERVER_NAME, confinedWorkspaceGitServer, workspaceGitEnabled } from '../workspace-git.js';
 import { deliverSeatCredential, withholdRuntimeCredential } from '../mcp-credential-delivery.js';
-import { prepareMcpSpawn, publicMcpUnavailableError, selectedMcpVersionDir } from '../mcp-home.js';
+import {
+  prepareMcpSpawn, publicMcpUnavailableError, selectedMcpVersionDir, selectedMcpWithholdsTools,
+} from '../mcp-home.js';
+import { isShippedCommonlyMcpCommand } from '../declared-mcp-guard.js';
+import { describeMcpCommand } from '../mcp-server-version.js';
 import { BACKGROUND_PROCESS_CUE, buildMemoryPreamble, ROW_SLICING_CUE } from '../memory-bridge.js';
 import { resolveSkillSource, skillsAsText } from '../skill-prompt.js';
 import { isLegacySandboxTrust, normalizeSandboxTrust, refuseWorkspaceTrust } from '../environment.js';
 import { contains, realpathOfNearest, refuseWorkspaceHoldingTurnDirs } from '../sandbox/turn-dir.js';
 import { refuseCodeRunningGitSetup } from '../sandbox/workspace-git-config.js';
 import { codexTrustedPerimeter } from '../sandbox/codex-perimeter.js';
+import { resolveCodexSandboxMode } from '../sandbox/mode.js';
+import {
+  GUEST_CODEX, GUEST_HOME, GUEST_PATH, GUEST_WORKSPACE, buildMicrovmRunArgs, checkMicrovmAttach,
+  guestProxyBaseUrl, microvmSeatHome, msbHostEnv, prepareMicrovmHost, probeWhp, startMicrovmTurn,
+  writeMicrovmTurn,
+} from '../sandbox/microsandbox.js';
 import { adapterFailure, spawnCredentials } from '../upstream-refusal.js';
 import { publicSeatWithheldTools } from '../public-withheld-tools.js';
 import { startProviderProxy } from '../provider-proxy.js';
@@ -1431,10 +1441,287 @@ const readCodexVersion = async (ctx, env) => {
   return version;
 };
 
+// What the reply receipt reads from a turn's codex argv: the flags after
+// `exec` (or `exec resume <id>`), before the prompt.
+const codexControls = (args) => controlsFromArguments(
+  args.slice(args.indexOf('exec') + (args[args.indexOf('exec') + 1] === 'resume' ? 3 : 1), -1),
+  { modelFlag: '--model', valueFlags: ['-c', '-o', '--permission-profile'], codex: true },
+);
+
+// ── native Windows, opt-in: the turn inside a microVM ─────────────────────────
+//
+// sandbox/microsandbox.js holds the VM; docs/cli/microvm-sandbox.md says what
+// holds. Codex runs in the guest from the agents volume. Its provider key stays
+// in the host proxy, the Commonly MCP server and the seat's token stay on this
+// computer behind the bridge, and the fence opens exactly those two ports.
+
+// The guest's Codex home, on the seat HOME the host keeps between turns. Not
+// ~/.codex: the public profile denies that to the model's shell whole, and the
+// profile's arg0 helper lives inside the Codex home (preparePublicCodexHome).
+const GUEST_CODEX_HOME_NAME = 'codex-home';
+const GUEST_CODEX_HOME = `${GUEST_HOME}/${GUEST_CODEX_HOME_NAME}`;
+// Where codex writes the turn's last message, under a name drawn fresh each
+// turn, so a guest can't plant a link there for the host to read through.
+const GUEST_REPLIES_NAME = 'replies';
+// Beyond the profile's minimal set, the model's shell reads the helper folder
+// and the agents volume (Codex's own binary; mounted read-only, no secrets).
+const GUEST_CODEX_HELPER_READS = Object.freeze([`${GUEST_CODEX_HOME}/tmp/arg0-linux`, '/opt/agents']);
+
+// The key the host proxy holds. Codex's own name for an exec key first.
+const MICROVM_PROVIDER_KEY_ENVS = ['CODEX_API_KEY', 'OPENAI_API_KEY'];
+const microvmProviderKey = (source = {}) => {
+  const name = MICROVM_PROVIDER_KEY_ENVS.find((key) => envSet(source, key));
+  return name ? source[name].trim() : null;
+};
+
+const proxyPortOf = (proxy) => {
+  const port = Number(proxy?.port ?? new URL(proxy.baseURL).port);
+  return Number.isInteger(port) && port > 0 ? port : null;
+};
+
+/**
+ * The host-side MCP config for the bridge, in the shape startMicrovmTurn
+ * reads. The servers run on this computer, outside the VM and outside Codex's
+ * `disabled_tools`, so only our own server runs there, from a warm build that
+ * withholds the seat's tools itself. Anything else is refused, as claude.js
+ * refuses it: on the host it would run with the workspace writable.
+ */
+export const microvmHostMcpConfig = (servers, ctx = {}) => {
+  const mcpServers = {};
+  const unavailable = [];
+  for (const server of servers || []) {
+    if (!server?.name) continue;
+    const transport = typeof server.transport === 'string' ? server.transport.trim().toLowerCase() : 'stdio';
+    if (transport !== 'stdio' || !Array.isArray(server.command) || !server.command.length) {
+      throw new Error(`The microVM sandbox runs only the Commonly MCP server, over stdio, and ${server.name} `
+        + `is ${transport === 'stdio' ? 'declared without a command' : `a ${transport} server`}. `
+        + 'Remove it to run this seat in the microVM.');
+    }
+    const spawnCommand = prepareMcpSpawn(server.command, { apiUrl: ctx.instanceUrl, publicSeat: true });
+    if (!spawnCommand) {
+      unavailable.push(server.name);
+      continue;
+    }
+    if (!(isShippedCommonlyMcpCommand(server.command) || Boolean(describeMcpCommand(spawnCommand)?.isCommonly))) {
+      throw new Error(`The microVM sandbox runs only the Commonly MCP server, on this computer, and ${server.name} `
+        + 'is another server: it would run outside the VM. Remove it to run this seat in the microVM.');
+    }
+    if (!(ctx._withholdsTools || selectedMcpWithholdsTools)(spawnCommand)) {
+      throw new Error(`The Commonly MCP build this seat would run for ${server.name} does not withhold a public `
+        + "seat's tools itself, which the microVM sandbox needs; update @commonlyai/mcp.");
+    }
+    // The credential arrives as a file path (TASK-083), never a value.
+    const declaredEnv = deliverSeatCredential({ ...server, command: spawnCommand }, {
+      credentialFile: ctx.credentialFile,
+      label: 'codex',
+    }).env;
+    const [command, ...args] = resolveMcpCommand(
+      spawnCommand.map((arg) => substitutePlaceholders(arg, ctx)),
+      ctx.commandResolution,
+      { label: 'codex', name: server.name },
+    );
+    if (ctx.runtimeToken && [command, ...args].some((arg) => String(arg).includes(ctx.runtimeToken))) {
+      throw new Error(`MCP server ${server.name} wants the seat credential as a command argument, where every `
+        + "process on this computer could read it; declare it on the entry's env instead.");
+    }
+    mcpServers[server.name] = {
+      type: 'stdio',
+      command,
+      args,
+      env: Object.fromEntries(Object.entries(declaredEnv)
+        .map(([key, value]) => [key, substitutePlaceholders(value, ctx)])),
+    };
+  }
+  return { config: { mcpServers }, unavailable };
+};
+
+/**
+ * The guest Codex's MCP entries, as `-c mcp_servers.<name>.*` overrides (the
+ * keys of its config.toml; the seat's own config.toml is ignored, so a turn
+ * can't plant one for the next). Each runs the guest shim, which dials the
+ * bridge. Codex passes its MCP children none of its own environment (repo
+ * CLAUDE.md), so the env table carries the bridge address and the turn secret.
+ */
+export const microvmGuestMcpFlags = (mcpConfig, ctx = {}) => Object.entries(mcpConfig?.mcpServers || {})
+  .flatMap(([name, entry]) => [
+    '-c', `mcp_servers.${name}.command=${toml(entry.command)}`,
+    '-c', `mcp_servers.${name}.args=[${(entry.args || []).map(toml).join(',')}]`,
+    '-c', `mcp_servers.${name}.env={${Object.entries(entry.env || {}).map(([key, value]) => `${key} = ${toml(value)}`).join(', ')}}`,
+    '-c', `mcp_servers.${name}.default_tools_approval_mode="approve"`,
+    '-c', `mcp_servers.${name}.disabled_tools=[${publicSeatWithheldTools(ctx).map(toml).join(',')}]`,
+  ]);
+
+/** The guest Codex's whole environment: the proxy's per-turn token, never a key. */
+export const guestCodexEnv = ({ proxyToken }) => ({
+  HOME: GUEST_HOME,
+  PATH: GUEST_PATH,
+  LANG: 'C.UTF-8',
+  CODEX_HOME: GUEST_CODEX_HOME,
+  [CODEX_PROVIDER_TOKEN_ENV]: proxyToken,
+});
+
+// The host MCP servers' base environment: this computer's, less every
+// provider key and route name, with the seat token moved onto its file.
+const microvmServerBaseEnv = (source, credential) => {
+  const env = { ...source };
+  const drop = new Set([...CODEX_PROVIDER_KEY_ENVS, ...CODEX_OWN_AUTH_ENVS]);
+  for (const name of Object.keys(env)) {
+    if (drop.has(name.toUpperCase())) delete env[name];
+  }
+  return withholdRuntimeCredential(env, { credentialFile: credential?.path || null });
+};
+
+// The turn's reply, read from the seat HOME. Anything but a plain file there
+// (a link the guest made) is refused, never followed.
+const readMicrovmReply = async (path) => {
+  let info = null;
+  try {
+    info = await lstat(path);
+  } catch (err) {
+    if (err?.code === 'ENOENT') return '';
+    throw err;
+  }
+  if (!info.isFile()) throw adapterFailure('codex', 'the microVM turn left something other than a file for its reply');
+  return (await readFile(path, 'utf8')).trim();
+};
+
+const runMicrovmTurn = async ({
+  ctx, sandbox, sessionId, prompt, seatModel, credential, workspace,
+}) => {
+  const platform = ctx._platform || process.platform;
+  // Checked at every spawn, whatever attach saw: off Windows, without the flag
+  // or without WHP this refuses, and nothing falls through.
+  checkMicrovmAttach({ adapterName: 'codex', platform, probe: ctx._probeWhp || probeWhp });
+  for (const key of ['read-outside', 'write-outside']) {
+    if (sandbox?.filesystem?.[key]?.length) {
+      throw new Error(`Codex agents in the microVM sandbox do not allow sandbox.filesystem.${key}`);
+    }
+  }
+  // The workspace mounts read-only and the fence has no route to the web.
+  if (Array.isArray(sandbox?.allow) && sandbox.allow.length) {
+    throw new Error('Codex agents in the microVM sandbox run read-only, with no web access, for now; '
+      + 'remove sandbox.allow to run this seat in it.');
+  }
+  // The guest reaches the model only through the host proxy, so there is no
+  // login to carry in: a ChatGPT sign-in stays on this computer.
+  const source = ctx.env || process.env;
+  const key = microvmProviderKey(source);
+  if (!key) {
+    throw new Error('Codex agents in the microVM sandbox need CODEX_API_KEY (or OPENAI_API_KEY) in the agent\'s '
+      + 'environment; the key stays on this computer and the VM gets a per-turn proxy token. A ChatGPT '
+      + 'sign-in has no way into the VM.');
+  }
+  const baseURL = publicModelRouteBaseUrl(source) || OPENAI_DEFAULT_BASE_URL;
+  // Checked before anything is installed or started.
+  const hostMcp = microvmHostMcpConfig(ctx.environment?.mcp, {
+    runtimeToken: ctx.runtimeToken,
+    instanceUrl: ctx.instanceUrl,
+    credentialFile: credential?.path || null,
+    commandResolution: { env: source, ...ctx._commandResolution },
+    _withholdsTools: ctx._mcpWithholdsTools,
+  });
+  if (hostMcp.unavailable.length) throw publicMcpUnavailableError(hostMcp.unavailable);
+
+  // Its own HOME per seat, apart from a Claude seat of the same name.
+  const home = ctx._microvmHome || microvmSeatHome(`codex:${codexHomeIdentity(ctx)}`, 'public');
+  const codexHome = join(home, GUEST_CODEX_HOME_NAME);
+  const replies = join(home, GUEST_REPLIES_NAME);
+  const replyName = `${randomBytes(16).toString('hex')}.txt`;
+  let providerProxy = null;
+  let turn = null;
+  try {
+    const host = await (ctx._prepareMicrovmHost || prepareMicrovmHost)({
+      agent: 'codex',
+      log: (text) => process.stderr.write(`[codex] ${text}\n`),
+    });
+    providerProxy = await (ctx._startProviderProxy || startProviderProxy)({
+      provider: { baseURL },
+      keyMaterial: key,
+      wire: 'openai-responses',
+      adapterLabel: 'Codex',
+    });
+    await mkdir(join(codexHome, 'tmp', 'arg0-linux'), { recursive: true, mode: 0o700 });
+    await mkdir(replies, { recursive: true, mode: 0o700 });
+    // The seat's skills, rewritten every turn (and any override removed), so
+    // nothing a turn leaves in its home stands in for them on the next.
+    await writePublicCodexInstructions(codexHome, ctx);
+    const baseEnv = microvmServerBaseEnv(source, credential);
+    turn = await (ctx._startMicrovmTurn || startMicrovmTurn)({
+      proxyPort: proxyPortOf(providerProxy),
+      hostMcpConfig: hostMcp.config,
+      vars: baseEnv,
+      baseEnv,
+      cwd: workspace || ctx.cwd,
+      serverEnv: { COMMONLY_MCP_WITHHELD_TOOLS: publicSeatWithheldTools(ctx).join(',') },
+    });
+    if (!turn?.turnDir) {
+      throw new Error('public Codex agents in the microVM sandbox need a prepared microVM; refusing to run Codex outside it');
+    }
+    // Inside the VM, Codex keeps the public permission profile, read-only:
+    // the VM is the fence, and the profile keeps the model's shell off the
+    // seat's home and the turn folder.
+    const guestArgs = buildArgs({
+      sessionId,
+      prompt,
+      outputFile: `${GUEST_HOME}/${GUEST_REPLIES_NAME}/${replyName}`,
+      mcpFlags: microvmGuestMcpFlags(turn.mcpConfig, ctx),
+      publicSandboxMode: 'read-only',
+      model: seatModel,
+      effort: ctx.environment?.effort,
+      codexHelperReadPaths: GUEST_CODEX_HELPER_READS,
+      providerProxy: { baseURL: guestProxyBaseUrl(providerProxy.baseURL) },
+      platform: 'linux',
+      workspacePath: GUEST_WORKSPACE,
+    });
+    await writeMicrovmTurn(turn.turnDir, {
+      argv: [GUEST_CODEX, ...guestArgs],
+      env: guestCodexEnv({ proxyToken: providerProxy.token }),
+      mcpConfig: turn.mcpConfig,
+    });
+    if (ctx.signal?.aborted) {
+      throw ctx.signal.reason || new Error('codex spawn cancelled before the process started');
+    }
+    const ran = await runCodex({
+      command: host.msb,
+      args: buildMicrovmRunArgs({
+        ports: turn.ports, turnDir: turn.turnDir, workspace: workspace || ctx.cwd, home,
+      }),
+      cwd: ctx.cwd,
+      env: msbHostEnv(source),
+      timeoutMs: ctx.timeoutMs || DEFAULT_TIMEOUT_MS,
+      credentials: [...spawnCredentials(ctx, CODEX_PROVIDER_KEY_ENVS), key, providerProxy.token].filter(Boolean),
+      spawnImpl: ctx._spawnImpl || childSpawn,
+      onSpawn: ctx.onSpawn,
+      controls: codexControls(guestArgs),
+      ownGroup: wantsOwnProcessGroup(ctx),
+      turnReap: ctx._turnReap,
+      confined: true,
+    });
+    const text = await readMicrovmReply(join(replies, replyName));
+    if (!ran.turnCompleted && !text) throw adapterFailure('codex', 'the turn stopped before it finished');
+    const newSessionId = ran.threadId || sessionId || null;
+    const contextTokens = newSessionId
+      ? (ctx._codexContextTokens || codexContextTokens)({ codexHome, sessionId: newSessionId })
+      : null;
+    const effort = ctx.environment?.effort;
+    const stats = {
+      ...(seatModel ? { model: String(seatModel) } : {}),
+      ...(typeof effort === 'string' && effort ? { effort } : {}),
+    };
+    return {
+      text, newSessionId, contextTokens, ...(Object.keys(stats).length ? { stats } : {}),
+    };
+  } finally {
+    await rm(join(replies, replyName), { force: true }).catch(() => {});
+    try { await turn?.close?.(); } catch { /* ignore */ }
+    try { await providerProxy?.close(); } catch { /* ignore */ }
+  }
+};
+
 // `ownGroup`: see runClaude in claude.js.
 const runCodex = ({
   args, cwd, env, timeoutMs, credentials = [], spawnImpl = childSpawn, onSpawn, controls = {}, ownGroup = false,
-  turnReap = turnReapEnabled(), commandResolution = {}, confined = false,
+  turnReap = turnReapEnabled(), commandResolution = {}, confined = false, command = null,
 }) => new Promise((resolve, reject) => {  // stdio: ['ignore', 'pipe', 'pipe'] — without this, child_process.spawn
   // defaults stdin to a fresh pipe. Codex 0.125.0's `exec` then blocks on
   // `Reading additional input from stdin...` because it sees an open pipe
@@ -1448,7 +1735,10 @@ const runCodex = ({
   // On Windows `npm i -g @openai/codex` leaves a `codex.cmd`; it is read and
   // its target spawned directly, never through cmd.exe, because the prompt is
   // the last argv element and is pod content (#2141). Identity elsewhere.
-  const launch = resolveLaunch('codex', args, { env: turn.env, ...commandResolution });
+  // `command`: the microVM turn runs msb.exe by its full path, never a codex.
+  const launch = command
+    ? { command, args }
+    : resolveLaunch('codex', args, { env: turn.env, ...commandResolution });
   const proc = spawnInOwnGroup(spawnImpl, launch.command, launch.args, { cwd, env: turn.env, stdio: ['ignore', 'pipe', 'pipe'] }, { ownGroup });
   observeSpawn(proc, onSpawn, controls);
   let stderr = '';
@@ -1590,13 +1880,20 @@ export default {
       memoryReadOnly: sandbox?.trust === 'public' && ctx.ownerWoken !== true,
     });
 
+    // Native Windows, opt-in: a public seat runs inside a microVM
+    // (sandbox/microsandbox.js, docs/cli/microvm-sandbox.md), whatever access
+    // it declared. Resolved here and checked again inside, at every spawn.
+    const microvmSandbox = sandbox?.trust === 'public'
+      && resolveCodexSandboxMode(sandbox, ctx._platform || process.platform) === 'microvm';
     const workspacePath = sandbox?.trust === 'public'
       ? await refuseWorkspaceHoldingTurnDirs({ workspace: ctx.cwd, seat: 'public Codex agents' })
       : null;
     // Codex runs git in the workspace outside the seat's profile, so a
     // repository set up to run programs is refused before anything starts
-    // (sandbox/workspace-git-config.js).
-    if (workspacePath) {
+    // (sandbox/workspace-git-config.js). In the microVM Codex and its git run
+    // in the guest, over a read-only mount, so nothing in the repository runs
+    // on this computer and the check does not apply.
+    if (workspacePath && !microvmSandbox) {
       (ctx._refuseCodeRunningGitSetup || refuseCodeRunningGitSetup)(workspacePath, {
         seat: 'This public Codex agent', env: ctx.env || process.env,
       });
@@ -1619,6 +1916,13 @@ export default {
     const readyFiles = [];
     let credentialRelease = null;
     try {
+      // The whole microVM turn, or a refusal: it never falls through to a
+      // spawn on this computer, nor to Codex's own Windows sandbox.
+      if (microvmSandbox) {
+        return await runMicrovmTurn({
+          ctx, sandbox, sessionId, prompt: fullPrompt, seatModel, credential, workspace: workspacePath,
+        });
+      }
       // A public seat can't run git from its shell on macOS: Homebrew's git is
       // outside the profile and /usr/bin/git is an xcrun shim that fails there.
       // So it reads its workspace's history through the read-only git tool a
@@ -1862,7 +2166,7 @@ export default {
         // nothing left to compare a tail against.
         // The per-turn proxy token is one too: codex was handed it in place of the key.
         credentials: [...spawnCredentials(ctx, CODEX_PROVIDER_KEY_ENVS), route?.key, providerProxy?.token].filter(Boolean),
-        spawnImpl, onSpawn: ctx.onSpawn, controls: controlsFromArguments(args.slice(args.indexOf('exec') + (args[args.indexOf('exec') + 1] === 'resume' ? 3 : 1), -1), { modelFlag: '--model', valueFlags: ['-c', '-o', '--permission-profile'], codex: true }), // test seam only — do not use in production
+        spawnImpl, onSpawn: ctx.onSpawn, controls: codexControls(args), // test seam only — do not use in production
         ownGroup: wantsOwnProcessGroup(ctx),
         turnReap: ctx._turnReap,
         // A public seat keeps nothing a turn leaves running, whatever the turn

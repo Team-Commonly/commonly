@@ -118,7 +118,7 @@ import { claimReleaseFor, ackResultFor, EMPTY_OUTPUT } from '../lib/claim-outcom
 import { createClaimedWorkGate } from '../lib/claimed-work-gate.js';
 import { prepareCommitAttribution } from '../lib/commit-attribution.js';
 import { detectBwrap } from '../lib/sandbox/bwrap.js';
-import { resolvePublicSandboxMode } from '../lib/sandbox/mode.js';
+import { resolveCodexSandboxMode, resolvePublicSandboxMode } from '../lib/sandbox/mode.js';
 import { checkMicrovmAttach, probeWhp as defaultProbeWhp } from '../lib/sandbox/microsandbox.js';
 import {
   CODEX_OPTED_IN_PUBLIC_POD_MESSAGE, UNSANDBOXED_FLAG, bwrapRefusedMessage, hostSandboxRefusal, windowsSandboxMessage,
@@ -1497,6 +1497,13 @@ export const resolveAttachSandbox = ({
   // Both confined trusts take their mode from the host the same way; they
   // differ in what the policy inside the sandbox allows, not in the sandbox.
   const confined = trust === 'public' || trust === 'workspace';
+  // A public Codex seat on native Windows with the microVM opt-in runs in the
+  // VM whatever access it declared (mode.js resolveCodexSandboxMode), so its
+  // attach takes the microvm branch, never the Codex-profile one.
+  if (adapterName === 'codex' && trust === 'public'
+    && resolveCodexSandboxMode(sandbox, platform) === 'microvm') {
+    return { mode: 'microvm', trust };
+  }
   const mode = sandbox?.mode
     || (confined ? resolvePublicSandboxMode(sandbox, platform) : 'none');
   if (confined && mode === 'none') {
@@ -1593,7 +1600,7 @@ export const performAttach = async ({
       // that don't offer the flag. A seat with no sandbox block still needs the
       // person's opt-in at `agent run`.
       const codexRefusal = hostSandboxRefusal({
-        environment, adapterName, platform, hostUnconfined: true, optedIn: true, detectBwrap: probeBwrap,
+        environment, adapterName, platform, hostUnconfined: true, optedIn: true, detectBwrap: probeBwrap, detectWhp: probeWhp,
       });
       if (codexRefusal) throw new Error(codexRefusal);
     }
@@ -1667,7 +1674,7 @@ export const performAttach = async ({
       }
     } else if (sandboxMode === 'microvm') {
       // Host-resolved on native Windows with COMMONLY_SANDBOX_MICROVM=1, never
-      // stored: claude only, and only where WHP is on.
+      // stored: claude and codex only, and only where WHP is on.
       checkMicrovmAttach({ adapterName, platform, probe: probeWhp });
       log('sandbox: microVM via microsandbox (network fenced to the model proxy and the MCP bridge)');
     } else if (sandboxMode !== 'none' && sandboxMode !== undefined) {

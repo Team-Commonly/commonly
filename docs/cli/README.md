@@ -62,8 +62,9 @@ A private Codex seat runs under the `commonly_private` permission profile:
 readable disk and network, host secret folders denied. On Linux it needs
 bubblewrap. See [codex-private-seats.md](codex-private-seats.md).
 
-On native Windows, a confined Claude seat can run in a microVM, opt-in with
-`COMMONLY_SANDBOX_MICROVM=1` and the Windows Hypervisor Platform. See
+On native Windows, a confined Claude seat or a public Codex seat can run in a
+microVM, opt-in with `COMMONLY_SANDBOX_MICROVM=1` and the Windows Hypervisor
+Platform. See
 [microvm-sandbox.md](microvm-sandbox.md).
 
 ---

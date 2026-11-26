@@ -71,6 +71,11 @@ export const GUEST_VOLUME = 'commonly-agents';
 export const GUEST_VOLUME_SPEC = `${GUEST_VOLUME}:/opt/agents:kind=disk,size=4G`;
 export const GUEST_VOLUME_TURN_SPEC = `${GUEST_VOLUME_SPEC},ro`;
 export const GUEST_CLAUDE = '/opt/agents/bin/claude';
+// Codex beside it on the same volume, from its own npm package (the musl Linux
+// binary rides in as an optional dependency). The spike ran this version in
+// the guest, through the provider proxy, with only DNS and two ports open.
+export const GUEST_CODEX_VERSION = '0.172.0';
+export const GUEST_CODEX = '/opt/agents/bin/codex';
 export const GUEST_HOST = 'host.microsandbox.internal';
 export const GUEST_TURN_DIR = '/run/commonly';
 export const GUEST_WORKSPACE = '/workspace';
@@ -159,6 +164,9 @@ export const probeWhp = ({ platform = process.platform, run = spawnSync, env = p
   return parseWhpProbe(result?.stdout);
 };
 
+// The adapters that run a turn inside the VM. Every other one refuses the mode.
+export const MICROVM_ADAPTERS = new Set(['claude', 'codex']);
+
 /**
  * Attach-time check for `sandbox.mode=microvm`. Throws the reason a person can
  * act on; returns nothing when the mode can run here.
@@ -170,8 +178,9 @@ export const checkMicrovmAttach = ({
   if (!microvmFlagOn(env)) {
     throw new Error(`sandbox.mode=microvm is opt-in: set ${MICROVM_FLAG_ENV}=1 in the environment that runs this CLI.`);
   }
-  if (adapterName !== 'claude') {
-    throw new Error(`sandbox.mode=microvm supports only the claude adapter for now, not ${adapterName || 'this one'}.`);
+  if (!MICROVM_ADAPTERS.has(adapterName)) {
+    throw new Error('sandbox.mode=microvm supports only the claude adapter and the codex adapter for now, '
+      + `not ${adapterName || 'this one'}.`);
   }
   const whp = probe({ platform, env });
   if (!whp.available) {
@@ -277,39 +286,59 @@ export const ensureMsb = async ({
 
 // ── the agent install volume ────────────────────────────────────────────────
 
+// The agents a turn can run, each installed once onto the volume from npm at
+// its pinned version. Both share the volume's npm prefix, so installing one
+// leaves the other in place.
+export const GUEST_AGENTS = Object.freeze({
+  claude: Object.freeze({
+    label: 'Claude Code', pkg: '@anthropic-ai/claude-code', version: GUEST_CLAUDE_VERSION, bin: GUEST_CLAUDE,
+  }),
+  codex: Object.freeze({
+    label: 'Codex', pkg: '@openai/codex', version: GUEST_CODEX_VERSION, bin: GUEST_CODEX,
+  }),
+});
+
 /**
- * Claude Code inside the guest, on the named disk volume, at the pinned
- * version. The install sandbox has microsandbox's default network (the public
- * internet, nothing on the host) and no secrets; every turn after runs fenced.
+ * An agent inside the guest, on the named disk volume, at its pinned version.
+ * The install sandbox has microsandbox's default network (the public internet,
+ * nothing on the host) and no secrets; every turn after runs fenced.
  */
-export const ensureGuestClaude = ({
-  msb, root = microsandboxRoot(), run = spawnSync, log = () => {},
+export const ensureGuestAgent = ({
+  agent = 'claude', msb, root = microsandboxRoot(), run = spawnSync, log = () => {},
 }) => {
+  const spec = GUEST_AGENTS[agent];
+  if (!spec) throw new Error(`the microVM sandbox has no guest install for ${agent}`);
   // The volume outlives this CLI's folder only if someone removes the folder,
   // so a marker beside msb says the install already passed once.
-  const marker = join(root, `.guest-claude-${GUEST_CLAUDE_VERSION}`);
+  const marker = join(root, `.guest-${agent}-${spec.version}`);
   if (existsSync(marker)) return { installed: false };
   const runGuest = (command, timeout) => run(msb, [
     'run', '--mount-named', GUEST_VOLUME_SPEC, GUEST_IMAGE, '--', 'sh', '-c', command,
   ], { encoding: 'utf8', timeout, windowsHide: true });
-  const probe = runGuest(`${GUEST_CLAUDE} --version 2>/dev/null || true`, 180000);
-  if (String(probe?.stdout || '').includes(GUEST_CLAUDE_VERSION)) {
+  const probe = runGuest(`${spec.bin} --version 2>/dev/null || true`, 180000);
+  if (String(probe?.stdout || '').includes(spec.version)) {
     writeFileSync(marker, `${GUEST_IMAGE}\n`);
     return { installed: false };
   }
-  log(`microvm: installing Claude Code ${GUEST_CLAUDE_VERSION} into the ${GUEST_VOLUME} volume (once)`);
+  log(`microvm: installing ${spec.label} ${spec.version} into the ${GUEST_VOLUME} volume (once)`);
   const install = runGuest(
-    `npm --prefix /opt/agents i -g --no-fund --no-audit @anthropic-ai/claude-code@${GUEST_CLAUDE_VERSION} >/tmp/npm.log 2>&1`
-      + ` && ${GUEST_CLAUDE} --version || (tail -20 /tmp/npm.log; exit 1)`,
+    `npm --prefix /opt/agents i -g --no-fund --no-audit ${spec.pkg}@${spec.version} >/tmp/npm.log 2>&1`
+      + ` && ${spec.bin} --version || (tail -20 /tmp/npm.log; exit 1)`,
     600000,
   );
-  if (install?.error || install?.status !== 0 || !String(install?.stdout || '').includes(GUEST_CLAUDE_VERSION)) {
-    throw new Error(`installing Claude Code into the microVM volume failed: ${install?.error?.message
+  if (install?.error || install?.status !== 0 || !String(install?.stdout || '').includes(spec.version)) {
+    throw new Error(`installing ${spec.label} into the microVM volume failed: ${install?.error?.message
       || String(install?.stdout || install?.stderr || '').trim().slice(-600) || `exit ${install?.status}`}`);
   }
   writeFileSync(marker, `${GUEST_IMAGE}\n`);
   return { installed: true };
 };
+
+/** Claude Code on the volume (ensureGuestAgent for claude). */
+export const ensureGuestClaude = (options) => ensureGuestAgent({ ...options, agent: 'claude' });
+
+/** Codex on the volume (ensureGuestAgent for codex). */
+export const ensureGuestCodex = (options) => ensureGuestAgent({ ...options, agent: 'codex' });
 
 // ── one turn ────────────────────────────────────────────────────────────────
 
@@ -568,10 +597,14 @@ export const withInstallLock = async (root, fn, {
   }
 };
 
-/** msb and the guest's Claude, ready to run a turn. */
-export const prepareMicrovmHost = async ({ log, root = microsandboxRoot() } = {}) => withInstallLock(root, async () => {
+/** msb and the guest's agent (Claude unless named), ready to run a turn. */
+export const prepareMicrovmHost = async ({
+  log, root = microsandboxRoot(), agent = 'claude',
+} = {}) => withInstallLock(root, async () => {
   const msb = await ensureMsb({ root });
-  ensureGuestClaude({ msb, root, log });
+  ensureGuestAgent({
+    agent, msb, root, log,
+  });
   return { msb };
 });
 
@@ -595,7 +628,9 @@ export default {
   buildMicrovmFence,
   buildMicrovmRunArgs,
   checkMicrovmAttach,
+  ensureGuestAgent,
   ensureGuestClaude,
+  ensureGuestCodex,
   ensureMsb,
   microvmFlagOn,
   probeWhp,

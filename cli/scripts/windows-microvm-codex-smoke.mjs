@@ -1,0 +1,269 @@
+/**
+ * windows-microvm-codex-smoke.mjs: one public Codex turn, end to end, inside
+ * the opt-in microVM sandbox, on a Windows host with WHP, through the codex
+ * adapter's own spawn (adapters/codex.js) and the CLI's real provider proxy.
+ *
+ * Run by .github/workflows/cli-microsandbox-windows.yml after the Claude
+ * smoke. Every credential here is fake; the "model" is a stub on the runner's
+ * loopback that answers on the OpenAI Responses wire and echoes the bearer it
+ * received, so the reply shows whether the proxy kept the key out of the VM.
+ *
+ * Steps (each fails loudly with its own name):
+ *   1. WHP is on.
+ *   2. msb, pinned and checksum-verified.
+ *   3. The pinned Codex on the agents volume.
+ *   4. A Codex turn: the adapter boots the VM, Codex answers through the proxy,
+ *      the stub sees the host key, and neither the guest's turn files nor the
+ *      reply carry it.
+ *   5. The same fence, probed from inside: the public internet and a
+ *      loopback-only host service are unreachable, the fenced port is
+ *      reachable, and the workspace and agents volume refuse writes.
+ */
+import { spawn } from 'child_process';
+import {
+  mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync,
+} from 'fs';
+import http from 'http';
+import { tmpdir } from 'os';
+import { join } from 'path';
+
+import {
+  GUEST_CODEX, GUEST_CODEX_VERSION, GUEST_HOST, GUEST_TURN_DIR, MICROVM_FLAG_ENV, ensureGuestCodex, ensureMsb,
+  msbHostEnv, prepareMicrovmHost, probeWhp, writeMicrovmTurn,
+} from '../src/lib/sandbox/microsandbox.js';
+
+const codex = (await import('../src/lib/adapters/codex.js')).default;
+
+const FAKE_UPSTREAM_KEY = 'sk-test-fake-ci-upstream-key-0001';
+const FAKE_SEAT_TOKEN = 'cm_agent_test_fake_ci_seat_token';
+
+let currentStep = '';
+const step = (text) => { currentStep = text; console.log(`\n== ${text}`); };
+const failures = [];
+const fail = (text) => { failures.push(`[${currentStep}] ${text}`); console.error(`FAIL [${currentStep}]: ${text}`); };
+
+const listen = (handler) => new Promise((resolve) => {
+  const server = http.createServer(handler);
+  server.listen(0, '127.0.0.1', () => resolve(server));
+});
+const listenOn = (port, body) => new Promise((resolve, reject) => {
+  const server = http.createServer((req, res) => { res.writeHead(200); res.end(body); });
+  server.once('error', reject);
+  server.listen(port, '127.0.0.1', () => resolve(server));
+});
+
+// The stub model: the Responses wire (from scripts/spikes/sandbox-front.mjs),
+// echoing the bearer it was sent.
+const upstreamRequests = [];
+const stubUpstream = (req, res) => {
+  let raw = '';
+  req.on('data', (chunk) => { raw += chunk; });
+  req.on('end', () => {
+    const bearer = String(req.headers.authorization || '').replace(/^Bearer /, '');
+    const path = req.url.split('?')[0];
+    upstreamRequests.push({ method: req.method, path, bearerIsKey: bearer === FAKE_UPSTREAM_KEY });
+    if (req.method === 'GET' && path.endsWith('/models')) {
+      res.writeHead(200, { 'content-type': 'application/json' });
+      res.end(JSON.stringify({ data: [{ id: 'spike-model', object: 'model' }], models: [] }));
+      return;
+    }
+    if (path.endsWith('/responses')) {
+      let body = {};
+      try { body = JSON.parse(raw || '{}'); } catch { /* not json */ }
+      const text = `OK from the stub model. key-echo=${bearer}`;
+      const item = {
+        type: 'message', id: 'msg_ci', role: 'assistant', status: 'completed', content: [{ type: 'output_text', text, annotations: [] }],
+      };
+      const usage = {
+        input_tokens: 12, input_tokens_details: { cached_tokens: 0 }, output_tokens: 8, output_tokens_details: { reasoning_tokens: 0 }, total_tokens: 20,
+      };
+      const response = {
+        id: 'resp_ci', object: 'response', model: body.model || 'spike-model', status: 'in_progress', output: [],
+      };
+      res.writeHead(200, { 'content-type': 'text/event-stream', 'cache-control': 'no-cache' });
+      for (const [event, data] of [
+        ['response.created', { type: 'response.created', response }],
+        ['response.output_item.added', {
+          type: 'response.output_item.added', output_index: 0, item: { ...item, status: 'in_progress', content: [] },
+        }],
+        ['response.output_text.delta', {
+          type: 'response.output_text.delta', item_id: 'msg_ci', output_index: 0, content_index: 0, delta: text,
+        }],
+        ['response.output_item.done', { type: 'response.output_item.done', output_index: 0, item }],
+        ['response.completed', { type: 'response.completed', response: { ...response, status: 'completed', output: [item], usage } }],
+      ]) res.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
+      res.end();
+      return;
+    }
+    res.writeHead(404, { 'content-type': 'application/json' });
+    res.end(JSON.stringify({ error: 'stub: no route' }));
+  });
+};
+
+// Runs in the guest behind the codex turn's own fence. Reports outcomes only.
+const GUEST_PROBE = `'use strict';
+const http = require('http');
+const https = require('https');
+const { spawnSync } = require('child_process');
+const { writeFileSync } = require('fs');
+const get = (mod, url) => new Promise((resolve) => {
+  const req = mod.get(url, { timeout: 5000 }, (res) => { let b = ''; res.on('data', (c) => { b += c; }); res.on('end', () => resolve('status ' + res.statusCode + ' ' + b.slice(0, 40))); });
+  req.on('timeout', () => { req.destroy(); resolve('blocked (timeout)'); });
+  req.on('error', (e) => resolve('blocked (' + e.code + ')'));
+});
+const tryWrite = (path) => { try { writeFileSync(path, 'x'); return 'written'; } catch (e) { return 'refused (' + e.code + ')'; } };
+(async () => {
+  const report = {};
+  report.fencedPort = await get(http, 'http://${GUEST_HOST}:' + process.argv[2] + '/');
+  report.otherHostPort = await get(http, 'http://${GUEST_HOST}:' + process.argv[3] + '/');
+  report.publicHttps = await get(https, 'https://example.com/');
+  report.publicHttp = await get(http, 'http://example.com/');
+  report.workspaceWrite = tryWrite('/workspace/should-not-exist');
+  report.agentsVolumeWrite = tryWrite('/opt/agents/bin/planted');
+  const codex = spawnSync('${GUEST_CODEX}', ['--version'], { encoding: 'utf8' });
+  report.codex = String(codex.stdout || codex.error?.code || '').trim();
+  console.log('PROBE ' + JSON.stringify(report));
+})();
+`;
+
+const runMsb = (msb, args) => new Promise((resolve, reject) => {
+  const child = spawn(msb, args, { env: msbHostEnv(process.env), windowsHide: true });
+  let stdout = '';
+  child.stdout.on('data', (c) => { stdout += c; });
+  child.stderr.on('data', (c) => process.stderr.write(c));
+  child.on('error', reject);
+  child.on('close', (code) => resolve({ code, stdout }));
+});
+
+const main = async () => {
+  if (process.env[MICROVM_FLAG_ENV] !== '1') throw new Error(`${MICROVM_FLAG_ENV}=1 must be set for this smoke`);
+
+  step('1. WHP');
+  const whp = probeWhp();
+  console.log(JSON.stringify(whp));
+  if (!whp.available) throw new Error(`this runner has no WHP: ${whp.error}`);
+
+  step('2. msb, pinned and checksum-verified');
+  const root = mkdtempSync(join(tmpdir(), 'commonly-msb-codex-'));
+  const msb = await ensureMsb({ root });
+  console.log(msb);
+
+  step(`3. Codex ${GUEST_CODEX_VERSION} on the agents volume`);
+  console.log(JSON.stringify(ensureGuestCodex({ msb, root, log: console.log })));
+
+  const scratch = mkdtempSync(join(tmpdir(), 'commonly-cmv-smoke-'));
+  const workspace = join(scratch, 'workspace');
+  const home = join(scratch, 'home');
+  mkdirSync(join(workspace, '.git', 'hooks'), { recursive: true });
+  mkdirSync(home);
+  const upstream = await listen(stubUpstream);
+  const other = await listen((req, res) => { res.writeHead(200); res.end('loopback-only-service'); });
+  let captured = null;
+  try {
+    step('4. a public Codex turn through the codex adapter, inside the microVM');
+    const started = Date.now();
+    // A failed turn is recorded, and the fence it was given is still probed.
+    const result = await codex.spawn('Reply with OK.', {
+      agentName: 'ci-codex-microvm',
+      sessionId: null,
+      cwd: workspace,
+      runtimeToken: FAKE_SEAT_TOKEN,
+      instanceUrl: 'http://127.0.0.1:9',
+      timeoutMs: 5 * 60 * 1000,
+      env: {
+        ...process.env,
+        CODEX_API_KEY: FAKE_UPSTREAM_KEY,
+        OPENAI_BASE_URL: `http://127.0.0.1:${upstream.address().port}/v1`,
+      },
+      environment: { model: 'spike-model', sandbox: { trust: 'public' }, mcp: [] },
+      _microvmHome: home,
+      // The adapter's own preparation, on this smoke's msb folder.
+      _prepareMicrovmHost: (options) => prepareMicrovmHost({ ...options, root }),
+      // Records what the adapter handed msb, and the guest's turn files while
+      // they exist, then runs it for real.
+      _spawnImpl: (cmd, args, opts) => {
+        const mount = args.find((a) => a.endsWith(`:${GUEST_TURN_DIR}:ro`));
+        const turnDir = mount.slice(0, mount.length - `:${GUEST_TURN_DIR}:ro`.length);
+        captured = {
+          cmd,
+          args: [...args],
+          env: opts.env,
+          turnFiles: readdirSync(turnDir).map((name) => readFileSync(join(turnDir, name), 'utf8')).join('\n'),
+          mount,
+        };
+        console.log(`msb ${args.join(' ')}`);
+        return spawn(cmd, args, opts);
+      },
+    }).catch((error) => {
+      fail(`the turn failed: ${error?.message || error}`);
+      return { text: '', newSessionId: null };
+    });
+    console.log(`turn finished after ${((Date.now() - started) / 1000).toFixed(1)} s`);
+    console.log(JSON.stringify({ text: result.text, newSessionId: result.newSessionId }));
+    console.log(`upstream saw: ${JSON.stringify(upstreamRequests)}`);
+
+    if (!captured) fail('the adapter never spawned msb');
+    else {
+      if (captured.cmd !== msb) fail(`the adapter spawned ${captured.cmd}, not the pinned msb`);
+      const ruleArg = captured.args[captured.args.indexOf('--net-rule') + 1] || '';
+      if (captured.args[captured.args.indexOf('--net-rule') - 1] !== '--no-net') fail('--no-net does not precede the net rules');
+      if (ruleArg.split(',').some((rule) => rule !== 'allow@dns' && !/^allow@host:tcp:\d+$/.test(rule))) fail(`a rule other than DNS or an exact host port: ${ruleArg}`);
+      if (!captured.turnFiles.includes(GUEST_CODEX)) fail('the guest argv does not run the pinned Codex');
+      const exposed = [captured.args.join(' '), JSON.stringify(captured.env), captured.turnFiles].join('\n');
+      if (exposed.includes(FAKE_UPSTREAM_KEY)) fail('the provider key reached msb or the guest turn files');
+      if (exposed.includes(FAKE_SEAT_TOKEN)) fail('the seat token reached msb or the guest turn files');
+    }
+    if (!String(result.text).includes('OK from the stub model')) fail(`Codex did not answer through the proxy: ${JSON.stringify(result.text)}`);
+    if (String(result.text).includes(FAKE_UPSTREAM_KEY)) fail('the reply carries the host key: the proxy let it into the VM');
+    if (!upstreamRequests.some((r) => r.method === 'POST' && r.path.endsWith('/responses') && r.bearerIsKey)) {
+      fail('the stub never received a Responses call carrying the host key from the proxy');
+    }
+    if (upstreamRequests.some((r) => !r.bearerIsKey)) fail('a request reached the stub without the host key (sent around the proxy)');
+    if (!result.newSessionId) fail('the turn reported no thread id');
+
+    step('5. the same fence, probed from inside the guest');
+    if (!captured) throw new Error('no fence to probe: step 4 never spawned msb');
+    const rules = captured.args[captured.args.indexOf('--net-rule') + 1].split(',');
+    const fencedPorts = rules.filter((rule) => rule.startsWith('allow@host:tcp:')).map((rule) => Number(rule.split(':').pop()));
+    if (fencedPorts.length !== 1) fail(`a turn with no MCP server should open exactly one host port (the proxy), got ${fencedPorts.join(', ')}`);
+    // The proxy closed with the turn; a stand-in takes its port as the positive control.
+    const standIn = await listenOn(fencedPorts[0], 'fenced-port-ok');
+    const probeDir = mkdtempSync(join(tmpdir(), 'commonly-cmv-probe-'));
+    try {
+      await writeMicrovmTurn(probeDir, {
+        argv: ['node', `${GUEST_TURN_DIR}/probe.js`, String(fencedPorts[0]), String(other.address().port)],
+        env: { HOME: '/home/seat', PATH: '/opt/agents/bin:/usr/local/bin:/usr/bin:/bin' },
+      });
+      writeFileSync(join(probeDir, 'probe.js'), GUEST_PROBE);
+      const args = captured.args.map((arg) => (arg === captured.mount ? `${probeDir}:${GUEST_TURN_DIR}:ro` : arg));
+      const out = await runMsb(msb, args);
+      console.log(`probe exit ${out.code}`);
+      const line = out.stdout.split(/\r?\n/).find((l) => l.startsWith('PROBE '));
+      if (!line) throw new Error(`no probe report:\n${out.stdout}`);
+      const report = JSON.parse(line.slice('PROBE '.length));
+      console.log(JSON.stringify(report, null, 2));
+      if (!report.fencedPort.startsWith('status 200 fenced-port-ok')) fail(`the fenced port was not reachable: ${report.fencedPort}`);
+      if (!report.otherHostPort.startsWith('blocked')) fail(`a non-allowed host port was reachable: ${report.otherHostPort}`);
+      if (!report.publicHttps.startsWith('blocked')) fail(`the public internet (https) was reachable: ${report.publicHttps}`);
+      if (!report.publicHttp.startsWith('blocked')) fail(`the public internet (http) was reachable: ${report.publicHttp}`);
+      if (!report.workspaceWrite.startsWith('refused')) fail(`the read-only workspace took a write: ${report.workspaceWrite}`);
+      if (!report.agentsVolumeWrite.startsWith('refused')) fail(`a turn could write the agents volume: ${report.agentsVolumeWrite}`);
+      if (!report.codex.includes(GUEST_CODEX_VERSION)) fail(`Codex ${GUEST_CODEX_VERSION} is not on the volume: ${report.codex}`);
+    } finally {
+      standIn.close();
+      rmSync(probeDir, { recursive: true, force: true });
+    }
+  } finally {
+    upstream.close();
+    other.close();
+    rmSync(scratch, { recursive: true, force: true });
+  }
+  if (failures.length) {
+    console.error(`\n${failures.length} check(s) failed:\n${failures.join('\n')}`);
+    process.exitCode = 1;
+  } else {
+    console.log('\nOK: a public Codex turn ran inside the microVM, and the fence held');
+  }
+};
+
+main().catch((error) => { console.error(`FAIL [${currentStep}]:`, error); process.exit(1); });

@@ -25,6 +25,9 @@ import {
   buildMicrovmFence,
   buildMicrovmRunArgs,
   checkMicrovmAttach,
+  GUEST_CLAUDE_VERSION,
+  GUEST_CODEX_VERSION,
+  ensureGuestAgent,
   ensureMsb,
   microvmFlagOn,
   microvmSeatHome,
@@ -132,7 +135,12 @@ describe('checkMicrovmAttach', () => {
       adapterName: 'claude', platform: 'win32', env: {}, probe: ok,
     })).toThrow(new RegExp(MICROVM_FLAG_ENV));
   });
-  test.each(['codex', 'opencode', 'qwen', 'goose', 'pi', 'dsh'])('refuses the %s adapter', (adapterName) => {
+  test('passes for the codex adapter too', () => {
+    expect(() => checkMicrovmAttach({
+      adapterName: 'codex', platform: 'win32', env, probe: ok,
+    })).not.toThrow();
+  });
+  test.each(['opencode', 'qwen', 'goose', 'pi', 'dsh'])('refuses the %s adapter', (adapterName) => {
     expect(() => checkMicrovmAttach({
       adapterName, platform: 'win32', env, probe: ok,
     })).toThrow(/only the claude adapter/);
@@ -421,6 +429,63 @@ describe('withInstallLock', () => {
   test('a holder whose lock was taken over leaves the new holder\'s lock in place', async () => {
     await withInstallLock(root, async () => { writeFileSync(lock(), '5151 other\n'); });
     expect(readFileSync(lock(), 'utf8')).toBe('5151 other\n');
+  });
+});
+
+describe('ensureGuestAgent', () => {
+  let root;
+  beforeEach(() => { root = mkdtempSync(join(tmpdir(), 'mvguest-')); });
+  afterEach(() => { rmSync(root, { recursive: true, force: true }); });
+
+  // A pretend msb: the probe finds nothing, the install prints the version.
+  const fakeRun = (version) => {
+    const calls = [];
+    const run = (cmd, args) => {
+      calls.push(args);
+      const command = args[args.length - 1];
+      return { status: 0, stdout: command.startsWith('npm ') ? `${version}\n` : '' };
+    };
+    return { calls, run };
+  };
+
+  test('installs Claude Code exactly as before: same package, command and marker', () => {
+    const { calls, run } = fakeRun(GUEST_CLAUDE_VERSION);
+    expect(ensureGuestAgent({ msb: 'msb.exe', root, run })).toEqual({ installed: true });
+    expect(calls).toHaveLength(2);
+    expect(calls[0]).toEqual(['run', '--mount-named', GUEST_VOLUME_SPEC, GUEST_IMAGE, '--', 'sh', '-c',
+      '/opt/agents/bin/claude --version 2>/dev/null || true']);
+    expect(calls[1][calls[1].length - 1]).toBe(
+      `npm --prefix /opt/agents i -g --no-fund --no-audit @anthropic-ai/claude-code@${GUEST_CLAUDE_VERSION} >/tmp/npm.log 2>&1`
+        + ' && /opt/agents/bin/claude --version || (tail -20 /tmp/npm.log; exit 1)',
+    );
+    expect(existsSync(join(root, `.guest-claude-${GUEST_CLAUDE_VERSION}`))).toBe(true);
+    // The marker skips every later probe.
+    expect(ensureGuestAgent({ msb: 'msb.exe', root, run })).toEqual({ installed: false });
+    expect(calls).toHaveLength(2);
+  });
+
+  test('installs the pinned Codex onto the same volume, under its own marker', () => {
+    const { calls, run } = fakeRun(GUEST_CODEX_VERSION);
+    expect(ensureGuestAgent({
+      agent: 'codex', msb: 'msb.exe', root, run,
+    })).toEqual({ installed: true });
+    expect(calls[1]).toContain(GUEST_VOLUME_SPEC);
+    expect(calls[1][calls[1].length - 1]).toContain(`@openai/codex@${GUEST_CODEX_VERSION} `);
+    expect(calls[1][calls[1].length - 1]).toContain('/opt/agents/bin/codex --version');
+    expect(existsSync(join(root, `.guest-codex-${GUEST_CODEX_VERSION}`))).toBe(true);
+    expect(existsSync(join(root, `.guest-claude-${GUEST_CLAUDE_VERSION}`))).toBe(false);
+  });
+
+  test('a failed install refuses, naming the agent, and leaves no marker', () => {
+    const run = () => ({ status: 1, stdout: 'npm ERR! network' });
+    expect(() => ensureGuestAgent({
+      agent: 'codex', msb: 'msb.exe', root, run,
+    })).toThrow(/installing Codex into the microVM volume failed: npm ERR! network/);
+    expect(existsSync(join(root, `.guest-codex-${GUEST_CODEX_VERSION}`))).toBe(false);
+  });
+
+  test('an unknown agent is refused', () => {
+    expect(() => ensureGuestAgent({ agent: 'opencode', msb: 'msb.exe', root })).toThrow(/no guest install for opencode/);
   });
 });
 
