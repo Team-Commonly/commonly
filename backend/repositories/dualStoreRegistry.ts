@@ -28,6 +28,8 @@ export const DUAL_STORED_MODELS: Record<string, () => DualStore> = {
   NeedsYouEmail: () => require('./needsYouEmailRepository').needsYouEmailStore(),
   // eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
   AgentTaskRowWakeState: () => require('./agentTaskRowWakeStateRepository').rowWakeStateStore(),
+  // eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
+  AgentProviderKey: () => require('./agentProviderKeyRepository').providerKeyStore(),
 };
 
 type RepairCounts = Awaited<ReturnType<DualStore['repair']>>;

@@ -126,6 +126,19 @@ describe('POST /api/stats/byo-step', () => {
     expect(mockInsertOne).not.toHaveBeenCalled();
   });
 
+  it.each([
+    ['discord-card-shown', 'discordCardShownAt'],
+    ['discord-card-dismissed', 'discordCardDismissedAt'],
+  ])('%s sets only its account mark: no funnel row, and nothing else from the body', async (step, mark) => {
+    const res = await request(app).post('/api/stats/byo-step')
+      .send({ step, setupOs: 'mac', listenerAvailable: true });
+    expect(res.status).toBe(200);
+    expect(mockMarkSurface).toHaveBeenCalledTimes(1);
+    expect(mockMarkSurface).toHaveBeenCalledWith('human-1', mark);
+    expect(mockMarkByoSetup).not.toHaveBeenCalled();
+    expect(mockInsertOne).not.toHaveBeenCalled();
+  });
+
   it('a copy step passes the copy type and the setup the page showed to the marks', async () => {
     const res = await request(app).post('/api/stats/byo-step')
       .send({ step: 'mcp-command-copied', copyType: 'mcp-claude', setupOs: 'mac', listenerAvailable: true });

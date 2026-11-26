@@ -3,11 +3,18 @@
 // try and dies with its Terminal; the daemon is the one that keeps an agent
 // running. Each state is pinned by its own copy, so a rewording can't drop it.
 import React from 'react';
-import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor, within } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import V2AgentBYO from '../components/V2AgentBYO';
 import { AuthContext } from '../../context/AuthContext';
 import { daemonSetupCommandFor } from '../utils/daemonSetupCommand';
+import { DISCORD_INVITE_URL } from '../utils/feedbackLinks';
+
+const mockTrackUsage = jest.fn();
+jest.mock('../utils/usageEvents', () => ({
+  ...jest.requireActual('../utils/usageEvents'),
+  trackUsage: (...args) => mockTrackUsage(...args),
+}));
 
 // Keep setup request assertions independent of funnel telemetry.
 jest.mock('../utils/byoTelemetry', () => ({ recordByoStep: jest.fn() }));
@@ -264,5 +271,25 @@ describe('BYO connect paths: run is the quick try, the daemon keeps it running (
     fireEvent.click(await screen.findByTestId('byo-mode-byo'));
     expect(screen.queryByTestId('byo-quick-try')).toBeNull();
     expect(screen.queryByTestId('byo-add-computer')).toBeNull();
+  });
+});
+
+describe('BYO setup help', () => {
+  afterEach(() => setUserAgent(realUserAgent));
+  beforeEach(() => jest.clearAllMocks());
+
+  test('the computer setup block carries the Discord help line, and its click counts as byo', async () => {
+    setUserAgent(MAC);
+    mockPage({ machines: [] });
+    renderPage();
+    // The block remounts as the page's reads land: wait for them, then query fresh nodes.
+    await screen.findByText('Workspace (chat)');
+    await waitFor(() => expect(screen.getByTestId('byo-add-computer')).toContainElement(screen.getByTestId('byo-discord-help')));
+    expect(screen.getByTestId('byo-discord-help')).toHaveTextContent('Stuck? Ask in Discord, we answer there.');
+    const linkNow = () => within(screen.getByTestId('byo-discord-help')).getByRole('link', { name: 'Discord' });
+    expect(linkNow()).toHaveAttribute('href', DISCORD_INVITE_URL);
+    expect(linkNow()).toHaveAttribute('target', '_blank');
+    fireEvent.click(linkNow());
+    expect(mockTrackUsage).toHaveBeenCalledWith('discord-click', { props: { where: 'byo' } });
   });
 });

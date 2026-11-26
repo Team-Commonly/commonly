@@ -4,7 +4,7 @@ import dualAuth from '../middleware/dualAuth';
 import { validateAgentCardPayload } from '../services/uiCardValidation';
 import { describeSkippedPost } from '../services/skippedPostGuidance';
 import { memoryWriteOwnerOnly } from '../services/spawnCredentialService';
-import { noteMachineAnswered } from '../services/machineService';
+import { noteMachineAnswered, noteMachinePosted } from '../services/machineService';
 import { harnessCatalogEntry } from '../config/harnessCatalog';
 export {};
 
@@ -2063,6 +2063,9 @@ router.post(
         ...(payload !== undefined ? { payload } : {}),
         installationConfig: installation.config || null,
       });
+      // F639: same as the runtime message route. requireBotUser loads the
+      // whole bot row, so botMetadata.machineId is there.
+      if (result.success && !result.skipped && result.message) noteMachinePosted(user, { podId });
 
       return res.json({ ...describeSkippedPost(result), ...result });
     } catch (error: any) {
@@ -2136,6 +2139,12 @@ router.post(
         threadId,
         content,
       });
+      // F639: a bot user can be bound to a machine too (requireBotUser loads
+      // the whole row, botMetadata included). Same conditions as the runtime
+      // comment route, and the comment's target pod for the DM exclusion.
+      if (result.success && !result.skipped && !result.duplicate && result.comment) {
+        noteMachinePosted(user, { podId: targetPodId });
+      }
 
       return res.json(result);
     } catch (error: any) {
@@ -2861,6 +2870,9 @@ router.post('/pods/:podId/messages', phase4RateLimit, agentRuntimeAuth, async (r
     // direction (human-side enqueueDmEvent for all three DM types) lives in
     // backend/controllers/messageController.ts.
     if (result.success && !result.skipped && result.message) {
+      // F639: the agent's machine has answered, unless this pod is an
+      // agent-to-agent DM. Fire and forget.
+      noteMachinePosted(req.agentUser, { podId });
       AgentMentionService.enqueueAgentPost({
         podId, message: result.message, userId: req.agentUser?._id, username: req.agentUser?.username,
       }).catch((err: any) => console.warn('agent post-message DM/mention enqueue failed:', err.message));
@@ -3083,6 +3095,12 @@ router.post('/threads/:threadId/comments', phase4RateLimit, agentRuntimeAuth, as
       replyToCommentId: replyToCommentId || null,
       onlyIfUnanswered: onlyIfUnanswered === true,
     });
+    // F639: a new comment is the agent's machine answering. A duplicate is
+    // one it already posted, which stamped then. The thread's pod was read
+    // above, so it rides along at no cost.
+    if (result.success && !result.skipped && !result.duplicate && result.comment) {
+      noteMachinePosted(req.agentUser, { podId: post.podId });
+    }
 
     return res.json(result);
   } catch (error: any) {

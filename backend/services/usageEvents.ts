@@ -37,6 +37,7 @@ export const UI_EVENTS: Record<string, PropSchema> = {
   'teammate-card-shown': { where: ['workspace', 'pod'] },
   'teammate-card-click': { where: ['workspace', 'pod'] },
   'teammate-card-dismiss': { where: ['workspace', 'pod'] },
+  'discord-click': { where: ['card', 'byo', 'connect', 'feedback-menu'] },
 };
 
 // Route templates from the V2App table, without the /v2 mount.
@@ -50,7 +51,7 @@ export const SCREENS = new Set([
 // Logged-out events. A value, where a name takes one, comes from its enum.
 const PUBLIC_EVENTS: Record<string, readonly string[] | null> = {
   'page-view': null,
-  'cta-click': ['hero-start', 'nav-signup', 'guide-inline', 'compare-inline', 'pricing'],
+  'cta-click': ['hero-start', 'nav-signup', 'guide-inline', 'compare-inline', 'pricing', 'discord'],
   'register-view': null,
   'auth-choice': ['google', 'github', 'email'],
   'register-error': ['invite-required', 'email-taken', 'oauth-denied', 'other'],

@@ -2642,7 +2642,7 @@
     },
     "machines": {
       "title": "已注册的守护进程电脑",
-      "summary": "已注册的电脑共{{total}}台，包括离线的。“已回复”统计的是有智能体报告过回复真人（@提及或私信）的电脑数，只计入电脑开始记录回复之后的回复。在前台运行 commonly agent run 不会注册电脑，所以不计入。",
+      "summary": "已注册的电脑共{{total}}台，包括离线的。“已回复”统计的是智能体发过消息或评论的电脑数，智能体之间的私信不算。在前台运行 commonly agent run 不会注册电脑，所以不计入。",
       "table": {
         "platform": "平台",
         "machines": "电脑数",
@@ -2901,7 +2901,13 @@
     "setUpAgent": "接入智能体",
     "manageAgents": "管理已安装的智能体",
     "keysHeading": "实例密钥",
-    "openGlobal": "打开全局集成"
+    "openGlobal": "打开全局集成",
+    "discordHelp": "卡住了？来 <discord>Discord</discord> 问，我们在那里回复。"
+  },
+  "discordCard": {
+    "message": "Commonly 是开源项目，大家都是业余时间用爱发电，不卖任何东西。哪里好用、哪里不好用，我们都想听你说。来 Discord 聊聊吧。",
+    "join": "加入 Discord",
+    "dismiss": "隐藏 Discord 邀请"
   },
   "connectors": {
     "search": "搜索",

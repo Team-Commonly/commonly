@@ -5,6 +5,8 @@ import getApiBaseUrl from '../../utils/apiBaseUrl';
 import { useAuth } from '../../context/AuthContext';
 import cursorMcpInstallLink from '../utils/cursorMcpInstallLink';
 import { CURSOR_PROJECT_RULE, CURSOR_PROJECT_RULE_PATH } from '../utils/cursorProjectRule';
+import { DISCORD_INVITE_URL } from '../utils/feedbackLinks';
+import { trackUsage } from '../utils/usageEvents';
 import './V2ConnectPage.css';
 
 type CopyKey = 'cli' | 'mcp' | 'cursorRule';
@@ -68,6 +70,24 @@ const V2ConnectPage: React.FC = () => {
 
   return (
     <div className="v2-connect">
+      <p className="v2-connect__help">
+        <Trans
+          i18nKey="connect.discordHelp"
+          components={{
+            discord: (
+              <a
+                className="v2-connect__link"
+                href={DISCORD_INVITE_URL}
+                target="_blank"
+                rel="noopener noreferrer"
+                onClick={() => trackUsage('discord-click', { props: { where: 'connect' } })}
+              >
+                Discord
+              </a>
+            ),
+          }}
+        />
+      </p>
       <section className="v2-connect__lane" aria-labelledby="connect-cli-heading">
         <div className="v2-connect__lane-heading">
           <span className="v2-connect__number" aria-hidden="true">01</span>

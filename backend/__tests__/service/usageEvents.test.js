@@ -165,6 +165,19 @@ describe('usage events', () => {
     ]);
   });
 
+  it('counts a Discord link click by where it sits, and drops any other place', async () => {
+    const user = await makeUser();
+    await post(user, { name: 'discord-click', screen: '/', props: { where: 'card' } }).expect(204);
+    await post(user, { name: 'discord-click', screen: '/connect', props: { where: 'connect' } }).expect(204);
+    await post(user, { name: 'discord-click', screen: '/agents/byo', props: { where: 'byo' } }).expect(204);
+    await post(user, { name: 'discord-click', screen: '/', props: { where: 'feedback-menu' } }).expect(204);
+    await post(user, { name: 'discord-click', screen: '/', props: { where: 'https://discord.gg/x' } }).expect(204);
+    const stored = await rows().find({ name: 'discord-click' }).sort({ _id: 1 }).toArray();
+    expect(stored.map((row) => row.props)).toEqual([
+      { where: 'card' }, { where: 'connect' }, { where: 'byo' }, { where: 'feedback-menu' }, undefined,
+    ]);
+  });
+
   it('answers an unknown name with a 400 that never echoes it, and stores nothing', async () => {
     const user = await makeUser();
     const res = await post(user, { name: 'cm_agent_leaked-token', screen: '/' });
@@ -332,6 +345,7 @@ describe('usage events', () => {
     await hit({ name: 'page-view', page: '/' }).expect(204);
     await hit({ name: 'invite-page-view', page: '/invite/abc123secret' }).expect(204);
     await hit({ name: 'cta-click', page: '/', value: 'hero-start' }).expect(204);
+    await hit({ name: 'cta-click', page: '/', value: 'discord' }).expect(204);
     await hit({ name: 'auth-choice', page: '/register', value: 'carrier-pigeon' }).expect(204);
     const all = await counts().find().toArray();
     const by = (q) => all.filter((row) => Object.entries(q).every(([k, v]) => row[k] === v));
@@ -339,7 +353,7 @@ describe('usage events', () => {
     expect(by({ name: 'page-view', page: '/', refTag: 'other' })[0].n).toBe(1);
     expect(by({ name: 'page-view', page: '/', refTag: 'none' })[0].n).toBe(2);
     expect(by({ name: 'invite-page-view' })[0].page).toBe('/invite/:token');
-    expect(by({ name: 'cta-click' })[0].value).toBe('hero-start');
+    expect(by({ name: 'cta-click' }).map((row) => row.value).sort()).toEqual(['discord', 'hero-start']);
     expect(by({ name: 'auth-choice' })[0].value).toBeUndefined();
     expect(JSON.stringify(all)).not.toMatch(/abc123secret|ME-personal-code|nope-not-a-guide|carrier-pigeon/);
     for (const row of all) expect(Object.keys(row).sort()).toEqual(expect.arrayContaining(['day', 'dayStart', 'n', 'name', 'page', 'refTag']));

@@ -4,6 +4,7 @@ import { useLocation, useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { requestFirstRunGuide } from '../firstRunGuide';
 import { ShellGlyph } from '../icons/glyphs';
+import { trackUsage } from '../utils/usageEvents';
 import {
   buildBugReportUrl,
   buildFeatureRequestUrl,
@@ -97,7 +98,10 @@ const V2FeedbackMenu: React.FC = () => {
             href={DISCORD_INVITE_URL}
             target="_blank"
             rel="noopener noreferrer"
-            onClick={handleClose}
+            onClick={() => {
+              trackUsage('discord-click', { props: { where: 'feedback-menu' } });
+              handleClose();
+            }}
           >
             <ShellGlyph name="forum" />
             <span>{t('feedbackMenu.actions.joinDiscord')}</span>
