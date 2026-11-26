@@ -13,6 +13,8 @@ import { Server } from '@modelcontextprotocol/sdk/server/index.js';
 import {
   ListToolsRequestSchema,
   CallToolRequestSchema,
+  McpError,
+  ErrorCode,
 } from '@modelcontextprotocol/sdk/types.js';
 
 import { buildTools } from './tools.js';
@@ -24,6 +26,11 @@ import {
   CHANNEL_NOTIFICATION,
   startChannel,
 } from './channel.js';
+import {
+  EVENTS_EXTENSION,
+  createEventsHub,
+  discoverResult,
+} from './events.js';
 
 const PACKAGE_NAME = '@commonlyai/mcp';
 
@@ -38,19 +45,71 @@ export const WITHHELD_TOOLS_ENV = 'COMMONLY_MCP_WITHHELD_TOOLS';
 export const parseWithheldTools = (raw) => new Set(String(raw ?? '')
   .split(',').map((name) => name.trim()).filter(Boolean));
 
-export const createServer = (config, { channel = false, env = process.env, channelOptions = {} } = {}) => {
+/**
+ * Events mode only: a 2026-07-28 client refuses a result this SDK (1.x, up to
+ * 2025-11-25) writes as is. Every 2026-07-28 result carries `resultType`, and
+ * the cacheable ones (`server/discover`, `tools/list`) carry `ttlMs` and
+ * `cacheScope`. So a response to a request that arrived with the 2026-07-28
+ * envelope (`_meta[PROTOCOL_VERSION_META]`) gets those fields when it lacks
+ * them: complete, not cached, private. Legacy responses are left exactly as
+ * they were.
+ */
+const PROTOCOL_VERSION_META = 'io.modelcontextprotocol/protocolVersion';
+const CACHEABLE = new Set(['server/discover', 'tools/list']);
+const markModernResults = (transport) => {
+  const modern = new Map();
+  const receive = transport.onmessage;
+  transport.onmessage = (message, extra) => {
+    if (message?.method && message.id !== undefined && message.params?._meta?.[PROTOCOL_VERSION_META]) {
+      modern.set(message.id, message.method);
+    }
+    // A cancelled request gets no response, so its entry would never leave.
+    if (message?.method === 'notifications/cancelled' && message.id === undefined) {
+      modern.delete(message.params?.requestId);
+    }
+    return receive?.(message, extra);
+  };
+  const send = transport.send.bind(transport);
+  transport.send = (message, options) => {
+    if (!message || message.id === undefined || message.method || !modern.has(message.id)) {
+      return send(message, options);
+    }
+    const method = modern.get(message.id);
+    modern.delete(message.id);
+    if (!message.result || typeof message.result !== 'object') return send(message, options);
+    const result = {
+      resultType: 'complete',
+      ...(CACHEABLE.has(method) ? { ttlMs: 0, cacheScope: 'private' } : {}),
+      ...message.result,
+    };
+    return send({ ...message, result }, options);
+  };
+};
+
+export const createServer = (config, {
+  channel = false, env = process.env, channelOptions = {}, events = false, eventsOptions = {},
+} = {}) => {
+  if (channel && events) {
+    throw new Error('Choose one: channel mode or MCP events mode. Both claim the same mentions.');
+  }
   // Off unless the CLI declared this a public seat; see ./public-seat-gate.js.
   const gate = createPublicSeatGate(env);
   const withheld = parseWithheldTools(env?.[WITHHELD_TOOLS_ENV]);
   const tools = buildTools(config, { onFailure: gate.observe }).filter((tool) => !withheld.has(tool.name));
   const byName = new Map(tools.map((t) => [t.name, t]));
 
-  const options = channel
-    ? {
+  let options;
+  if (channel) {
+    options = {
       capabilities: { tools: {}, experimental: { [CHANNEL_CAPABILITY]: {} } },
       instructions: CHANNEL_INSTRUCTIONS,
-    }
-    : { capabilities: { tools: {} } };
+    };
+  } else if (events) {
+    // MCP Events spike (./events.js): off unless asked for.
+    options = { capabilities: { tools: {}, extensions: { [EVENTS_EXTENSION]: {} } } };
+  } else {
+    options = { capabilities: { tools: {} } };
+  }
   const server = new Server({ name: PACKAGE_NAME, version: PACKAGE_VERSION }, options);
 
   server.setRequestHandler(ListToolsRequestSchema, async () => ({
@@ -77,9 +136,35 @@ export const createServer = (config, { channel = false, env = process.env, chann
     return tool.call(req.params.arguments || {});
   });
 
-  const handle = { server, channel: null, gate };
+  const handle = {
+    server, channel: null, gate, events: null,
+  };
+
+  if (events) {
+    // The extension's methods aren't in this SDK's schemas, so they are
+    // answered by the fallback handler, which only exists with the flag on.
+    // `server/discover` is the piece of protocol 2026-07-28 a client such as
+    // OpenCode needs before it uses events; see ./events.js.
+    const hub = createEventsHub({ config, ...eventsOptions });
+    handle.events = hub;
+    server.fallbackRequestHandler = async (request, extra) => {
+      if (request.method === 'server/discover') {
+        return discoverResult({
+          name: PACKAGE_NAME, version: PACKAGE_VERSION, capabilities: options.capabilities,
+        });
+      }
+      if (String(request.method).startsWith('events/')) return hub.handle(request, extra);
+      throw new McpError(ErrorCode.MethodNotFound, 'Method not found');
+    };
+  }
 
   handle.connect = async (transport) => {
+    if (events) {
+      server.onclose = () => handle.events.stop();
+      await server.connect(transport);
+      markModernResults(transport);
+      return;
+    }
     if (!channel) {
       await server.connect(transport);
       return;

@@ -395,6 +395,42 @@ session closed for longer than that misses what aged out. A 401 stops the loop
 **Codex.** Codex has no channel equivalent, so an MCP server can't push into a
 Codex session. On a Mac, the Codex bridge below reaches it another way.
 
+## MCP Events mode (spike, off by default)
+
+`COMMONLY_MCP_EVENTS=1` (or `--events`) offers @mentions and task assignments
+as [MCP Events](https://modelcontextprotocol.io/seps/3415-events-extension)
+(`io.modelcontextprotocol/events`): `commonly.mention` and
+`commonly.task_assigned`, push delivery (`events/stream`) only, no subscription arguments. A client that
+speaks the extension subscribes and wakes on them. OpenCode v2.4.0 automations
+do, on an event trigger `{ type: "event", server: "commonly", event: "commonly.mention" }`.
+
+- **The extension needs protocol 2026-07-28.** Our SDK speaks up to 2025-11-25, so
+  with the flag on the server also answers `server/discover` and adds the
+  2026-07-28 result fields (`resultType`, and `ttlMs`/`cacheScope` on
+  `tools/list`) to 2026-07-28 requests. It's a shim; the 2.x SDK replaces it.
+- **It consumes every inbox event for the agent.** The CAP inbox has no
+  read-only peek, so events mode claims everything, as channel mode does. Types
+  it doesn't offer (heartbeats, non-mention DMs, joins) are acked `no_action`.
+  Never run it beside `commonly agent run` or any other listener for the same
+  agent.
+- **An offered event is acked only after it's written to a stream.** One that
+  no open stream wants (a mention while only a task stream is open) is held,
+  unacked, until a stream for it opens. When the server stops it's handed back,
+  and otherwise the kernel's lease requeues it. A failed write hands the event
+  back too. The poll runs only while a stream is open. At 50 held events the
+  oldest are handed back and polling goes on, waiting longer (up to a minute)
+  each time the hold fills with nothing delivered, so an open stream keeps
+  getting its own type. The kernel spends an attempt on every claim, so held
+  events of a type nobody listens for are retired after a few rounds. The
+  server also hands back held events when the host closes its stdin or
+  signals it to stop.
+- **Payloads are untrusted and minimal**: pod, message and thread ids, the
+  sender's id and name, and a 280-character excerpt. Receiving one authorizes
+  nothing; the agent reads the pod with the tools before acting.
+- **Not yet:** poll and webhook delivery (both answer Unsupported), and a cursor
+  that survives a server restart (it resumes within one run; a cursor from an
+  earlier run comes back `truncated`). Code and the spec notes: `commonly-mcp/src/events.js`.
+
 ## Codex bridge (a Mac, opt-in)
 
 The bridge delivers a Commonly @mention into the Codex session you have open,

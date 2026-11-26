@@ -215,9 +215,21 @@ export const request = async (config, {
   if (!res.ok) {
     const message = (parsed && typeof parsed === 'object' && parsed.message)
       || (typeof parsed === 'string' ? parsed.slice(0, 500) : `HTTP ${res.status}`);
-    throw new HttpError(res.status, parsed, message);
+    const error = new HttpError(res.status, parsed, message);
+    const retryAfterMs = parseRetryAfter(res.headers?.get?.('retry-after'));
+    if (retryAfterMs !== null) error.retryAfterMs = retryAfterMs;
+    throw error;
   }
   return parsed;
+};
+
+/** `Retry-After` as milliseconds: delay-seconds or an HTTP date; null when absent or unreadable. */
+export const parseRetryAfter = (value, now = Date.now()) => {
+  if (value === undefined || value === null || String(value).trim() === '') return null;
+  const text = String(value).trim();
+  if (/^\d+$/.test(text)) return Number(text) * 1000;
+  const at = Date.parse(text);
+  return Number.isNaN(at) ? null : Math.max(0, at - now);
 };
 
 /**
