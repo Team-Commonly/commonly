@@ -31,7 +31,11 @@ const npmStub = [
   'dest=""; spec=""; shift',
   'while [ $# -gt 0 ]; do case "$1" in --pack-destination) dest="$2"; shift 2;; --silent) shift;; *) spec="$1"; shift;; esac; done',
   'if [ -z "$spec" ]; then [ -n "${STUB_PACK_FAIL:-}" ] && exit 1; src="$PWD"',
-  'else [ -n "${STUB_FETCH_FAIL:-}" ] && exit 1; src="$STUB_REGISTRY_DIR"; fi',
+  'else [ -n "${STUB_FETCH_FAIL:-}" ] && exit 1',
+  // STUB_FETCH_FAIL_TIMES=N: the first N fetches fail (a version npm does not serve yet).
+  '  if [ -n "${STUB_FETCH_FAIL_TIMES:-}" ]; then n=$(( $(cat "$STUB_REGISTRY_DIR.count" 2>/dev/null || echo 0) + 1 ))',
+  '    echo "$n" > "$STUB_REGISTRY_DIR.count"; [ "$n" -le "$STUB_FETCH_FAIL_TIMES" ] && exit 1; fi',
+  '  src="$STUB_REGISTRY_DIR"; fi',
   't=$(mktemp -d); mkdir "$t/package"; cp -R "$src"/. "$t/package/"',
   'tar -czf "$dest/pkg.tgz" -C "$t" package',
 ].join('\n');
@@ -71,8 +75,12 @@ function setup({ localVersion = '0.1.4', registryVersion = '0.1.3', registryText
 function run(fx, env = {}) {
   const r = spawnSync('bash', [SCRIPT, fx.pkg, '0.1.3'], {
     encoding: 'utf8',
-    env: { ...process.env, PATH: `${fx.bin}:${process.env.PATH}`, STUB_REGISTRY_DIR: fx.reg, ...env },
+    // No real waiting between fetch attempts in tests.
+    env: {
+      ...process.env, PATH: `${fx.bin}:${process.env.PATH}`, STUB_REGISTRY_DIR: fx.reg, NPM_FETCH_RETRY_DELAY: '0', ...env,
+    },
   });
+  r.fetches = Number(fs.existsSync(`${fx.reg}.count`) ? fs.readFileSync(`${fx.reg}.count`, 'utf8') : 0);
   fs.rmSync(fx.root, { recursive: true, force: true });
   return r;
 }
@@ -98,6 +106,34 @@ describe('npm-artifact-diff.sh', () => {
     ['the diff output cannot be opened', { STUB_DIFF_OUT_BLOCKED: '1' }],
   ])('%s: exit 2, never 1', (_label, env) => {
     expect(run(setup(), env).status).toBe(2);
+  });
+
+  // The guard runs right after a publish, before npm serves the new version
+  // (main went red twice on 11-26, once per cli publish). A fetch that fails
+  // is retried; only a version still missing after every attempt is a 2.
+  test('a version npm serves only after a few tries is fetched, not a 2', () => {
+    const r = run(setup(), { STUB_FETCH_FAIL_TIMES: '2' });
+    expect(r.status).toBe(0);
+    expect(r.fetches).toBe(3);
+  });
+
+  test('a version still missing after every attempt exits 2, after exactly that many tries', () => {
+    const r = run(setup(), { STUB_FETCH_FAIL_TIMES: '99', NPM_FETCH_ATTEMPTS: '4' });
+    expect(r.status).toBe(2);
+    expect(r.fetches).toBe(4);
+    expect(r.stdout).toMatch(/could not fetch @x\/fixture@0\.1\.3 from npm after 4 attempts/);
+  });
+
+  // A bad setting must fail at once, not loop: `[ -ge ]` on a non-number
+  // errors, which would keep the retry loop from ever reaching its last try.
+  test.each([
+    ['attempts', { NPM_FETCH_ATTEMPTS: 'ten' }],
+    ['attempts zero', { NPM_FETCH_ATTEMPTS: '0' }],
+    ['delay', { NPM_FETCH_RETRY_DELAY: '30s' }],
+  ])('a non-numeric retry %s setting exits 2 before any fetch', (_label, env) => {
+    const r = run(setup(), { STUB_FETCH_FAIL_TIMES: '99', ...env });
+    expect(r.status).toBe(2);
+    expect(r.fetches).toBe(0);
   });
 
   test('missing arguments are a 2, not a difference', () => {
