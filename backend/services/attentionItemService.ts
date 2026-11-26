@@ -545,13 +545,19 @@ export const recordDecision = async (decision: any, options: RecordOptions = {})
     const podId = decision?.podId;
     const id = decision?._id || decision?.id;
     if (!podId || !id) return;
+    // ADR-037 §2: a closed card was withdrawn before anyone ruled; it waits on nobody.
+    if (decision.status === 'closed') return;
     const members = await currentHumanMembers(podId);
     // A card that names its deciders waits only on them.
     // Once none of them is still in the pod, it waits on every member, the same
-    // fallback chooseDecision applies to who may rule.
+    // fallback chooseDecision applies to who may rule. A card with
+    // `deciderFallback: 'none'` (ADR-037 §2) has no fallback: with no named
+    // decider left, nobody else may rule it, so nobody else gets a row.
     const namedIds = new Set((decision.deciders || []).map((decider: any) => String(decider.userId)));
     const present = members.filter((member: unknown) => namedIds.has(String((member as { _id?: unknown })?._id ?? member)));
     const deciderIds = present.length ? namedIds : new Set<string>();
+    const noFallback = decision.deciderFallback === 'none' && namedIds.size > 0;
+    if (!present.length && noFallback) return;
     const recipients = present.length ? present : members;
     const pod = await Pod.findById(podId).select('name').lean();
     const installerId = await installerForAgent(decision.agentUserId, podId, decision.agentName, decision.instanceId);
@@ -578,6 +584,12 @@ export const recordDecision = async (decision: any, options: RecordOptions = {})
       threadRootId: String(decision.threadRootId || decision.messageId || ''), options: choiceOptions,
       emailRecipientId, suppressEmail: options.suppressEmail,
     });
+    // A card closed or ruled while the rows above were written: its own
+    // resolve may have run before they existed, so resolve them again now.
+    // eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
+    const DecisionRequest = require('../models/DecisionRequest');
+    const current = await DecisionRequest.findById(String(id)).select('status').lean();
+    if (current && current.status !== 'pending') await resolve('decision_request', id);
   } catch (error) {
     console.warn('[attention] decision materialization failed:', (error as Error).message);
   }

@@ -242,12 +242,14 @@ router.get('/decision-history', auth, async (req: Req, res: Res) => {
 router.post('/decisions/:decisionId/choose', auth, async (req: Req, res: Res) => {
   try {
     const decisionId = String(req.params?.decisionId || '');
-    const value = (req.body || {}).value;
+    const { value, reason } = req.body || {};
     const userId = getAuthenticatedUserId(req);
     const result = await DecisionRequestService.chooseDecision({
       decisionId,
       callerUserId: String(userId || ''),
       value,
+      // ADR-037: required by cards whose allowed value says so.
+      reason,
       // Origin is server-owned. A browser can choose from the workspace only;
       // never accept provider/integration identifiers from the request body.
       origin: { via: 'workspace' },

@@ -48,6 +48,31 @@ describe('ActivityService.getDecisionQueue', () => {
     expect(mockGetOpenQueue).toHaveBeenCalledWith('507f191e810c19729de860ea');
   });
 
+  // ADR-037 §2: the shell shows only a card's allowed values, and a reason box.
+  it('adds a decision card\'s allowed values and subject from the card itself', async () => {
+    const decisionId = '6a1f00000000000000000d01';
+    const queue = {
+      items: [
+        { id: decisionId, kind: 'decision', sourceType: 'decision_request', options: [{ label: 'Accept' }, { label: 'Refuse' }] },
+        { id: '42', kind: 'mention', sourceType: 'message' },
+      ],
+      count: 2,
+    };
+    mockGetOpenQueue.mockResolvedValue(queue);
+    mockDecisionFind.mockReturnValue(chain([{
+      _id: decisionId,
+      allowedValues: [{ value: 'Accept', reasonRequired: true }, { value: 'Refuse', reasonRequired: true }],
+      subject: { type: 'hand_back', id: 'r1', stage: 'plan' },
+    }]));
+    const result = await ActivityService.getDecisionQueue('507f191e810c19729de860ea');
+    expect(mockDecisionFind).toHaveBeenCalledWith({ _id: { $in: [decisionId] } });
+    expect(result.items[0]).toMatchObject({
+      allowedValues: [{ value: 'Accept', reasonRequired: true }, { value: 'Refuse', reasonRequired: true }],
+      subject: { type: 'hand_back', id: 'r1', stage: 'plan' },
+    });
+    expect(result.items[1].allowedValues).toBeUndefined();
+  });
+
   it('forwards scoped pagination to the queue projection', async () => {
     const queue = { items: [], count: 9, countsByPod: { 'pod-1': 9 }, remaining: 0 };
     mockGetOpenQueue.mockResolvedValue(queue);

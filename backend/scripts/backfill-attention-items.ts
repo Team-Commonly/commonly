@@ -52,6 +52,9 @@ export const main = async (): Promise<void> => {
     const cutoff = new Date(Date.now() - MENTION_CUTOFF_DAYS * 24 * 60 * 60 * 1000);
     const [approvals, decisions, tasks, acknowledgements, mongoMessages] = await Promise.all([
       Activity.find({ type: 'approval_needed', 'approval.status': 'pending', deleted: { $ne: true } }).lean(),
+      // Pending only: a `closed` card (ADR-037) is never materialized, and
+      // recordDecision reads each row's `deciderFallback` itself, so a card
+      // with `none` and no named decider left gets no rows for other members.
       DecisionRequest.find({ status: 'pending' }).lean(),
       Task.find({
         $or: [{ status: 'blocked' }, { 'updates.text': { $regex: TASK_HANDOFF_CANDIDATE_RE } }],

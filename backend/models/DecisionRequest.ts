@@ -26,6 +26,27 @@ export interface DecisionRuling {
   byUsername: string;
   at: Date;
   messageId: string;
+  /** ADR-037: why the person ruled the way they did. Required by some cards. */
+  reason?: string;
+}
+
+/**
+ * ADR-037 §2: a value a card accepts as its ruling. A card that sets
+ * `allowedValues` refuses any other value, and one that marks a value
+ * `reasonRequired` refuses that value without a reason, on every ruling path.
+ */
+export interface DecisionAllowedValue {
+  value: string;
+  reasonRequired: boolean;
+}
+
+/** ADR-037 §2: what a card decides, for the stage check its owner registers. */
+export interface DecisionSubjectRef {
+  type: string;
+  id: string;
+  stage: string;
+  /** Which submission of that stage the card is for, when a stage can be resubmitted (ISO time). */
+  attempt?: string;
 }
 
 /** A person the asker named to rule; their name as it was when the card was asked. */
@@ -44,7 +65,9 @@ export interface IDecisionRequest extends Document {
   question: string;
   context?: string;
   options: DecisionOption[];
-  status: 'pending' | 'ruled';
+  /** `closed`: withdrawn by its subject before anyone ruled. Nobody can rule it. */
+  status: 'pending' | 'ruled' | 'closed';
+  closedAt?: Date;
   messageId?: string;
   /** Set only on the decision behind an agent card's acting Buttons: its card's message id. */
   cardMessageId?: string;
@@ -52,6 +75,14 @@ export interface IDecisionRequest extends Document {
   ruling?: DecisionRuling;
   /** Absent: any human member may rule. Present: only these people may. */
   deciders?: DecisionDecider[];
+  /**
+   * Who may rule once no named decider is still in the pod. Absent or
+   * `members`: any human member (the default). `none`: nobody; the card waits.
+   */
+  deciderFallback?: 'members' | 'none';
+  /** Server-set only; the agent route refuses these fields (ADR-037 §2). */
+  allowedValues?: DecisionAllowedValue[];
+  subject?: DecisionSubjectRef;
   rulingLock?: { token: string; expiresAt: Date };
   createdAt: Date;
   updatedAt: Date;
@@ -84,7 +115,8 @@ const DecisionRequestSchema = new Schema<IDecisionRequest>(
         message: 'DecisionRequest options must contain 2–4 choices',
       },
     },
-    status: { type: String, enum: ['pending', 'ruled'], default: 'pending', index: true },
+    status: { type: String, enum: ['pending', 'ruled', 'closed'], default: 'pending', index: true },
+    closedAt: { type: Date },
     // Assigned only after the asker's source message persists. Pending rows
     // without it are intentionally invisible to the Activity projection.
     messageId: { type: String, trim: true },
@@ -96,12 +128,30 @@ const DecisionRequestSchema = new Schema<IDecisionRequest>(
       byUsername: { type: String, trim: true },
       at: { type: Date },
       messageId: { type: String, trim: true },
+      reason: { type: String, trim: true, maxlength: 2000 },
     },
     deciders: {
       type: [new Schema<DecisionDecider>({
         userId: { type: Schema.Types.ObjectId, ref: 'User', required: true },
         username: { type: String, trim: true, required: true },
       }, { _id: false })],
+      default: undefined,
+    },
+    deciderFallback: { type: String, enum: ['members', 'none'] },
+    allowedValues: {
+      type: [new Schema<DecisionAllowedValue>({
+        value: { type: String, required: true, trim: true, maxlength: 80 },
+        reasonRequired: { type: Boolean, default: false },
+      }, { _id: false })],
+      default: undefined,
+    },
+    subject: {
+      type: new Schema<DecisionSubjectRef>({
+        type: { type: String, required: true, trim: true, maxlength: 40 },
+        id: { type: String, required: true, trim: true, maxlength: 128 },
+        stage: { type: String, required: true, trim: true, maxlength: 40 },
+        attempt: { type: String, trim: true, maxlength: 40 },
+      }, { _id: false }),
       default: undefined,
     },
     // A short write lease prevents two browser tabs from posting conflicting
@@ -125,6 +175,14 @@ DecisionRequestSchema.index({ messageId: 1 });
 DecisionRequestSchema.index(
   { cardMessageId: 1 },
   { unique: true, partialFilterExpression: { cardMessageId: { $type: 'string' } } },
+);
+
+// A subject finds its own card when the card's id never reached the subject's
+// record (handBackService recovery). Partial, so cards without a subject are
+// not indexed.
+DecisionRequestSchema.index(
+  { 'subject.type': 1, 'subject.id': 1, 'subject.stage': 1, createdAt: -1 },
+  { partialFilterExpression: { 'subject.type': { $type: 'string' } } },
 );
 
 const DecisionRequest: Model<IDecisionRequest> = (mongoose.models.DecisionRequest as Model<IDecisionRequest>)

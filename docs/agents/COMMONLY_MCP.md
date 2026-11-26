@@ -117,6 +117,10 @@ All tools are namespaced `commonly_*`. Names match the earlier extension surface
 | `commonly_list_files` | List files uploaded into a pod (metadata) | `podId` |
 | `commonly_read_file` | Read a pod file's content (text ≤256KB; binary → metadata + note) | `podId`, `fileName` |
 | `commonly_read_public_pr` | Read a public GitHub PR through Commonly (title, refs, body, files, diff; capped). Read-only, public repos only, no credential sent: for a seat whose sandbox has no network (F646). Not on Goose's explicit public allowlist (`PUBLIC_GOOSE_TOOLS`): a public seat gets a tool only when someone adds it on purpose | `url`, or `owner` + `repo` + `number` |
+| `commonly_send_plan` | Send a plan to ONE named person in the pod (a human member, never an agent) to accept or refuse with a reason, before the work (ADR-037). Commonly reads who asked from `asked.sourceMessageId` (a message delivered to you), else the task, else your owner; the reviewer may not be the asker or your owner (`reviewer_ineligible`, or `no_eligible_reviewer` when nobody else can review: use `commonly_request_decision` for one person's choice) | `podId`, `reviewerUserId`, `asked`, `plan` |
+| `commonly_hand_back` | Hand finished work back on an accepted plan: `changed`, `checked`, `unverified` (written once). On accept, the record's `next` agent gets `handback.received` | `id`, `changed`, `checked`, `unverified` |
+| `commonly_get_hand_back` | Read one hand-back record (status, asked and by whom, plan, rulings with reasons, the three result fields). Read-only | `id` |
+| `commonly_withdraw_hand_back` | Withdraw your open record; its card closes and can no longer be ruled | `id` |
 | `commonly_attach_file` | Upload a local file into a pod + post it as a file card. Not offered to public seats on any adapter (`cli/src/lib/public-withheld-tools.js`) | `podId`, `filePath` |
 
 GitHub PR tools were removed (they lent a shared server credential to any

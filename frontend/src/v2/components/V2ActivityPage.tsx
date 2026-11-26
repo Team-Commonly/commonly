@@ -47,13 +47,15 @@ interface NeedsYouItem {
   sourceType?: string;
   // A settled decision keeps its ruling (from durable history) so the 0-state
   // can say when the last ask was answered.
-  ruling?: { value?: string; by?: string; byName?: string; at?: string | null } | null;
+  ruling?: { value?: string; by?: string; byName?: string; reason?: string; at?: string | null } | null;
   kind: 'mention' | 'approval' | 'decision' | 'handoff' | 'blocked';
   title: string;
   detail: string;
   podId: string | null;
   podName: string;
   options?: Array<{ label: string; description?: string; recommended?: boolean }>;
+  // ADR-037 §2: a card that takes only these values, some with a reason.
+  allowedValues?: Array<{ value: string; reasonRequired?: boolean }>;
   timestamp: string | null;
   // Mention rows carry where they live so a reply can land IN the thread.
   messageId?: number | string;
@@ -62,6 +64,26 @@ interface NeedsYouItem {
   // on the card, where the arguments are.
   reviewOnCard?: boolean;
 }
+
+const sameValue = (a: string, b: string): boolean => a.trim().toLowerCase() === b.trim().toLowerCase();
+
+/** ADR-037 §2: a card with allowed values offers exactly those, in order. */
+const decisionChoices = (item: NeedsYouItem): NonNullable<NeedsYouItem['options']> => (item.allowedValues?.length
+  ? item.allowedValues.map((allowed) => (item.options || []).find((option) => sameValue(option.label, allowed.value))
+    || { label: allowed.value })
+  : item.options || []);
+const decisionAsksReason = (item: NeedsYouItem): boolean => Boolean(item.allowedValues?.some((allowed) => allowed.reasonRequired));
+const decisionNeedsReason = (item: NeedsYouItem, value: string): boolean => Boolean(item.allowedValues?.some((allowed) => (
+  allowed.reasonRequired && sameValue(allowed.value, value)
+)));
+/** The server's ruling refusals, each as its own line. */
+const decisionRefusalKey = (code: unknown): string => {
+  if (code === 'decision_closed') return 'activity.decision.closed';
+  if (code === 'subject_stage_mismatch' || code === 'subject_check_missing') return 'activity.decision.movedOn';
+  if (code === 'reason_required') return 'activity.decision.reasonRequired';
+  if (code === 'value_not_allowed') return 'activity.decision.valueNotAllowed';
+  return 'activity.decision.actionFailed';
+};
 
 interface BoardItem {
   id: string;
@@ -404,7 +426,9 @@ const V2ActivityPage: React.FC = () => {
   const [rulingId, setRulingId] = useState<string | null>(null);
   const [otherDecisionId, setOtherDecisionId] = useState<string | null>(null);
   const [otherDecisionValue, setOtherDecisionValue] = useState('');
-  const [ruledDecisions, setRuledDecisions] = useState<Record<string, { value: string; by?: string }>>({});
+  // ADR-037: the reason typed on a card that requires one, by item id.
+  const [decisionReasons, setDecisionReasons] = useState<Record<string, string>>({});
+  const [ruledDecisions, setRuledDecisions] = useState<Record<string, { value: string; by?: string; reason?: string }>>({});
   const [settledQueueDecisions, setSettledQueueDecisions] = useState<Record<string, NeedsYouItem>>({});
   const [queue, setQueue] = useState<NeedsYouItem[]>([]);
   const queueRef = useRef<NeedsYouItem[]>([]);
@@ -661,6 +685,7 @@ const V2ActivityPage: React.FC = () => {
                 value: String(item.ruling?.value),
                 // F645: people read the ruler's display name; the handle is only a fallback.
                 ...(item.ruling?.byName || item.ruling?.by ? { by: item.ruling.byName || item.ruling.by } : {}),
+                ...(item.ruling?.reason ? { reason: item.ruling.reason } : {}),
               };
             });
             return next;
@@ -945,6 +970,7 @@ const V2ActivityPage: React.FC = () => {
               value: String(item.ruling?.value),
               // F645: people read the ruler's display name; the handle is only a fallback.
               ...(item.ruling?.byName || item.ruling?.by ? { by: item.ruling.byName || item.ruling.by } : {}),
+              ...(item.ruling?.reason ? { reason: item.ruling.reason } : {}),
             };
           });
           return next;
@@ -1142,6 +1168,12 @@ const V2ActivityPage: React.FC = () => {
 
   const ruleDecision = async (item: NeedsYouItem, value: string) => {
     if (rulingId || !value.trim()) return;
+    const reason = (decisionReasons[item.id] || '').trim();
+    if (decisionNeedsReason(item, value) && !reason) {
+      setActionErrorItemId(item.id);
+      setActionError(t('activity.decision.reasonRequired'));
+      return;
+    }
     const restoreActionFocus = captureActionFocus(item);
     setRulingId(item.id);
     setActionError(null);
@@ -1150,15 +1182,20 @@ const V2ActivityPage: React.FC = () => {
       const token = localStorage.getItem('token');
       const response = await axios.post<{
         ok?: boolean;
-        decision?: { ruling?: { value?: string; by?: string; byName?: string } | null };
+        decision?: { ruling?: { value?: string; by?: string; byName?: string; reason?: string } | null };
       }>(
         `/api/activity/decisions/${encodeURIComponent(item.id)}/choose`,
-        { value },
+        reason && decisionAsksReason(item) ? { value, reason } : { value },
         { headers: { 'x-auth-token': token ?? '' } },
       );
       if (!response.data?.ok) throw new Error('Decision ruling failed');
       const settled = response.data.decision?.ruling;
-      const ruling = { value: settled?.value || value.trim(), ...(settled?.byName || settled?.by ? { by: settled.byName || settled.by } : {}) };
+      const settledReason = settled?.reason || (decisionAsksReason(item) ? reason : '');
+      const ruling = {
+        value: settled?.value || value.trim(),
+        ...(settled?.byName || settled?.by ? { by: settled.byName || settled.by } : {}),
+        ...(settledReason ? { reason: settledReason } : {}),
+      };
       setRuledDecisions((current) => ({
         ...current,
         [item.id]: ruling,
@@ -1169,9 +1206,17 @@ const V2ActivityPage: React.FC = () => {
       setOtherDecisionValue('');
       setReloadKey((value) => value + 1);
     } catch (error) {
-      const standing = axios.isAxiosError(error) ? error.response?.data?.decision?.ruling : null;
+      // Read the response off any error shape: a refusal's code matters even
+      // where the HTTP client is not axios's own (tests, a wrapper).
+      const standing = (error as {
+        response?: { data?: { decision?: { ruling?: { value?: string; by?: string; byName?: string; reason?: string } | null } } };
+      })?.response?.data?.decision?.ruling;
       if (standing?.value) {
-        const ruling = { value: standing.value, ...(standing.byName || standing.by ? { by: standing.byName || standing.by } : {}) };
+        const ruling = {
+          value: standing.value,
+          ...(standing.byName || standing.by ? { by: standing.byName || standing.by } : {}),
+          ...(standing.reason ? { reason: standing.reason } : {}),
+        };
         setRuledDecisions((current) => ({
           ...current,
           [item.id]: ruling,
@@ -1179,7 +1224,9 @@ const V2ActivityPage: React.FC = () => {
         setSettledQueueDecisions((current) => ({ ...current, [item.id]: item }));
       } else {
         setActionErrorItemId(item.id);
-        setActionError(t('activity.decision.actionFailed'));
+        setActionError(t(decisionRefusalKey(
+          (error as { response?: { data?: { code?: string } } })?.response?.data?.code,
+        )));
         restoreActionFocus();
       }
     } finally {
@@ -1548,14 +1595,31 @@ const V2ActivityPage: React.FC = () => {
                             )}
                             {ruled && (
                               <span className="v2-activity__decision-ruled" role="status">
-                                {t('activity.decision.ruled', ruled)}
+                                {t(ruled.reason ? 'activity.decision.ruledWithReason' : 'activity.decision.ruled', ruled)}
                               </span>
                             )}
                             {choosing && (
                               <>
+                                {decisionAsksReason(item) && (
+                                  <label className="v2-activity__editor v2-activity__decision-reason">
+                                    <span>{t('activity.decision.reasonLabel')}</span>
+                                    <textarea
+                                      rows={2}
+                                      maxLength={2000}
+                                      placeholder={t('activity.decision.reasonPlaceholder')}
+                                      value={decisionReasons[item.id] || ''}
+                                      onChange={(event) => {
+                                        const next = event.target.value;
+                                        setDecisionReasons((current) => ({ ...current, [item.id]: next }));
+                                      }}
+                                      disabled={rulingId === item.id}
+                                      required
+                                    />
+                                  </label>
+                                )}
                                 {/* The decision is the only open row: its choices are keys inside it, in authored order. */}
                                 <div className="v2-activity__keys" role="group" aria-labelledby={titleId}>
-                                  {(item.options || []).map((option, index) => {
+                                  {decisionChoices(item).map((option, index) => {
                                     const descriptionId = `${rowDomId(item)}-${index}-description`;
                                     return (
                                       <button
@@ -1563,7 +1627,8 @@ const V2ActivityPage: React.FC = () => {
                                         type="button"
                                         className="v2p-b v2p-b-s v2p-b-sm v2-activity__option"
                                         onClick={() => ruleDecision(item, option.label)}
-                                        disabled={rulingId === item.id}
+                                        disabled={rulingId === item.id
+                                          || (decisionNeedsReason(item, option.label) && !(decisionReasons[item.id] || '').trim())}
                                         aria-label={t(option.recommended
                                           ? 'activity.decision.ruleOptionRecommended'
                                           : 'activity.decision.ruleOption', { option: option.label })}
@@ -1574,19 +1639,22 @@ const V2ActivityPage: React.FC = () => {
                                       </button>
                                     );
                                   })}
-                                  <button
-                                    type="button"
-                                    className="v2p-b v2p-b-g v2p-b-sm v2-activity__option v2-activity__option--other"
-                                    onClick={() => setOtherDecisionId((current) => current === item.id ? null : item.id)}
-                                    disabled={rulingId === item.id}
-                                    aria-expanded={otherDecisionId === item.id}
-                                  >
-                                    {t('activity.decision.other')}
-                                  </button>
+                                  {!item.allowedValues?.length && (
+                                    <button
+                                      type="button"
+                                      className="v2p-b v2p-b-g v2p-b-sm v2-activity__option v2-activity__option--other"
+                                      onClick={() => setOtherDecisionId((current) => current === item.id ? null : item.id)}
+                                      disabled={rulingId === item.id}
+                                      aria-expanded={otherDecisionId === item.id}
+                                    >
+                                      {t('activity.decision.other')}
+                                    </button>
+                                  )}
                                 </div>
-                                {(item.options || []).some((option) => option.description) && (
+                                {decisionChoices(item).some((option) => option.description) && (
                                   <ul className="v2-activity__option-notes">
-                                    {(item.options || []).map((option, index) => option.description && (
+                                    {/* The same ordered list as the buttons, so each description id pairs with its own button. */}
+                                    {decisionChoices(item).map((option, index) => option.description && (
                                       <li key={option.label}>
                                         <b>{option.label}</b>
                                         {' '}
@@ -1595,7 +1663,7 @@ const V2ActivityPage: React.FC = () => {
                                     ))}
                                   </ul>
                                 )}
-                                {otherDecisionId === item.id && (
+                                {otherDecisionId === item.id && !item.allowedValues?.length && (
                                   <div className="v2-activity__editor v2-activity__decision-other" data-testid="decision-other">
                                     <textarea
                                       aria-label={t('activity.decision.otherPlaceholder')}

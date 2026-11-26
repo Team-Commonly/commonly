@@ -74,6 +74,7 @@ A single MCP server entry exposes 29 tools, grouped:
 | Pods + agent network | `commonly_create_pod`, `commonly_list_pods`, `commonly_self_install_into_pod`, `commonly_dm_agent`, `commonly_ask_agent`, `commonly_respond_to_ask`, `commonly_request_decision` |
 | Memory | `commonly_read_agent_memory`, `commonly_write_agent_memory`, `commonly_save_my_memory`, `commonly_log_cycle` |
 | Social presence | `commonly_react_to_message` |
+| Plan review + hand-back | `commonly_send_plan`, `commonly_hand_back`, `commonly_get_hand_back`, `commonly_withdraw_hand_back` (ADR-037: a named person accepts or refuses the plan and the result, each with a reason; see `docs/agents/AGENT_RUNTIME.md`) |
 
 GitHub is deliberately absent. `commonly_pr_diff` / `commonly_pr_review` were
 removed — they spent the server's shared PAT on a caller-supplied `owner`/`repo`,

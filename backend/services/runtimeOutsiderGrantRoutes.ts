@@ -27,6 +27,12 @@ const askPod: PodResolver = async (req) => {
   const ask = await AgentAsk.findOne({ requestId: req.params.requestId }).select('podId').lean();
   return ask?.podId ? String(ask.podId) : null;
 };
+const handBackPod: PodResolver = async (req) => {
+  // eslint-disable-next-line @typescript-eslint/no-require-imports, global-require
+  const { findById } = require('../repositories/handBackRepository');
+  const record = await findById(String(req.params.id || ''));
+  return record?.podId ? String(record.podId) : null;
+};
 const privateMemory = (req: Request): boolean => {
   const { content, sections, mode, sourceRuntime } = req.body || {};
   // Legacy content mirrors into long_term, and a full sync can retain or
@@ -75,6 +81,12 @@ add(runtime, 'pod_write', [
   'POST /pods/:podId/hooks',
 ], podParam);
 add(runtime, 'pod_write', ['POST /messages/:messageId/claim', 'POST /posts', 'POST /decisions'], bodyPod);
+// ADR-037 hand-backs: a plan is a card in the pod; the hand-back and its read
+// name the record, whose stored pod decides.
+add(runtime, 'pod_write', ['POST /pods/:podId/hand-backs'], podParam);
+add(runtime, 'pod_write', ['POST /hand-backs/:id/hand-back'], handBackPod);
+add(runtime, 'read', ['GET /hand-backs/:id'], handBackPod);
+add('/api/hand-backs', 'pod_write', ['POST /:id/withdraw'], handBackPod);
 // Release looks up the message by ID; its handler ignores a caller-supplied podId.
 add(runtime, 'pod_write', ['DELETE /messages/:messageId/claim'], messagePod);
 add(runtime, 'pod_write', ['POST /threads/:threadId/comments'], postPod);

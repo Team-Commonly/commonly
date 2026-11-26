@@ -40,7 +40,8 @@ describe('tool registry shape', () => {
     // + 1 delete-own-message (commonly_delete_message, F141): remove a stray post.
     // + 1 public PR read (commonly_read_public_pr, F646): read-only, public repos,
     //   no credential of anyone's, for a seat whose sandbox has no network.
-    expect(tools).toHaveLength(36);
+    // + 4 hand-back tools (ADR-037, F654): send a plan, hand back, read, withdraw.
+    expect(tools).toHaveLength(40);
   });
 
   it('exposes no GitHub PR tool — that surface is `gh`, not the kernel', () => {
@@ -1313,5 +1314,58 @@ describe('commonly_read_public_pr (F646)', () => {
     const res = await tool().call({ owner: 'acme', repo: 'secret', number: 1 });
     expect(res.isError).toBe(true);
     expect(res.content[0].text).toContain('pr_not_found_or_private');
+  });
+});
+
+describe('hand-back tools (ADR-037, F654)', () => {
+  it('commonly_send_plan posts the plan to the pod route and never sends a requester', async () => {
+    const fetchSpy = installFetch(async () => okResponse({ handBack: { id: 'h1', status: 'plan_sent' } }));
+    const res = await byName.commonly_send_plan.call({
+      podId: 'p 1', reviewerUserId: 'u2', asked: { text: 'Fix it', sourceMessageId: '42' },
+      plan: 'Pin the clock', next: { agentName: 'codex' },
+    });
+    expect(res.isError).toBeUndefined();
+    const [url, init] = fetchSpy.mock.calls[0];
+    expect(url).toBe('https://x.example/api/agents/runtime/pods/p%201/hand-backs');
+    expect(init.method).toBe('POST');
+    expect(JSON.parse(init.body)).toEqual({
+      reviewerUserId: 'u2', asked: { text: 'Fix it', sourceMessageId: '42' }, plan: 'Pin the clock', next: { agentName: 'codex' },
+    });
+    expect(byName.commonly_send_plan.inputSchema.properties.asked.properties.requesterUserId).toBeUndefined();
+    expect(byName.commonly_send_plan.description).toMatch(/no_eligible_reviewer/);
+    expect(byName.commonly_send_plan.description).toMatch(/commonly_request_decision/);
+  });
+
+  it('commonly_hand_back posts the three agent fields to the record route', async () => {
+    const fetchSpy = installFetch(async () => okResponse({ handBack: { id: 'h1', status: 'handed_back' } }));
+    const body = {
+      changed: [{ kind: 'pr', ref: 'https://example.com/a/b/pull/1' }],
+      checked: [{ what: 'spec', how: 'ran it' }],
+      unverified: [],
+    };
+    await byName.commonly_hand_back.call({ id: 'h1', ...body });
+    const [url, init] = fetchSpy.mock.calls[0];
+    expect(url).toBe('https://x.example/api/agents/runtime/hand-backs/h1/hand-back');
+    expect(init.method).toBe('POST');
+    expect(JSON.parse(init.body)).toEqual(body);
+    expect(byName.commonly_hand_back.inputSchema.required).toEqual(['id', 'changed', 'checked', 'unverified']);
+  });
+
+  it('commonly_get_hand_back is a read-only GET', async () => {
+    const fetchSpy = installFetch(async () => okResponse({ handBack: { id: 'h1' } }));
+    await byName.commonly_get_hand_back.call({ id: 'h1' });
+    const [url, init] = fetchSpy.mock.calls[0];
+    expect(url).toBe('https://x.example/api/agents/runtime/hand-backs/h1');
+    expect(init.method).toBe('GET');
+    expect(byName.commonly_get_hand_back.annotations?.readOnlyHint).toBe(true);
+  });
+
+  it('commonly_withdraw_hand_back posts to the dual-auth withdraw route', async () => {
+    const fetchSpy = installFetch(async () => okResponse({ handBack: { id: 'h1', status: 'withdrawn' } }));
+    await byName.commonly_withdraw_hand_back.call({ id: 'h1', reason: 'wrong ask' });
+    const [url, init] = fetchSpy.mock.calls[0];
+    expect(url).toBe('https://x.example/api/hand-backs/h1/withdraw');
+    expect(init.method).toBe('POST');
+    expect(JSON.parse(init.body)).toEqual({ reason: 'wrong ask' });
   });
 });

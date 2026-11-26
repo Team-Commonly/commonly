@@ -8,7 +8,9 @@ import V2Avatar from './V2Avatar';
 import V2Hint from './V2Hint';
 import V2CatchUpStrip from './V2CatchUpStrip';
 import V2Composer from './V2Composer';
-import { type V2DecisionCardData, type V2DecisionRuling } from './V2DecisionCard';
+import {
+  toHandBackView, type HandBackRecordWire, type V2DecisionCardData, type V2DecisionRuling, type V2HandBackView,
+} from './V2DecisionCard';
 import { MentionLabelsContext } from './V2MentionChip';
 import { buildAgentDisplayNames, useMentionLabelMap } from '../utils/mentionLabels';
 import V2ThreadMessages, { ASK_START_ID, V2ThreadHistoryStatus } from './V2ThreadMessages';
@@ -145,6 +147,7 @@ interface ThreadDecision extends V2DecisionCardData {
   messageId: string;
   status?: 'pending' | 'ruled';
   ruling?: V2DecisionRuling | null;
+  subject?: { type?: string; id?: string; stage?: string };
 }
 
 interface DecisionPage<T> {
@@ -622,6 +625,10 @@ const V2Thread: React.FC<V2ThreadProps> = ({ detail, podsState, firstRunVisible 
 
   const [decisions, setDecisions] = useState<ThreadDecision[]>([]);
   const [settledDecisionByMessageId, setSettledDecisionByMessageId] = useState<Map<string, V2DecisionRuling>>(new Map());
+  // ADR-037: the hand-back records behind open hand-back cards, by record id.
+  const [handBacks, setHandBacks] = useState<{ byId: Map<string, HandBackRecordWire>; people: Record<string, string> }>(
+    { byId: new Map(), people: {} },
+  );
   const loadedMessageIdsRef = useRef<string[]>([]);
   loadedMessageIdsRef.current = [...new Set(messages
     .map((message) => String(message.id || ''))
@@ -648,6 +655,32 @@ const V2Thread: React.FC<V2ThreadProps> = ({ detail, podsState, firstRunVisible 
         // A failed queue read is not authoritative. Preserve pending cards
         // already rendered in this mount rather than making an open decision
         // disappear during a transient 429/network failure.
+        // Read the hand-back records behind the open hand-back cards, by id,
+        // so a card older than the pod's newest page still shows its record.
+        const handBackIds = [...new Set<string>((pendingData?.items || [])
+          .filter((item) => item.subject?.type === 'hand_back' && item.subject.id)
+          .map((item) => String(item.subject?.id)))];
+        if (handBackIds.length) {
+          // The route reads at most 100 ids per request, so ask in batches
+          // and merge them; a failed batch keeps what is already shown.
+          const batches: string[][] = [];
+          for (let index = 0; index < handBackIds.length; index += 100) {
+            batches.push(handBackIds.slice(index, index + 100));
+          }
+          const pages = await Promise.all(batches.map((ids) => api.get<{
+            handBacks?: HandBackRecordWire[]; people?: Record<string, string>;
+          }>(
+            `/api/pods/${encodeURIComponent(podId)}/hand-backs`,
+            { params: { ids: ids.join(',') } },
+          ).catch(() => null)));
+          if (!active) return;
+          if (pages.every(Boolean)) {
+            setHandBacks({
+              byId: new Map(pages.flatMap((page) => page?.handBacks || []).map((record) => [String(record.id), record])),
+              people: Object.assign({}, ...pages.map((page) => page?.people || {})),
+            });
+          }
+        }
         if (pendingData) {
           setDecisions(pendingData.items.filter((item) => (
             item.kind === 'decision'
@@ -685,11 +718,18 @@ const V2Thread: React.FC<V2ThreadProps> = ({ detail, podsState, firstRunVisible 
   }, [api, pod?._id, detailInitialLoadComplete]);
 
   const decisionByMessageId = useMemo(() => new Map(
-    decisions.map((decision) => [String(decision.messageId), decision]),
-  ), [decisions]);
+    decisions.map((decision) => {
+      const record = decision.subject?.type === 'hand_back' ? handBacks.byId.get(String(decision.subject.id)) : undefined;
+      const handBack: V2HandBackView | undefined = record
+        ? toHandBackView(record, handBacks.people, decision.subject?.stage)
+        : undefined;
+      return [String(decision.messageId), handBack ? { ...decision, handBack } : decision];
+    }),
+  ), [decisions, handBacks]);
 
   useEffect(() => {
     setSettledDecisionByMessageId(new Map());
+    setHandBacks({ byId: new Map(), people: {} });
   }, [pod?._id]);
 
   const handleDecisionRuled = useCallback((decisionId: string, ruling: V2DecisionRuling) => {

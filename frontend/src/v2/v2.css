@@ -4456,6 +4456,41 @@ body.modern-ui.v2-canvas {
 .v2-decision-card__settled { color: var(--v2-text-secondary); }
 .v2-decision-card__error { color: #b91c1c; }
 
+/* ADR-037: the hand-back record a card decides, and the required reason. */
+.v2-decision-card__handback {
+  display: grid;
+  min-width: 0;
+  gap: 2px;
+  color: var(--v2-text-primary);
+  font: 400 13px/19px var(--v2-font);
+  overflow-wrap: anywhere;
+}
+.v2-decision-card__handback p,
+.v2-decision-card__handback ul { margin: 0; }
+.v2-decision-card__handback ul { padding-left: 18px; }
+.v2-decision-card__handback-label {
+  margin-top: 6px;
+  color: var(--v2-text-muted);
+  font: 500 11px/14px var(--v2-font-mono);
+}
+.v2-decision-card__handback-provenance { color: var(--v2-text-secondary); font-size: 12px; }
+.v2-decision-card__reason {
+  display: grid;
+  gap: 4px;
+  color: var(--v2-text-secondary);
+  font: 500 12px/16px var(--v2-font);
+}
+.v2-decision-card__reason textarea {
+  min-width: 0;
+  border: 1px solid var(--v2-border);
+  border-radius: 4px;
+  padding: 5px 8px;
+  background: var(--v2-surface);
+  color: var(--v2-text-primary);
+  font: 400 13px/18px var(--v2-font);
+  resize: vertical;
+}
+
 /* ---------- Workspace thread and composer (TASK-129 PR 3) ---------- */
 
 /* The pod header shows the toggle only while the panel is hidden; the open

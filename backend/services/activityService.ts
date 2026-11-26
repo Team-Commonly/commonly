@@ -394,9 +394,41 @@ class ActivityService {
     // membership-checked by this indexed reader.
     // eslint-disable-next-line global-require
     const AttentionItemService = require('./attentionItemService');
-    return Object.keys(options).length > 0
-      ? AttentionItemService.getOpenQueue(userId, options)
-      : AttentionItemService.getOpenQueue(userId);
+    const queue = Object.keys(options).length > 0
+      ? await AttentionItemService.getOpenQueue(userId, options)
+      : await AttentionItemService.getOpenQueue(userId);
+    await ActivityService.withDecisionCardRules(queue?.items);
+    return queue;
+  }
+
+  /**
+   * ADR-037 §2: a card's allowed values and subject live on the card, not on
+   * the recipient's attention row, so the shell can show only the allowed
+   * choices and a reason box. Read once per page, only for decision cards.
+   */
+  static async withDecisionCardRules(items: unknown): Promise<void> {
+    if (!Array.isArray(items)) return;
+    const cards = items.filter((item: any) => item?.sourceType === 'decision_request' && item?.id);
+    if (!cards.length) return;
+    try {
+      // eslint-disable-next-line global-require
+      const DecisionRequest = require('../models/DecisionRequest');
+      const rows = await DecisionRequest.find({ _id: { $in: cards.map((item: any) => String(item.id)) } })
+        .select('_id allowedValues subject').lean();
+      const byId = new Map(rows.map((row: any) => [String(row._id), row]));
+      cards.forEach((item: any) => {
+        const row: any = byId.get(String(item.id));
+        if (row?.allowedValues?.length) {
+          item.allowedValues = row.allowedValues.map((allowed: any) => ({
+            value: allowed.value, reasonRequired: Boolean(allowed.reasonRequired),
+          }));
+        }
+        if (row?.subject?.type) item.subject = { type: row.subject.type, id: row.subject.id, stage: row.subject.stage };
+      });
+    } catch (error) {
+      // The card still renders its options; the server enforces the rules on ruling.
+      console.warn('[activity] decision card rules lookup failed:', (error as Error).message);
+    }
   }
 
   /**
@@ -466,8 +498,10 @@ class ActivityService {
       detail: row.question,
       options: row.options || [],
       status: row.status,
+      ...(row.subject?.type ? { subject: { type: row.subject.type, id: row.subject.id, stage: row.subject.stage } } : {}),
       ruling: row.ruling ? {
         value: row.ruling.value,
+        ...(row.ruling.reason ? { reason: row.ruling.reason } : {}),
         by: row.ruling.byUsername,
         // F645: the name people read; `by` stays the handle.
         byName: rulerNameOf(row, rulerNames),

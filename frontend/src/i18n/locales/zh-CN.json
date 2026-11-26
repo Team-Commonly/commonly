@@ -445,7 +445,26 @@
       "sendOther": "发送裁定",
       "ruled": "{{by}} 已裁定：{{value}}",
       "ruledShort": "已裁定",
-      "actionFailed": "无法保存该裁定，请重试。"
+      "actionFailed": "无法保存该裁定，请重试。",
+      "reasonLabel": "你的理由（必填）",
+      "reasonPlaceholder": "说明原因，智能体会读到。",
+      "reasonRequired": "请先写下理由。",
+      "valueNotAllowed": "这张卡片不接受这个选项。",
+      "ruledWithReason": "{{by}} 已裁定：{{value}}。{{reason}}",
+      "closed": "这张卡片已撤回，无需裁定。",
+      "movedOn": "这张卡片的状态已变，刷新后查看最新进度。",
+      "handBack": {
+        "asked": "需求",
+        "requesterMessage": "提出者：{{name}}，来自提出需求的那条消息。",
+        "requesterTask": "提出者：{{name}}，即创建该任务的人。",
+        "requesterOwner": "提出者：{{name}}，即该智能体的所有者。没有来源消息。",
+        "plan": "方案",
+        "changed": "改动",
+        "checked": "已验证",
+        "unverified": "未验证",
+        "nothingUnverified": "智能体表示没有未验证的内容。",
+        "next": "接手：{{agent}}"
+      }
     },
     "mention": {
       "acknowledge": "确认",

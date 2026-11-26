@@ -19,12 +19,20 @@ export const PUBLIC_WITHHELD_TOOLS = Object.freeze(['commonly_attach_file', 'com
 // commonly_delete_message (F141): a stranger-steered seat could delete its own
 // replies to an injection, which are the evidence of what the attack achieved.
 // A workspace seat keeps it.
+// The hand-back tools (ADR-037 Phase 1, F654): commonly_send_plan puts a
+// decision card in front of a named person, so a stranger-steered seat must
+// not be able to aim one. A public agent starts without all four; a workspace
+// seat keeps them.
 export const PUBLIC_ONLY_WITHHELD_TOOLS = Object.freeze([
   'commonly_self_install_into_pod',
   'commonly_write_agent_memory',
   'commonly_save_my_memory',
   'commonly_log_cycle',
   'commonly_delete_message',
+  'commonly_send_plan',
+  'commonly_hand_back',
+  'commonly_get_hand_back',
+  'commonly_withdraw_hand_back',
 ]);
 
 // Everything a public seat is not offered. Codex, OpenCode, Qwen and Goose
