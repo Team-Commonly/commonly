@@ -102,4 +102,41 @@ describe('the account deletion sweep and hosted connections (F368)', () => {
     expect(mockRemove).toHaveBeenCalledTimes(1);
     expect(await Integration.exists({ _id: row._id })).toBeNull();
   });
+
+  // F660: removeOwnedConnections reaches hosted rows only, so a GitHub-app
+  // row the person shared with a pod kept its grants live. The sweep now ends
+  // the person's pod grants in every pod, a DM room included; seat grants are
+  // out of this scope and stay.
+  it('ends the person\'s pod grants on every connection type, and no one else\'s', async () => {
+    // eslint-disable-next-line global-require
+    const RoomGrant = require('../../models/RoomGrant');
+    const gone = new mongoose.Types.ObjectId();
+    const other = new mongoose.Types.ObjectId();
+    const agent = new mongoose.Types.ObjectId();
+    await AccountDeletion.create({ _id: gone });
+    const grant = (ownerId, target) => RoomGrant.create({
+      grantId: `grant_${new mongoose.Types.ObjectId()}`,
+      connectionId: 'install-gh-1',
+      installationId: 'install-gh-1',
+      target,
+      tools: ['github.list_issues'],
+      writeMode: 'read',
+      audience: [String(agent)],
+      expiresAt: new Date(Date.now() + 3_600_000),
+      brokerId: 'github-app',
+      ownerId: String(ownerId),
+    });
+    const inPod = await grant(gone, { kind: 'pod', id: String(new mongoose.Types.ObjectId()) });
+    const inDmRoom = await grant(gone, { kind: 'pod', id: String(new mongoose.Types.ObjectId()) });
+    const seat = await grant(gone, { kind: 'seat', id: String(agent) });
+    const othersGrant = await grant(other, { kind: 'pod', id: String(new mongoose.Types.ObjectId()) });
+
+    await sweepAccountDeletions();
+
+    const revokedAt = async (g) => (await RoomGrant.findOne({ grantId: g.grantId }).lean()).revokedAt;
+    expect(await revokedAt(inPod)).toBeInstanceOf(Date);
+    expect(await revokedAt(inDmRoom)).toBeInstanceOf(Date);
+    expect(await revokedAt(seat)).toBeNull();
+    expect(await revokedAt(othersGrant)).toBeNull();
+  });
 });

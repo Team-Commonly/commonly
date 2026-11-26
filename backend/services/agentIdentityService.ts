@@ -848,6 +848,9 @@ class AgentIdentityService {
     if (hadMember) {
       pod.members = pod.members.filter((member: unknown) => String(member).toString() !== agentId);
       await pod.save();
+      // F660: any pod grant this agent owns there ends with it. Never throws.
+      // eslint-disable-next-line @typescript-eslint/no-require-imports, global-require
+      await require('./roomGrantService').endMemberPodGrants({ podId: String(pod._id), userId: agentId });
     }
 
     if (process.env.PG_HOST && PGPod) {
