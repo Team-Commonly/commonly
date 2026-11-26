@@ -5904,6 +5904,19 @@ test('OpenUI table cells break only between words; a long token scrolls the tabl
   expect(css).toContain('.v2-ui-card .ui-table { min-width:0; }');
 });
 
+test('Global Integrations grids shrink inside the column and stack on a phone', () => {
+  const css = read('../components/V2GlobalIntegrations.css');
+  // Zero-minimum tracks: a long token or URL can't push a grid past its column.
+  expect(ruleBody(css, '.v2-global-int__pair')).toContain('grid-template-columns: repeat(2, minmax(0, 1fr));');
+  expect(ruleBody(css, '.v2-global-int__grid')).toContain('grid-template-columns: repeat(3, minmax(0, 1fr));');
+  expect(ruleBody(css, '.v2-global-int__stats')).toContain('grid-template-columns: repeat(3, minmax(0, 1fr));');
+  ['.v2-global-int__card', '.v2-global-int__field', '.v2-global-int__input'].forEach((selector) => {
+    expect(ruleBody(css, selector)).toContain('min-width: 0;');
+  });
+  const phone = css.slice(css.indexOf('@media (max-width: 760px)'));
+  expect(phone).toMatch(/\.v2-global-int__pair,\s*\.v2-global-int__grid,\s*\.v2-global-int__stats\s*\{\s*grid-template-columns: minmax\(0, 1fr\);/);
+});
+
 test('the card Source line (TASK-607) uses v2 tokens only, one value per token, no dark-only colours', () => {
   const css = read('../cards/uiCard.css');
   const rules = css.split('\n').filter(line => /\.ui-src/.test(line));

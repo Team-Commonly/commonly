@@ -83,6 +83,9 @@ const V2GlobalIntegrations: React.FC = () => {
   const location = useLocation();
   const navigate = useNavigate();
   const [loading, setLoading] = useState(true);
+  // The forms start from fallback values; until one read has succeeded a save
+  // would overwrite the stored policies with them, so none is offered.
+  const [loaded, setLoaded] = useState(false);
   const [saving, setSaving] = useState(false);
   const [connectingX, setConnectingX] = useState(false);
   const [loadingXFollowing, setLoadingXFollowing] = useState(false);
@@ -148,6 +151,7 @@ const V2GlobalIntegrations: React.FC = () => {
           },
         });
       }
+      setLoaded(true);
     } catch (err) {
       setError(errorText(err, 'Failed to load integrations'));
     } finally {
@@ -171,8 +175,9 @@ const V2GlobalIntegrations: React.FC = () => {
       setError(detail || 'X OAuth connection failed');
       setSuccess('');
     }
-    navigate(RETURN_PATH, { replace: true });
-  }, [location.search, navigate, fetchIntegrations]);
+    // Clear only the query: the page is mounted under /v2 as well.
+    navigate(location.pathname, { replace: true });
+  }, [location.pathname, location.search, navigate, fetchIntegrations]);
 
   // One save shape for every form: clear the notices, post, announce, re-read.
   const save = async (path: string, body: unknown, done: string, failed: string) => {
@@ -270,6 +275,16 @@ const V2GlobalIntegrations: React.FC = () => {
   };
 
   if (loading) return <p className="v2-global-int__sub" role="status">Loading integrations…</p>;
+  if (!loaded) {
+    return (
+      <div className="v2-global-int">
+        <div className="v2-global-int__notice v2-global-int__notice--error" role="alert">
+          <span>{error || 'Failed to load integrations'}</span>
+          <button type="button" className="v2-global-int__dismiss" onClick={() => { setLoading(true); fetchIntegrations(); }}>Retry</button>
+        </div>
+      </div>
+    );
+  }
 
   const llm = modelPolicy.llmService;
   const setLlm = (patch: Partial<ModelPolicy['llmService']>) => setModelPolicy({ llmService: { ...llm, ...patch } });

@@ -107,6 +107,26 @@ describe('model policy', () => {
   });
 });
 
+describe('a failed first read', () => {
+  test('offers no save over the fallback values, only the error and a retry', async () => {
+    mockGet.mockRejectedValueOnce({ response: { data: { error: 'Database unavailable' } } });
+    await renderPage();
+
+    expect(screen.getByRole('alert')).toHaveTextContent('Database unavailable');
+    ['Save Policy', 'Save Model Policy', 'Save X Configuration', 'Save Instagram Configuration'].forEach((name) => {
+      expect(screen.queryByRole('button', { name })).not.toBeInTheDocument();
+    });
+    expect(mockPost).not.toHaveBeenCalled();
+
+    mockGet.mockResolvedValueOnce(connected());
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Retry' })); });
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Save Policy' })); });
+    // The saved policy goes back as read, not as the fallback.
+    expect(postBody('/api/admin/integrations/global/policy'))
+      .toEqual({ socialMode: 'rewrite', publishEnabled: true, strictAttribution: false });
+  });
+});
+
 describe('token fields', () => {
   test('a saved token shows the leave-blank placeholder instead of the secret', async () => {
     mockGet.mockResolvedValue(connected());
@@ -183,6 +203,13 @@ describe('X account', () => {
     await renderPage('/admin/integrations/global?xOAuth=success&detail=%40CommonlyHQ');
     await waitFor(() => expect(screen.getByText('X OAuth connected (@CommonlyHQ)')).toBeInTheDocument());
     expect(seenPath).toBe('/admin/integrations/global');
+  });
+
+  test('on the v2 route the OAuth return clears the query and stays on the v2 page', async () => {
+    mockGet.mockResolvedValue(connected());
+    await renderPage('/v2/admin/integrations/global?xOAuth=success&detail=%40CommonlyHQ');
+    await waitFor(() => expect(screen.getByText('X OAuth connected (@CommonlyHQ)')).toBeInTheDocument());
+    expect(seenPath).toBe('/v2/admin/integrations/global');
   });
 
   test('a failed OAuth return shows the provider detail', async () => {
