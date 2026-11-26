@@ -53,7 +53,9 @@ const { projectIntegrationForViewer, withoutConnectCode } = require('../models/i
 // eslint-disable-next-line global-require
 const { revokeConnectionGrants, SYSTEM_REVOKER } = require('../services/roomGrantService');
 // eslint-disable-next-line global-require
-const { removeConnection, HOSTED_MCP_TYPE } = require('../services/connectionRemovalService');
+const {
+  removeConnection, removeGithubAppRepositoryConnection, HOSTED_MCP_TYPE,
+} = require('../services/connectionRemovalService');
 import { isGithubAppConfigured } from '../services/githubAppNames';
 import { githubRepositoryListRateLimit } from '../middleware/githubRepositoryListRateLimit';
 import { GithubConnectProofError, GITHUB_MCP_ENTRY_ID, listConnectRepositories, proveConnectRepository } from '../services/githubConnectProof';
@@ -1437,8 +1439,9 @@ router.delete('/:id', writeIntegrationsRateLimit, auth, async (req: AuthReq, res
     const readOwner = integration.createdBy ? String(integration.createdBy) : '';
     if (perRepositoryGithubRow) {
       if (!readOwner) return res.status(404).json({ message: 'Integration not found' });
-      await revokeConnectionGrants({ connection: integration, revokedBy: deletedBy, ownerId: readOwner });
-      const deleted = await Integration.findOneAndDelete({ _id: id, createdBy: readOwner });
+      const deleted = await removeGithubAppRepositoryConnection({
+        connection: integration, removedBy: deletedBy, revokeGrants: revokeConnectionGrants,
+      });
       if (!deleted) return res.status(404).json({ message: 'Integration not found' });
       return res.json({ message: 'Integration deleted successfully' });
     }

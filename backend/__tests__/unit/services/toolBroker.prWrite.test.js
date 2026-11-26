@@ -63,6 +63,10 @@ jest.mock('../../../services/roomGrantService', () => {
   }
   return {
     RoomGrantError: MockRoomGrantError,
+    // The owner checks are grant-level, like assertGrantUsable below: the mock's to answer.
+    grantOwnerRefusal: () => null,
+    grantOwnerIds: () => [],
+    existingGrantOwnerIds: async () => new Set(),
     // The real tool and mode checks; the grant-level checks are the mock's.
     assertGrantToolAllowed: jest.requireActual('../../../services/roomGrantService').assertGrantToolAllowed,
     assertGrantUsable: jest.fn(async (options) => {

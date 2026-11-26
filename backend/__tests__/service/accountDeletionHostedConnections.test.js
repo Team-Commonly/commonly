@@ -82,7 +82,7 @@ describe('the account deletion sweep and hosted connections (F368)', () => {
     mockRemove.mockRejectedValueOnce(new Error('vendor exploded'));
 
     const failure = await sweepAccountDeletions().catch((error) => error);
-    expect(failure.errors.map((e) => e.message).join(' ')).toMatch(/hosted connections not removed yet/);
+    expect(failure.errors.map((e) => e.message).join(' ')).toMatch(/connections not removed yet/);
     expect(mockRemove).toHaveBeenCalledTimes(2);
     // One of the two went through despite the other throwing first.
     expect(await Integration.countDocuments({ _id: { $in: [first._id, second._id] } })).toBe(1);
@@ -105,9 +105,9 @@ describe('the account deletion sweep and hosted connections (F368)', () => {
 
   // F660: removeOwnedConnections reaches hosted rows only, so a GitHub-app
   // row the person shared with a pod kept its grants live. The sweep now ends
-  // the person's pod grants in every pod, a DM room included; seat grants are
-  // out of this scope and stay.
-  it('ends the person\'s pod grants on every connection type, and no one else\'s', async () => {
+  // the person's pod grants in every pod, a DM room included, and (F664) their
+  // seat grants too.
+  it('ends the person\'s pod and seat grants on every connection type, and no one else\'s', async () => {
     // eslint-disable-next-line global-require
     const RoomGrant = require('../../models/RoomGrant');
     const gone = new mongoose.Types.ObjectId();
@@ -136,7 +136,7 @@ describe('the account deletion sweep and hosted connections (F368)', () => {
     const revokedAt = async (g) => (await RoomGrant.findOne({ grantId: g.grantId }).lean()).revokedAt;
     expect(await revokedAt(inPod)).toBeInstanceOf(Date);
     expect(await revokedAt(inDmRoom)).toBeInstanceOf(Date);
-    expect(await revokedAt(seat)).toBeNull();
+    expect(await revokedAt(seat)).toBeInstanceOf(Date);
     expect(await revokedAt(othersGrant)).toBeNull();
   });
 });

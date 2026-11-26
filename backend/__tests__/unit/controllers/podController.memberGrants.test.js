@@ -11,6 +11,7 @@ const mongoose = require('mongoose');
 
 const podController = require('../../../controllers/podController');
 const Pod = require('../../../models/Pod');
+const User = require('../../../models/User');
 const RoomGrant = require('../../../models/RoomGrant');
 const roomGrantService = require('../../../services/roomGrantService');
 const { setupMongoDb, closeMongoDb, clearMongoDb } = require('../../utils/testUtils');
@@ -117,7 +118,9 @@ describe('podController ends a member\'s pod grants with their membership (F660)
       spy.mockRestore();
       log.mockRestore();
     }
-    // The grant the failed revoke missed is still refused at use.
+    // The grant the failed revoke missed is still refused at use. The owner's
+    // account exists, so the member check is what refuses it.
+    await User.create({ _id: OWNER, username: 'grant-owner', email: 'grant-owner@example.test', password: 'fixture-only' });
     await expect(roomGrantService.assertGrantUsable({
       grantId: mine.grantId,
       agentUserId: String(AGENT),
