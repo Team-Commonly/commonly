@@ -3,19 +3,27 @@ import { createLibrary, defineComponent, Renderer } from '@openuidev/react-lang'
 import { z } from 'zod/v4';
 import type { LibraryJSONSchema } from '@openuidev/lang-core';
 import { BadgeView, CardLink, DiffView, KeyValueView, ListView, SourceView, StepsView, TableView, TaskView, TextView, TraceView } from './cardViews';
+import { BarChartView, LineChartView, ProgressView } from './cardCharts';
+import { CardButton, CardChoiceNote } from './cardChoice';
 import type { CardRevision } from './uiCardSource';
 import type { Node } from './cardViews';
 
 const views: Record<string, (p: Record<string, any>, render: (v: unknown) => React.ReactNode) => React.ReactNode> = {
   Card: (p, render) => {
-    const links = p.children.filter((n: Node) => n.typeName === 'Link' && n.props.as !== 'text');
+    const links = p.children.filter((n: Node) => (n.typeName === 'Link' && n.props.as !== 'text') || n.typeName === 'Button');
+    const acting = links.some((n: Node) => n.typeName === 'Button');
     // The origin sits in the footer beside the buttons, never in the body.
     const source = p.children.find((n: Node) => n.typeName === 'Source');
     const body = p.children.filter((n: Node) => !links.includes(n) && n !== source);
     return <section className="ui"><div className="ui-h"><h4>{p.title}</h4>{p.meta && <span className="ui-meta">{p.meta}</span>}</div>
       {p.summary && <p className="ui-sum">{p.summary}</p>}<div className="ui-bd">{body.map((n: Node, i: number) => <React.Fragment key={i}>{render(n)}</React.Fragment>)}</div>
-      {(!!links.length || source) && <div className="ui-ft">{links.map((n: Node, i: number) => <React.Fragment key={i}>{render(n)}</React.Fragment>)}{source && render(source)}</div>}</section>;
+      {(!!links.length || source) && <div className="ui-ft">{links.map((n: Node, i: number) => <React.Fragment key={i}>{render(n)}</React.Fragment>)}{acting && <CardChoiceNote />}{source && render(source)}</div>}</section>;
   },
+  Progress: p => <ProgressView value={p.value} label={p.label} />,
+  BarChart: p => <BarChartView labels={p.labels} series={p.series} variant={p.variant} xLabel={p.xLabel} yLabel={p.yLabel} />,
+  LineChart: p => <LineChartView labels={p.labels} series={p.series} xLabel={p.xLabel} yLabel={p.yLabel} />,
+  Button: p => <CardButton label={p.label} as={p.as} />,
+  Series: () => null,
   Text: (p, render) => <TextView body={p.body} render={render} />,
   Badge: p => <BadgeView label={p.label} tone={p.tone} />,
   List: p => <ListView items={p.items} ordered={p.ordered} />,

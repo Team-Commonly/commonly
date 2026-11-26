@@ -8,12 +8,19 @@ import catalogue from '../config/uiCardCatalogue.json';
 import revision from '../config/uiCardCatalogueRevision.json';
 import catalogueRev2 from '../config/uiCardCatalogue.rev2.json';
 import revisionRev2 from '../config/uiCardCatalogueRevision.rev2.json';
+import catalogueRev3 from '../config/uiCardCatalogue.rev3.json';
+import revisionRev3 from '../config/uiCardCatalogueRevision.rev3.json';
 
 // A revision is immutable: property insertion order is OpenUI's positional ABI.
-// Agents author revision 1 (the MCP snapshot serves it). Revision 2 adds only
-// Source, which the server stamps; an agent-written Source is always refused.
+// Revision 2 adds only Source, which the server stamps; an agent-written Source
+// is always refused. Revision 3 is revision 1 plus Progress, BarChart,
+// LineChart (with Series) and an acting Button; the MCP snapshot serves it.
 export const UI_CARD_CATALOGUE = Object.freeze({ ...revision });
 export const UI_CARD_SOURCE_CATALOGUE = Object.freeze({ ...revisionRev2 });
+// A card's acting buttons are one choice, like a decision card's options.
+const UI_CARD_MIN_CHOICES = 2;
+const UI_CARD_MAX_CHOICES = 4;
+const UI_CARD_CHOICE_MAX_LENGTH = 80;
 export const UI_CARD_SOURCE_CONNECTORS: readonly string[] = Object.freeze(
   [...catalogueRev2.$defs.Source.properties.connector.enum],
 );
@@ -42,7 +49,7 @@ const closingTokens = new Map([
 ]);
 const openParenToken = bracketTokens[0].t;
 // Components that only ever appear inside a parent, never as the card root.
-const notRoot = new Set(['Step', 'File', 'Pair', 'Col', 'Source']);
+const notRoot = new Set(['Step', 'File', 'Pair', 'Col', 'Source', 'Series']);
 
 type Grammar = typeof catalogue;
 interface CardRevision {
@@ -79,15 +86,34 @@ function loadRevision(grammar: Grammar, pin: typeof revision): CardRevision {
     }),
   };
 }
-const revisions = [loadRevision(catalogue, revision), loadRevision(catalogueRev2 as Grammar, revisionRev2)];
+const revisions = [
+  loadRevision(catalogue, revision),
+  loadRevision(catalogueRev2 as Grammar, revisionRev2),
+  loadRevision(catalogueRev3 as unknown as Grammar, revisionRev3),
+];
+// ToAssistant exists only where a Button can carry it.
+const acts = (rev: CardRevision) => rev.componentNames.has('Button');
 const allowedCall = (rev: CardRevision, name: string) => (
-  rev.componentNames.has(name) || ['Action', 'OpenUrl'].includes(name)
+  rev.componentNames.has(name) || ['Action', 'OpenUrl'].includes(name) || (name === 'ToAssistant' && acts(rev))
 );
+
+type AstNode = { k?: string; name?: string; args?: AstNode[]; els?: AstNode[]; v?: unknown };
+/** The one ToAssistant step of a parsed Action, written bare or as a one-step list. */
+function choiceStep(action: AstNode): AstNode | undefined {
+  const [arg] = action.args || [];
+  if ((action.args || []).length !== 1 || !arg) return undefined;
+  const step = arg.k === 'Arr' && arg.els?.length === 1 ? arg.els[0] : arg;
+  return step.k === 'Comp' && step.name === 'ToAssistant' ? step : undefined;
+}
+/** The choice a validated Button's action sends; validateCardSource proved its shape. */
+const choiceOf = (action: unknown): string => String(choiceStep(action as AstNode)?.args?.[0]?.v ?? '');
 
 function validatePresentation(root: ElementNode): void {
   let buttons = 0;
   let primary = 0;
   let sources = 0;
+  const choices: string[] = [];
+  const labels: string[] = [];
   function visit(value: unknown): void {
     if (Array.isArray(value)) { value.forEach(visit); return; }
     if (!value || typeof value !== 'object') return;
@@ -99,6 +125,18 @@ function validatePresentation(root: ElementNode): void {
       assertApprovedCardLink(String(props.url), 'Link requires an approved credential-free https URL');
       if (props.as !== 'text') buttons += 1;
       if (props.as === 'primary') primary += 1;
+    }
+    if (node.typeName === 'Button') {
+      choices.push(choiceOf(props.action));
+      labels.push(String(props.label));
+      if (props.as === 'primary') primary += 1;
+      // The action is the parsed node: never walk it as presentation.
+      visit(props.label);
+      return;
+    }
+    if ((node.typeName === 'BarChart' || node.typeName === 'LineChart')
+      && (props.series as ElementNode[]).some((s) => (s.props.values as unknown[]).length !== (props.labels as unknown[]).length)) {
+      refuse('Chart series must have one value per label');
     }
     if (node.typeName === 'Text' && Array.isArray(props.body)) {
       let length = 0;
@@ -123,6 +161,14 @@ function validatePresentation(root: ElementNode): void {
   }
   visit(root);
   if (buttons > 2 || primary > 1) refuse('UI card permits at most two buttons and one primary link');
+  if (choices.length && (choices.length < UI_CARD_MIN_CHOICES || choices.length > UI_CARD_MAX_CHOICES)) {
+    refuse(`UI card acting Buttons are one choice of ${UI_CARD_MIN_CHOICES} to ${UI_CARD_MAX_CHOICES} options`);
+  }
+  if (new Set(choices.map((choice) => choice.toLocaleLowerCase())).size !== choices.length) {
+    refuse('UI card Button choices must be distinct');
+  }
+  // The renderer matches a click to its choice by label.
+  if (new Set(labels).size !== labels.length) refuse('UI card Button labels must be distinct');
   const topLevelSources = root.typeName === 'Card'
     ? (root.props.children as ElementNode[]).filter((child) => child.typeName === 'Source').length : 0;
   if (sources > 1 || sources !== topLevelSources) refuse('UI card permits one Source, on the top-level Card');
@@ -311,22 +357,38 @@ function validateCardSource(source: string, rev: CardRevision, serverStamped: bo
       ids.add(statement.id);
       const expression = parseExpression(statement.tokens);
       expressions.set(statement.id, expression);
+      // A ToAssistant is valid only as the single step of an Action.
+      const steps = new Set<unknown>();
+      const choiceCalls: unknown[] = [];
       walkAST(expression, (node) => {
         if (node.k === 'Comp') {
           if (!callable(node.name)) {
             refuse(`UI card call is not allowed: ${node.name}`);
           }
           if (node.fn) refuse('UI card functions are not allowed');
-          if (node.name === 'Action' && (node.args.length !== 1
-            || node.args[0].k !== 'Comp' || node.args[0].name !== 'OpenUrl')) {
-            refuse('Action requires one parsed OpenUrl call');
+          if (node.name === 'Action') {
+            const step = acts(rev) ? choiceStep(node as AstNode) : undefined;
+            if (step) steps.add(step);
+            else if (node.args.length !== 1 || node.args[0].k !== 'Comp' || node.args[0].name !== 'OpenUrl') {
+              refuse(acts(rev)
+                ? 'Action requires one parsed OpenUrl or ToAssistant call'
+                : 'Action requires one parsed OpenUrl call');
+            }
+          }
+          if (node.name === 'ToAssistant') {
+            choiceCalls.push(node);
+            const [choice] = node.args;
+            if (node.args.length !== 1 || choice?.k !== 'Str' || !choice.v.trim()
+              || [...choice.v].length > UI_CARD_CHOICE_MAX_LENGTH) {
+              refuse(`ToAssistant requires one literal choice of 1 to ${UI_CARD_CHOICE_MAX_LENGTH} characters`);
+            }
           }
           if (node.name === 'OpenUrl') {
             const [url] = node.args;
             if (node.args.length !== 1 || url?.k !== 'Str') refuse('OpenUrl requires a literal https URL');
             assertApprovedCardLink(url.v, 'OpenUrl requires an approved literal https URL');
           }
-        } else if (node.k === 'Ref' && ['Query', 'Mutation', 'Run', 'Action', 'OpenUrl'].includes(node.n)) {
+        } else if (node.k === 'Ref' && ['Query', 'Mutation', 'Run', 'Action', 'OpenUrl', 'ToAssistant'].includes(node.n)) {
           refuse(`UI card capability is not allowed: ${node.n}`);
         } else if (node.k === 'Obj') {
           if (node.entries.some(([key]) => ['__proto__', 'prototype', 'constructor'].includes(key))) {
@@ -336,6 +398,9 @@ function validateCardSource(source: string, rev: CardRevision, serverStamped: bo
           refuse('UI card reactive expressions are not allowed');
         }
       });
+      if (choiceCalls.some((call) => !steps.has(call))) {
+        refuse('ToAssistant is allowed only as the one step of an Action');
+      }
     });
     validateExpansionBudget(expressions);
     const result = rev.parser.parse(source);
@@ -351,6 +416,33 @@ function validateCardSource(source: string, rev: CardRevision, serverStamped: bo
     if (error instanceof UICardValidationError) throw error;
     refuse('UI card source could not be parsed');
   }
+}
+
+/**
+ * The choices a stored agent card offers through its acting Buttons, in order.
+ * The card is held to the agent write rules again, so a payload that no longer
+ * validates offers nothing. Empty for a card with no acting Button.
+ */
+export function cardChoices(payload: unknown, content: unknown): Array<{ label: string; value: string }> {
+  let root: ElementNode | undefined;
+  try {
+    root = validateCardPayload('card', payload, content, false);
+  } catch {
+    return [];
+  }
+  const found: Array<{ label: string; value: string }> = [];
+  const visit = (value: unknown): void => {
+    if (Array.isArray(value)) { value.forEach(visit); return; }
+    const node = value as ElementNode | null;
+    if (!node || typeof node !== 'object' || node.type !== 'element') return;
+    if (node.typeName === 'Button') {
+      found.push({ label: String(node.props.label), value: choiceOf(node.props.action) });
+      return;
+    }
+    Object.values(node.props).forEach(visit);
+  };
+  visit(root);
+  return found;
 }
 
 interface UICardEnvelope {

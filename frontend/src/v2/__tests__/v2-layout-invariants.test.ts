@@ -5860,6 +5860,17 @@ test('OpenUI cards keep the approved phone controls and table records', () => {
   expect(css).toContain('.ui.gone{border-style:dashed');
 });
 
+test('revision 3 charts scale to the card and draw in v2 tokens only', () => {
+  const css = read('../cards/uiCard.css');
+  // Without width:100% and height:auto the 480-wide viewBox overflows a phone card.
+  expect(css).toContain('.v2-ui-card .ui-ch-svg { display:block; width:100%; height:auto; max-width:100%;');
+  // The value table is for screen readers; it must never take layout width.
+  expect(css).toContain('.v2-ui-card .ui-ch-data { position:absolute; width:1px; height:1px; overflow:hidden;');
+  const rules = css.split('\n').filter(line => /\.ui-(ch|pg)|--c[1-4]:/.test(line));
+  expect(rules.length).toBeGreaterThanOrEqual(10);
+  for (const rule of rules) expect(rule).not.toMatch(/#[0-9a-f]{3,8}\b|rgba?\(|hsla?\(|data-v2-theme|prefers-color-scheme/i);
+});
+
 test('the card Source line (TASK-607) uses v2 tokens only, one value per token, no dark-only colours', () => {
   const css = read('../cards/uiCard.css');
   const rules = css.split('\n').filter(line => /\.ui-src/.test(line));
