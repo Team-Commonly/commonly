@@ -6,7 +6,7 @@ const Pod = require('../models/Pod');
 const { defaultWorkspacePodFor } = require('../config/defaultWorkspacePod');
 const { mirrorMemberAdded, mirrorUser } = require('../services/pgMirrorWrite');
 const InvitationCode = require('../models/InvitationCode');
-const WaitlistRequest = require('../models/WaitlistRequest');
+const { findPendingWaitlistRequest, createWaitlistRequest } = require('../repositories/waitlistRequestRepository');
 const AgentIdentityService = require('../services/agentIdentityService');
 const { sendEmail } = require('../services/emailService');
 const { markEmailVerified } = require('../services/onboardingMarks');
@@ -698,7 +698,7 @@ exports.requestWaitlist = async (req: any, res: any) => {
       });
     }
 
-    const existingPending = await WaitlistRequest.findOne({ email, status: 'pending' });
+    const existingPending = await findPendingWaitlistRequest(email);
     if (existingPending) {
       return res.status(200).json({
         message: 'Your waitlist request is already pending review.',
@@ -706,7 +706,7 @@ exports.requestWaitlist = async (req: any, res: any) => {
       });
     }
 
-    const created = await WaitlistRequest.create({
+    const created = await createWaitlistRequest({
       email,
       name,
       organization,

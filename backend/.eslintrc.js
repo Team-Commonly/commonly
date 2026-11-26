@@ -108,6 +108,9 @@ module.exports = {
           }, {
             group: ['**/models/HostedMcpDcrRegistration', '**/models/HostedMcpDcrRegistration.*'],
             message: 'Use repositories/hostedMcpDcrRegistrationRepository.',
+          }, {
+            group: ['**/models/WaitlistRequest', '**/models/WaitlistRequest.*'],
+            message: 'Use repositories/waitlistRequestRepository.',
           }],
         }],
         'no-restricted-modules': ['error', {
@@ -124,6 +127,7 @@ module.exports = {
             '**/models/AgentTaskRowWakeState', '**/models/AgentTaskRowWakeState.*',
             '**/models/AgentProviderKey', '**/models/AgentProviderKey.*',
             '**/models/HostedMcpDcrRegistration', '**/models/HostedMcpDcrRegistration.*',
+            '**/models/WaitlistRequest', '**/models/WaitlistRequest.*',
           ],
         }],
       },

@@ -385,6 +385,41 @@ refusal and ask are `findOneAndUpdateWhere` (decided on Mongo), and the retires
 are `setWhere`. `pg` reads Postgres and refuses the writes until step 4, before
 any write.
 
+## Thirteenth model: WaitlistRequest
+
+`WaitlistRequest` (a person's request to join the instance, and the admin's
+answer) follows the same template. Its table is `waitlist_requests` (`0028`):
+the Mongo `_id` as `id`, `email`, `name`, `organization`, `use_case` and `note`
+(the form's personal data, as Mongo holds it), `status`, `invitation_code` (the
+`InvitationCode` id as hex, never the code), `invited_by` (the admin's User id
+as hex), nullable `invited_at` and `invitation_sent_at`, and nullable
+`created_at` and `updated_at`. Mongo has no unique index besides `_id` and no
+TTL, so neither has Postgres; `(email, status)` and `created_at DESC` are plain
+indexes. `STORE_MODE_WAITLIST_REQUEST` selects the store. Its callers,
+`controllers/authController.ts` (the public request) and
+`routes/admin/users.ts` (the admin list, status change and send-invitation),
+import `repositories/waitlistRequestRepository`; ESLint fences the model.
+`0028` must be applied after `0027`, never before it.
+
+- `findPendingWaitlistRequest(email)` and `createWaitlistRequest(fields)` are
+  the public request's duplicate check and create.
+- `listWaitlistRequests({ q, status, skip, limit })` is the admin list, refs
+  populated by the repository.
+- `setWaitlistRequestStatus(id, update)` is the admin's status change; a close
+  nulls the invitation fields.
+- `findWaitlistRequestForInvitation(id)`, `markWaitlistRequestInvited(request,
+  fields)` and `findWaitlistRequestPopulated(id)` are send-invitation's read,
+  record and response re-read; `assertWaitlistWritable` refuses the route in
+  `pg` before it creates a code or sends an email.
+
+In `mongo` each makes its pre-step-2 Mongoose call (hydrated documents and
+`save()` included). In `dual` and `pg-read` the create is the helper's
+`create`, the status change and the invitation are `update` (decided on Mongo,
+nulls stored in both stores), the list is `findPageMongo` and `countMongo`, the
+duplicate check and the invitation's read are `findPageMongo` (each decides a
+write), and the response re-read is `findById`. `pg` refuses the writes and the
+list until step 4, before any write.
+
 For the next aggregate, expose its domain operations, keep Mongoose queries
 inside its repository, and return plain values. Do not expose `find`, `save`,
 `populate`, or a generic query builder. Extract without changing storage first,
