@@ -37,6 +37,7 @@ class FakeGuard:
         self.catch_ups = []
         self.events = []
         self.log = []
+        self.bodies = []
 
     def hold_body(self):
         return {
@@ -95,6 +96,7 @@ def make_handler(guard):
                 guard.log.append("refused")
                 return self._send(409, guard.hold_body())
             guard.posts.append(body.get("content"))
+            guard.bodies.append(body)
             guard.log.append(f"post:{body.get('content')}")
             return self._send(200, {"success": True, "message": {"content": body.get("content")}})
 
@@ -154,6 +156,12 @@ class ReplyPathTest(unittest.TestCase):
         self.assertEqual(receipt["catchUp"]["skippedCount"], 23)
         self.bot.post_message("pod_1", "hello")
         self.assertEqual(self.guard.posts, ["hello"])
+
+    def test_a_reply_id_goes_out_under_the_runtime_field_name(self):
+        self.guard.unread = False
+        self.bot.post_message("pod_1", "hello", reply_to_message_id="msg_9")
+        self.assertEqual(self.guard.bodies[-1].get("replyToMessageId"), "msg_9")
+        self.assertNotIn("reply_to_message_id", self.guard.bodies[-1])
 
     def test_run_reads_then_posts_then_acks_and_never_posts_directly(self):
         self.guard.events = [{"_id": "evt_1", "podId": "pod_1", "payload": {}}]
