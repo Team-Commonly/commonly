@@ -34,10 +34,17 @@ one needs-you email per attention item, whose claim uses the helper's `create` (
 stamp uses `updateWhere` on `clickedAt: { $exists: false }`, whose digest mark uses `updateManyWhere`, and
 whose overflow read uses `findWhere` with `$exists` on its two presence columns. Its `clickToken` is
 `select: false`: the helper copies it and never hands it back unless a read names it.
+The tenth is `AgentTaskRowWakeState` (table `agent_task_row_wake_states`, migration `0025`,
+`STORE_MODE_AGENT_TASK_ROW_WAKE_STATE`), what the assigned-task wake remembers about one row for one seat,
+whose read uses `findWhere` with `$in` on `_id`, whose outcome count, stop, un-stop and reset use
+`updateWhere` (the null-equality filters run on Mongo), whose wake stamp is one helper `upsert` per row in
+order, and whose compensation for a stamp that failed part-way uses `updateManyWhere`. Its
+`lastWakeEventId` and `countedEventId` are ObjectIds in Mongo and hex text in Postgres.
 
-**Migration order: `0024` must not be applied before `0023`.** The migration runner matches history to the
-sorted file list by position, so an instance that has run `0024` refuses to boot once a `0023` file appears.
-`0023` (`DiscordSummaryHistory`) is on main, so `0024` follows it.
+**Migration order: `0024` must not be applied before `0023`, nor `0025` before `0024`.** The migration
+runner matches history to the sorted file list by position, so an instance that has run `0024` refuses to
+boot once a `0023` file appears. `0023` (`DiscordSummaryHistory`) is on main, so `0024` follows it, and
+`0025` (`AgentTaskRowWakeState`) follows `0024`.
 
 **A model whose callers delete does not enter dual yet.** A completed delete removes the document and its
 row, and the version with them, so a recreated id starts again at version 1 and a late copy, a pg-mode
@@ -45,8 +52,9 @@ compare-and-set or a backfill of the old document can land on it. The prerequisi
 in both stores that keep the version. Until then the helper's `remove` throws outside `mongo` unless the
 store was created with `allowDeletes: true`, which is unsafe for exactly that reason.
 None of `AgentPodReadCursor`, `AgentFirstContact`, `AgentDigestState`, `AgentTaskWakeState`,
-`NeedsYouEmailQuota`, `AgentComputerTakeover`, `BillingEvent`, `DiscordSummaryHistory` and
-`NeedsYouEmail` has a delete path (and `NeedsYouEmail` has no TTL index).
+`NeedsYouEmailQuota`, `AgentComputerTakeover`, `BillingEvent`, `DiscordSummaryHistory`, `NeedsYouEmail`
+and `AgentTaskRowWakeState` has a delete path (and neither `NeedsYouEmail` nor `AgentTaskRowWakeState` has
+a TTL index).
 
 The mode variable is `STORE_MODE_` plus the model name in upper snake case:
 `AgentPodReadCursor` reads `STORE_MODE_AGENT_POD_READ_CURSOR`. Unset means `mongo`, which makes no
@@ -245,3 +253,18 @@ only a rollback from `pg` can produce. That case is out of scope until step 4 is
   `pg-read`: a stale answer only delays a held ask to the next digest or shows it in one more, and the
   digest re-reads each ask from Mongo before showing it. A failed Postgres read there falls back to Mongo, so
   a Postgres outage never stops a digest.
+- **`AgentTaskRowWakeState` cannot run in `pg` yet.** `recordRowWakes` refuses in `pg` before any write, and
+  `countRowOutcome`, `stopRowWake`, `unstopRowWake`, `resetRowWake` and `clearRowWakeStamps` go through the
+  helper's `updateWhere` and `updateManyWhere`, which throw `not supported in pg mode until step 4`.
+  `findRowWakeStates` already reads Postgres in `pg-read` and `pg`. Before this model runs in `pg`, each write
+  needs a single-statement Postgres form, bumping `pg_version` and tested on real Postgres with two
+  schedulers racing on one row:
+  - the stamp: one `INSERT … ON CONFLICT (id) DO UPDATE SET <stamp>` for all the shown rows (defaults on
+    insert), so a partial failure leaves nothing to compensate;
+  - the outcome count: `UPDATE … WHERE id = $1 AND counted_event_id IS NOT DISTINCT FROM $prior RETURNING id`;
+  - the stop and un-stop: `UPDATE … WHERE id = $1 AND stopped_at IS NOT DISTINCT FROM $from RETURNING id`;
+  - the reset: `UPDATE … SET failures = 0, stopped_at = NULL WHERE id = $1`;
+  - the compensation: `UPDATE … SET last_wake_at = NULL WHERE id = ANY($ids) AND last_wake_at = $now`.
+
+  Until then, don't set it to `pg`: the outcome count and the stamp would refuse (the stamp after the seat's
+  slot is reserved, which the wake then returns), so no assigned row would wake its seat.

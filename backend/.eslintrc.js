@@ -99,6 +99,9 @@ module.exports = {
           }, {
             group: ['**/models/NeedsYouEmail', '**/models/NeedsYouEmail.*'],
             message: 'Use repositories/needsYouEmailRepository.',
+          }, {
+            group: ['**/models/AgentTaskRowWakeState', '**/models/AgentTaskRowWakeState.*'],
+            message: 'Use repositories/agentTaskRowWakeStateRepository.',
           }],
         }],
         'no-restricted-modules': ['error', {
@@ -112,6 +115,7 @@ module.exports = {
             '**/models/BillingEvent', '**/models/BillingEvent.*',
             '**/models/DiscordSummaryHistory', '**/models/DiscordSummaryHistory.*',
             '**/models/NeedsYouEmail', '**/models/NeedsYouEmail.*',
+            '**/models/AgentTaskRowWakeState', '**/models/AgentTaskRowWakeState.*',
           ],
         }],
       },

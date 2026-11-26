@@ -285,6 +285,36 @@ fields, so a Postgres read never returns the token where Mongo wouldn't.
 The click lookup reads Mongo in every mode but `pg`. `pg` mode refuses the
 writes until step 4, before any write.
 
+## Tenth model: AgentTaskRowWakeState
+
+`AgentTaskRowWakeState` (what the assigned-task wake remembers about one row
+for one seat, keyed `<seat key>|<row _id>`) follows the same template. Its
+table is `agent_task_row_wake_states` (`0025`): the Mongo `_id` as `id`, a
+nullable `last_wake_at`, `last_wake_event_id` and `counted_event_id` (AgentEvent
+ObjectIds as hex text, read back as ObjectIds), `failures`, `stopped_at`,
+`last_verdict`, and nullable `created_at` and `updated_at`.
+`STORE_MODE_AGENT_TASK_ROW_WAKE_STATE` selects the store. Its only caller,
+`services/assignedTaskWakeService.ts`, imports
+`repositories/agentTaskRowWakeStateRepository`; ESLint fences the model.
+`0025` must be applied after `0024`, never before it.
+
+- `findRowWakeStates(keys)` reads the states that exist, in the lean shape.
+- `countRowOutcome`, `stopRowWake`, `unstopRowWake` and `resetRowWake` are the
+  conditional changes; each answers true exactly when Mongo's `modifiedCount`
+  was 1 (every one sets a value its filter excludes).
+- `recordRowWakes(keys, stamp)` stamps the shown rows before a wake is queued,
+  and `clearRowWakeStamps(keys, now)` takes back the stamp from rows a failed
+  record reached.
+
+In `mongo` each makes its pre-step-2 Mongoose call (the ordered `bulkWrite`
+included). In `dual` and `pg-read` the read is `findWhere` with `$in`, the
+changes are `updateWhere`, the record is one helper `upsert` per row in order
+(stopping at the first failure, as the ordered bulkWrite does; a first write
+gets the schema defaults, `createdAt` and `__v`), and the compensation is
+`updateManyWhere`. A Postgres copy that fails never fails the record; its
+marker is left for `repair`. `pg` refuses the writes until step 4, the record
+before any write.
+
 For the next aggregate, expose its domain operations, keep Mongoose queries
 inside its repository, and return plain values. Do not expose `find`, `save`,
 `populate`, or a generic query builder. Extract without changing storage first,
