@@ -19,8 +19,10 @@ const AgentIdentityService = require('../../services/agentIdentityService');
 const { outsiderGrantPodCounts } = require('../../services/nativeOutsiderGrantPolicy');
 const { revokeRuntimeTokensAfterLastUninstall } = require('./tokens');
 const { limitConcurrency } = require('../../utils/concurrencyLimit');
+const { readRegistryDisplay, readRegistryDisplayOne } = require('../../services/installable/registryReader');
 const {
   getUserId,
+  adminMayActOnPod,
   isGlobalAdminUser,
   normalizeInstanceId,
   normalizeConfigMap,
@@ -58,12 +60,12 @@ podAgentsRouter.delete('/agents/:name/pods/:podId', auth, async (req: any, res: 
     if (!userId) {
       return res.status(401).json({ error: 'Unauthorized' });
     }
-    const isGlobalAdmin = await isGlobalAdminUser(userId);
 
     const pod = await Pod.findById(podId).lean();
     if (!pod) {
       return res.status(404).json({ error: 'Pod not found' });
     }
+    const isGlobalAdmin = await adminMayActOnPod(pod, userId);
 
     const isCreator = pod.createdBy?.toString() === userId.toString();
     const membership = pod.members?.find((m: any) => {
@@ -243,9 +245,12 @@ podAgentsRouter.get('/pods/:podId/agents', auth, async (req: any, res: any) => {
       return lastHeartbeatPerInstall(installations) as Promise<Map<string, Date>>;
     });
 
-    const registryRead = read(() => AgentRegistry.find({
-      agentName: { $in: agentNames },
-    }).select('agentName iconUrl').lean());
+    // Only iconUrl is projected, so only iconUrl goes through the read path.
+    const registryRead = read(async () => readRegistryDisplay(
+      await AgentRegistry.find({ agentName: { $in: agentNames } }).select('agentName iconUrl').lean(),
+      'pod-agents.list',
+      ['iconUrl'],
+    ));
     const installationDisplayNames = Array.from(new Set(
       installations.map((i: any) => i.displayName).filter(Boolean),
     ));
@@ -569,7 +574,7 @@ podAgentsRouter.get('/pods/:podId/agents/:name', auth, async (req: any, res: any
       const memberId = m.userId?.toString?.() || m.toString?.();
       return memberId && memberId === userId.toString();
     });
-    if (!membership && !isCreator && !(await isGlobalAdminUser(userId))) {
+    if (!membership && !isCreator && !(await adminMayActOnPod(pod, userId))) {
       return res.status(403).json({ error: 'Access denied' });
     }
     if (!installation || installation.status === 'uninstalled') {
@@ -577,7 +582,11 @@ podAgentsRouter.get('/pods/:podId/agents/:name', auth, async (req: any, res: any
     }
 
     const [registryEntry, profile, templateCandidates] = await Promise.all([
-      AgentRegistry.findOne({ agentName: installation.agentName }).select('iconUrl').lean(),
+      // The projection stays iconUrl-only; the key comes from the installation.
+      Promise.resolve(AgentRegistry.findOne({ agentName: installation.agentName }).select('iconUrl').lean())
+        .then((row: any) => (row
+          ? readRegistryDisplayOne({ agentName: installation.agentName, ...row }, 'pod-agents.one', ['iconUrl'])
+          : row)),
       AgentProfile.findOne({
         podId,
         agentName: installation.agentName,

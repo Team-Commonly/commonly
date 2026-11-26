@@ -1,4 +1,5 @@
 import { podMemberPopulate } from '../services/podMemberPopulate';
+import { logOutboundFailure } from '../utils/safeErrorLog';
 // Pod invite tokens — shareable URLs that let a user join a pod without
 // going through the invite-only joinPolicy gate. Tokens are random
 // (16-byte hex), DB-backed (PodInvite), and bound to a single pod by their
@@ -100,8 +101,8 @@ router.post('/pods/:podId/invites', inviteWriteRateLimit, auth, async (req: any,
       createdAt: invite.createdAt,
     });
   } catch (err: any) {
-    console.error('Create invite failed:', err.message);
-    return res.status(500).json({ msg: err.message || 'Failed to create invite' });
+    logOutboundFailure('Create invite failed:', err);
+    return res.status(500).json({ msg: 'Failed to create invite' });
   }
 });
 
@@ -136,8 +137,8 @@ router.get('/pods/:podId/invites', inviteReadRateLimit, auth, async (req: any, r
       source: invite.source || null,
     })));
   } catch (err: any) {
-    console.error('List invites failed:', err.message);
-    return res.status(500).json({ msg: err.message || 'Failed to list invites' });
+    logOutboundFailure('List invites failed:', err);
+    return res.status(500).json({ msg: 'Failed to list invites' });
   }
 });
 
@@ -169,8 +170,8 @@ router.delete('/invites/:token', inviteWriteRateLimit, auth, async (req: any, re
     }
     return res.json({ ok: true });
   } catch (err: any) {
-    console.error('Revoke invite failed:', err.message);
-    return res.status(500).json({ msg: err.message || 'Failed to revoke invite' });
+    logOutboundFailure('Revoke invite failed:', err);
+    return res.status(500).json({ msg: 'Failed to revoke invite' });
   }
 });
 
@@ -239,8 +240,8 @@ router.get('/invites/:token', inviteReadRateLimit, auth, async (req: any, res: a
       expiresAt: invite.expiresAt,
     });
   } catch (err: any) {
-    console.error('Resolve invite failed:', err.message);
-    return res.status(500).json({ msg: err.message || 'Failed to resolve invite' });
+    logOutboundFailure('Resolve invite failed:', err);
+    return res.status(500).json({ msg: 'Failed to resolve invite' });
   }
 });
 
@@ -261,8 +262,8 @@ router.post('/invites/:token/redeem', inviteWriteRateLimit, auth, async (req: an
       .populate(podMemberPopulate('username profilePicture isBot'));
     return res.json({ ok: true, alreadyMember, pod: updated });
   } catch (err: any) {
-    console.error('Redeem invite failed:', err.message);
-    return res.status(500).json({ msg: err.message || 'Failed to redeem invite' });
+    logOutboundFailure('Redeem invite failed:', err);
+    return res.status(500).json({ msg: 'Failed to redeem invite' });
   }
 });
 

@@ -1,16 +1,7 @@
 import React from 'react';
 import { useNavigate } from 'react-router-dom';
-import {
-  Box,
-  Button,
-  Container,
-  Stack,
-  Typography,
-} from '@mui/material';
-import ArrowBackIcon from '@mui/icons-material/ArrowBack';
-import ArrowForwardIcon from '@mui/icons-material/ArrowForward';
 import guides from '../../content/guides.json';
-import { guidePalette, guideTextButtonSx, useGuideCanvas } from './guideShell';
+import { ForwardArrow, GuideTop, useGuideCanvas } from './guideShell';
 
 interface Guide {
   eyebrow: string;
@@ -25,48 +16,31 @@ const GuidesIndexPage: React.FC = () => {
   useGuideCanvas();
 
   return (
-    <Box sx={{ minHeight: '100vh', backgroundColor: guidePalette.page, color: guidePalette.textPrimary }}>
-      <Container maxWidth="md" sx={{ pt: 5, pb: 10 }}>
-        <Stack direction="row" justifyContent="space-between" alignItems="center" sx={{ mb: 6 }}>
-          <Button sx={guideTextButtonSx} startIcon={<ArrowBackIcon />} onClick={() => navigate('/')}>
-            Back to landing
-          </Button>
-          <Stack direction="row" alignItems="center" spacing={1}>
-            <img src="/favicon.svg" alt="Commonly Logo" width={26} height={26} />
-            <Typography sx={{ color: guidePalette.textPrimary, fontWeight: 700, letterSpacing: '-0.02em' }}>Commonly</Typography>
-          </Stack>
-        </Stack>
+    <div className="guide-page">
+      <div className="guide-container">
+        <GuideTop onBack={() => navigate('/')} />
 
-        <Typography sx={{ color: guidePalette.accentText, fontWeight: 700, letterSpacing: '0.08em', mb: 1 }}>
-          GUIDES
-        </Typography>
-        <Typography component="h1" variant="h2" sx={{ color: guidePalette.textPrimary, fontWeight: 800, lineHeight: 1.15, letterSpacing: '-0.03em', mb: 2 }}>
-          Guides for teams working with AI agents
-        </Typography>
-        <Typography sx={{ color: guidePalette.textSecondary, fontSize: '1.125rem', lineHeight: 1.7, mb: 6 }}>
+        <p className="guide-eyebrow">GUIDES</p>
+        <h1 className="guide-title">Guides for teams working with AI agents</h1>
+        <p className="guide-lede">
           Practical explanations of the shared context, ownership, and handoffs that help people and AI agents work together on real projects.
-        </Typography>
+        </p>
 
-        <Stack spacing={3}>
+        <div className="guide-cards">
           {Object.entries(GUIDES).map(([id, guide]) => (
-            <Box key={id} component="article" sx={{ p: { xs: 3, sm: 4 }, border: `1px solid ${guidePalette.borderSoft}`, borderRadius: 3, backgroundColor: guidePalette.surface }}>
-              <Typography sx={{ color: guidePalette.accentText, fontWeight: 700, letterSpacing: '0.08em', mb: 1 }}>
-                {guide.eyebrow.toUpperCase()}
-              </Typography>
-              <Typography component="h2" variant="h4" sx={{ color: guidePalette.textPrimary, fontWeight: 750, lineHeight: 1.2, mb: 1.5 }}>
-                {guide.title}
-              </Typography>
-              <Typography sx={{ color: guidePalette.textSecondary, lineHeight: 1.75, mb: 2.5 }}>
-                {guide.summary}
-              </Typography>
-              <Button sx={guideTextButtonSx} endIcon={<ArrowForwardIcon />} onClick={() => navigate(`/guides/${id}/`)}>
+            <article className="guide-card" key={id}>
+              <p className="guide-eyebrow">{guide.eyebrow.toUpperCase()}</p>
+              <h2 className="guide-h2">{guide.title}</h2>
+              <p>{guide.summary}</p>
+              <button type="button" className="guide-btn" onClick={() => navigate(`/guides/${id}/`)}>
                 Read the guide
-              </Button>
-            </Box>
+                <ForwardArrow />
+              </button>
+            </article>
           ))}
-        </Stack>
-      </Container>
-    </Box>
+        </div>
+      </div>
+    </div>
   );
 };
 

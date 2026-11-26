@@ -1,0 +1,84 @@
+// The hourly AgentRegistry -> Installable sweep ships off: it runs only when
+// INSTALLABLE_REGISTRY_SWEEP=1, so no deploy backfills prod before a backup.
+jest.mock('node-cron', () => ({
+  ...jest.requireActual('node-cron'),
+  schedule: jest.fn(() => ({ start: jest.fn(), stop: jest.fn() })),
+}));
+jest.mock('../../../services/installable/registryReconciler', () => ({
+  sweepRegistryDrift: jest.fn().mockResolvedValue({
+    scanned: 0, inserted: 0, existing: 0, refreshed: 3, skipped: 0, errors: 0, mismatches: { status: 0, stats: 0 },
+  }),
+}));
+
+const cron = require('node-cron');
+const scheduler = require('../../../services/schedulerService');
+const { sweepRegistryDrift } = require('../../../services/installable/registryReconciler');
+
+const runRegistryJob = async () => {
+  cron.schedule.mockClear();
+  scheduler.start();
+  try {
+    const callbacks = cron.schedule.mock.calls.filter(([e]) => e === '39 * * * *').map(([, fn]) => fn);
+    expect(callbacks).toHaveLength(1);
+    await callbacks[0]();
+  } finally {
+    scheduler.stop();
+  }
+};
+
+describe('registry drift sweep flag', () => {
+  const saved = process.env.INSTALLABLE_REGISTRY_SWEEP;
+  const savedReadPath = process.env.INSTALLABLE_READ_PATH;
+  beforeEach(() => {
+    jest.spyOn(console, 'log').mockImplementation(() => {});
+    sweepRegistryDrift.mockClear();
+  });
+  afterEach(() => {
+    if (saved === undefined) delete process.env.INSTALLABLE_REGISTRY_SWEEP;
+    else process.env.INSTALLABLE_REGISTRY_SWEEP = saved;
+    if (savedReadPath === undefined) delete process.env.INSTALLABLE_READ_PATH;
+    else process.env.INSTALLABLE_READ_PATH = savedReadPath;
+    jest.restoreAllMocks();
+  });
+
+  // The read-path counters (ADR-001 Phase 3 PR B) ride the hourly line, so
+  // ops can read shadow mismatches without a new route.
+  it('carries the read-path counters while the read path is on or shadowing', async () => {
+    delete process.env.INSTALLABLE_REGISTRY_SWEEP;
+    process.env.INSTALLABLE_READ_PATH = 'shadow';
+    await runRegistryJob();
+    const line = console.log.mock.calls.map(([m]) => String(m)).find((m) => m.includes('[registry-reconciler]'));
+    expect(line).toContain('readPath=shadow');
+    expect(line).toContain('mismatchedRows=0');
+  });
+
+  it('adds nothing to the line while the read path is off', async () => {
+    delete process.env.INSTALLABLE_REGISTRY_SWEEP;
+    delete process.env.INSTALLABLE_READ_PATH;
+    await runRegistryJob();
+    const line = console.log.mock.calls.map(([m]) => String(m)).find((m) => m.includes('[registry-reconciler]'));
+    expect(line).toBe('[registry-reconciler] skipped: INSTALLABLE_REGISTRY_SWEEP is not 1');
+  });
+
+  it('does not sweep when the flag is unset, and logs that it skipped', async () => {
+    delete process.env.INSTALLABLE_REGISTRY_SWEEP;
+    await runRegistryJob();
+    expect(sweepRegistryDrift).not.toHaveBeenCalled();
+    expect(console.log.mock.calls.some(([m]) => String(m).includes('INSTALLABLE_REGISTRY_SWEEP'))).toBe(true);
+  });
+
+  it('does not sweep for a value other than 1', async () => {
+    process.env.INSTALLABLE_REGISTRY_SWEEP = 'true';
+    await runRegistryJob();
+    expect(sweepRegistryDrift).not.toHaveBeenCalled();
+  });
+
+  it('sweeps, applying, when the flag is 1', async () => {
+    process.env.INSTALLABLE_REGISTRY_SWEEP = '1';
+    await runRegistryJob();
+    expect(sweepRegistryDrift).toHaveBeenCalledWith({ dryRun: false });
+    const line = console.log.mock.calls.map(([m]) => String(m)).find((m) => m.includes('[registry-reconciler] pass'));
+    // Display-field refreshes on backfilled rows are their own count, apart from existing.
+    expect(line).toContain('existing=0 refreshed=3 ');
+  });
+});

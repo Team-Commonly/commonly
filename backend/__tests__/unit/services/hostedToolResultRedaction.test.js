@@ -109,8 +109,14 @@ jest.mock('../../../services/roomGrantService', () => {
   const allowed = (grant, tool) => {
     if (!(grant.tools || []).includes(tool)) throw new MockRoomGrantError('tool_not_allowed', 'tool not allowed', 403);
   };
+  // The owner half (F664) is the real code, so the grant below must name an
+  // owner whose account exists, as every minted grant does.
+  const actual = jest.requireActual('../../../services/roomGrantService');
   return {
     RoomGrantError: MockRoomGrantError,
+    grantOwnerRefusal: actual.grantOwnerRefusal,
+    grantOwnerIds: actual.grantOwnerIds,
+    existingGrantOwnerIds: actual.existingGrantOwnerIds,
     assertGrantUsable: async (options) => {
       if (!options.currentMemberIds.includes(options.agentUserId)) {
         throw new MockRoomGrantError('not_in_audience', 'agent is not in the grant audience', 403);
@@ -172,6 +178,8 @@ const GRANT = {
   tools: ['linear.list_issues'],
   writeMode: 'read',
   connectionId: ROW_ID,
+  // Minted from the row, so its owner is the row's owner (`createGrant`).
+  ownerId: OWNER,
   expiresAt: new Date(Date.now() + 60 * 60 * 1000),
   createdAt: new Date('2026-01-02T00:00:00.000Z'),
 };
@@ -344,7 +352,11 @@ beforeEach(() => {
   mockModels.integration.findOne.mockImplementation(() => query(null));
   mockModels.user.findById.mockImplementation(() => query({ banned: false, isBot: false }));
   mockModels.user.findOne.mockImplementation(() => query({ _id: SEAT }));
-  mockModels.user.find.mockImplementation(() => query([{ _id: SEAT }]));
+  // An `_id` lookup (the grant owner's account check) answers for the
+  // accounts that exist; any other read answers with the seat.
+  mockModels.user.find.mockImplementation((filter) => (filter?._id?.$in
+    ? query(filter._id.$in.filter((id) => [SEAT, OWNER].includes(String(id))).map((_id) => ({ _id })))
+    : query([{ _id: SEAT }])));
   mockModels.pod.findById.mockImplementation(() => query({ name: 'Launch Room', members: [SEAT] }));
   mockModels.pod.find.mockImplementation(() => query([{ _id: POD, members: [SEAT] }]));
   require('../../../models/AgentRun').create

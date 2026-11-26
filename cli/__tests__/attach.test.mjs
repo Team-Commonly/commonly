@@ -722,14 +722,19 @@ describe('performAttach', () => {
   // Opt-in microVM (COMMONLY_SANDBOX_MICROVM=1): a public seat with no declared
   // mode resolves to it on win32. Claude attaches only with WHP on; every other
   // adapter refuses before anything is published.
-  const attachMicrovm = async ({ adapterName, whp }) => {
+  const attachMicrovm = async ({
+    adapterName, whp, mode, mcp,
+  }) => {
     const before = process.env.COMMONLY_SANDBOX_MICROVM;
     process.env.COMMONLY_SANDBOX_MICROVM = '1';
     const root = fs.mkdtempSync(path.join(os.tmpdir(), 'cli-mv-attach-'));
     try {
       const envPath = path.join(root, 'environment.json');
       fs.writeFileSync(envPath, JSON.stringify({
-        version: 1, workspace: { path: path.join(root, 'workspace') }, sandbox: { trust: 'public' },
+        version: 1,
+        workspace: { path: path.join(root, 'workspace') },
+        sandbox: { trust: 'public', ...(mode ? { mode } : {}) },
+        ...(mcp ? { mcp } : {}),
       }));
       const client = makeClient();
       const logs = [];
@@ -762,6 +767,50 @@ describe('performAttach', () => {
   test('on win32 with the microVM flag, WHP off refuses with the command to turn it on', async () => {
     const { error, client } = await attachMicrovm({
       adapterName: 'claude', whp: { available: false, error: 'WinHvPlatform.dll is missing' },
+    });
+    expect(error.message).toContain('Enable-WindowsOptionalFeature -Online -FeatureName HypervisorPlatform');
+    expect(client.post).not.toHaveBeenCalled();
+  });
+
+  test.each([undefined, 'workspace', 'read-only'])('on win32 with the microVM flag, a public Codex seat (mode %s) attaches when WHP is on', async (mode) => {
+    const { error, logs } = await attachMicrovm({ adapterName: 'codex', whp: { available: true }, mode });
+    expect(error).toBeNull();
+    expect(logs).toContain('sandbox: microVM via microsandbox (network fenced to the model proxy and the MCP bridge)');
+    expect(logs.join('\n')).not.toMatch(/Codex native permission profile/);
+  });
+
+  test('on win32 with the microVM flag, a public Codex seat declaring an HTTP MCP server refuses before publishing', async () => {
+    const { error, client } = await attachMicrovm({
+      adapterName: 'codex',
+      whp: { available: true },
+      mcp: [{ name: 'broker', transport: 'http', url: 'http://127.0.0.1:9/api/mcp/grants/g' }],
+    });
+    expect(error?.message).toMatch(/over stdio, and broker is a http server/);
+    expect(client.post).not.toHaveBeenCalled();
+  });
+
+  test('on win32 with the microVM flag, a public Codex seat declaring a third-party stdio server refuses before publishing', async () => {
+    const { error, client } = await attachMicrovm({
+      adapterName: 'codex',
+      whp: { available: true },
+      mcp: [{ name: 'files', command: ['npx', '-y', '@modelcontextprotocol/server-filesystem', '/'] }],
+    });
+    expect(error?.message).toMatch(/only the Commonly MCP server, on this computer, and files is another server/);
+    expect(client.post).not.toHaveBeenCalled();
+  });
+
+  test('on win32 with the microVM flag, the shipped Commonly MCP spec passes the declaration check', async () => {
+    const { error } = await attachMicrovm({
+      adapterName: 'codex',
+      whp: { available: true },
+      mcp: [{ name: 'commonly', command: ['npx', '-y', '@commonlyai/mcp'] }],
+    });
+    expect(error?.message || '').not.toMatch(/only the Commonly MCP server/);
+  });
+
+  test('on win32 with the microVM flag, a public Codex seat with WHP off refuses before publishing', async () => {
+    const { error, client } = await attachMicrovm({
+      adapterName: 'codex', whp: { available: false, error: 'WinHvPlatform.dll is missing' },
     });
     expect(error.message).toContain('Enable-WindowsOptionalFeature -Online -FeatureName HypervisorPlatform');
     expect(client.post).not.toHaveBeenCalled();

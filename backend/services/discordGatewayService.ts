@@ -4,6 +4,7 @@ const { Client, GatewayIntentBits } = require('discord.js');
 const Integration = require('../models/Integration');
 // eslint-disable-next-line global-require
 const { normalizeBufferMessage } = require('../integrations/normalizeBufferMessage');
+const { logOutboundFailure } = require('../utils/safeErrorLog');
 
 const CACHE_TTL_MS = 60 * 1000;
 
@@ -96,16 +97,16 @@ class DiscordGatewayService {
       });
 
       this.client!.on('error', (error: unknown) => {
-        console.error('Discord gateway error:', error);
+        logOutboundFailure('Discord gateway error:', error);
       });
 
       this.client!.on('shardError', (error: unknown) => {
-        console.error('Discord gateway shard error:', error);
+        logOutboundFailure('Discord gateway shard error:', error);
       });
 
       this.client!.on('messageCreate', (message: unknown) => {
         this.handleMessageCreate(message as DiscordMessage).catch((error: unknown) => {
-          console.error('Discord gateway message handler error:', error);
+          logOutboundFailure('Discord gateway message handler error:', error);
         });
       });
 
@@ -113,7 +114,7 @@ class DiscordGatewayService {
       this.clientReady = true;
       console.log('Discord gateway started');
     } catch (error) {
-      console.error('Failed to start Discord gateway:', error);
+      logOutboundFailure('Failed to start Discord gateway:', error);
     } finally {
       this.starting = false;
     }

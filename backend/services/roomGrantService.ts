@@ -4,15 +4,18 @@ import { noteRevokedGrants } from './grantRemovalCueService';
 import { Types } from 'mongoose';
 import Task from '../models/Task';
 import Pod from '../models/Pod';
+import User from '../models/User';
 import RoomGrant, {
   IRoomGrant,
   IRoomGrantByoConsent,
   IRoomGrantBudget,
+  RoomGrantRevocationReason,
   RoomGrantTargetKind,
   RoomGrantTaskBinding,
   RoomGrantWriteMode,
 } from '../models/RoomGrant';
 import { BOARD_ACTOR, emitRecord, SERVER_ACTOR, type RecordActor } from './recordService';
+import { describeError } from '../utils/safeErrorLog';
 
 export interface RoomGrantCreateInput {
   grantId?: string;
@@ -666,6 +669,8 @@ interface RevokeGrantOptions {
    * re-pasted key), so the agents are not told the owner removed the connector.
    */
   cue?: boolean;
+  /** Stored on each moved row when the revoke has a cause other than a person's revoke (F660). */
+  reason?: RoomGrantRevocationReason;
 }
 
 export const revokeGrant = async (
@@ -677,7 +682,7 @@ export const revokeGrant = async (
   const actor = asId(revokedBy, 'revokedBy');
   const root = await RoomGrant.findOne({ grantId: id }).select('grantId').lean();
   if (!root) throw new RoomGrantError('grant_not_found', 'grant not found', 404);
-  const moved = await RoomGrant.revokeCascadeMoved(id, actor);
+  const moved = await RoomGrant.revokeCascadeMoved(id, actor, ...(options.reason ? [options.reason] : []));
   recordGrantsRevoked(id, moved, actor);
   // F181: every agent that held one of these grants is told on its next
   // mention that the connector was taken away. The revoke has already
@@ -714,6 +719,84 @@ export const assertGrantToolAllowed = (
   }
 };
 
+const OBJECT_ID_PATTERN = /^[a-f\d]{24}$/i;
+
+/** The owner a grant is judged by, of any target kind, or null when it records no owner. */
+const grantOwnerId = (grant: IRoomGrant | Record<string, unknown>): string | null => {
+  const ownerId = readGrantValue<unknown>(grant, 'ownerId');
+  return ownerId ? String(ownerId) : null;
+};
+
+/**
+ * F664: which of these owner ids still name a live account. One `_id` lookup
+ * for any number of grants, so the list path and the call path read the same
+ * answer. An account with a deletion request (`accountDeletionRequestedAt`) is
+ * not live: it covers the window before the row is removed. A value that
+ * cannot name an account is never looked up, and counts as gone.
+ */
+export const existingGrantOwnerIds = async (ownerIds: unknown[]): Promise<Set<string>> => {
+  const ids = Array.from(new Set(ownerIds.map(String).filter((value) => OBJECT_ID_PATTERN.test(value))));
+  if (!ids.length) return new Set();
+  const rows = await User.find({ _id: { $in: ids }, accountDeletionRequestedAt: null })
+    .select('_id').lean() as Array<{ _id: unknown }>;
+  return new Set(rows.map((row) => String(row._id)));
+};
+
+/** The owner ids among `grants`, any target kind, for `existingGrantOwnerIds`. */
+export const grantOwnerIds = (grants: Array<IRoomGrant | Record<string, unknown>>): string[] => (
+  grants.map(grantOwnerId).filter((ownerId): ownerId is string => Boolean(ownerId))
+);
+
+/**
+ * The owner half of grant use, shared by the call (`assertGrantUsable`) and
+ * the list a run is offered (`grantBrokerProjectionService`), so the two cannot
+ * disagree about a grant.
+ *
+ * - Any grant whose owner's account is gone, or has a deletion request, is
+ *   refused (F664). Account deletion revokes these (`endOwnerGrants`); this
+ *   refuses any row that missed it. It is checked first, because deletion
+ *   keeps the person in their DM rooms, so a member check alone would pass.
+ * - A pod grant shares its owner's connection with the pod, so it also holds
+ *   only while the owner is a member there (F660). The membership-ending
+ *   paths revoke it (`endMemberPodGrants`); this refuses any row they missed.
+ * - A seat grant's census is its one seat (`toolBrokerService.currentMemberIds`),
+ *   which never lists the owner, so the account check is its only owner check.
+ *
+ * An unbound grant (`ownerId` null, see `grantOwnerBinding`) has no proven
+ * owner to look for, so neither applies. A child carries its parent's owner and
+ * target, so checking the grant itself covers its lineage.
+ */
+export const grantOwnerRefusal = (
+  grant: IRoomGrant | Record<string, unknown>,
+  context: { currentMemberIds: string[]; existingOwnerIds: Set<string> },
+): 'grant_owner_not_member' | 'grant_owner_deleted' | null => {
+  const target = readGrantValue<{ kind?: unknown } | undefined>(grant, 'target');
+  const ownerId = readGrantValue<unknown>(grant, 'ownerId');
+  if (!ownerId) return null;
+  if (!context.existingOwnerIds.has(String(ownerId))) return 'grant_owner_deleted';
+  if (target?.kind === 'pod') {
+    return context.currentMemberIds.some((memberId) => String(memberId) === String(ownerId))
+      ? null : 'grant_owner_not_member';
+  }
+  return null;
+};
+
+const GRANT_OWNER_MESSAGES = {
+  grant_owner_not_member: 'the person who shared this grant is no longer in the pod',
+  grant_owner_deleted: 'the person who shared this grant no longer has an account',
+} as const;
+
+const assertGrantOwnerUsable = async (
+  grant: IRoomGrant | Record<string, unknown>,
+  currentMemberIds: string[],
+): Promise<void> => {
+  const refusal = grantOwnerRefusal(grant, {
+    currentMemberIds,
+    existingOwnerIds: await existingGrantOwnerIds(grantOwnerIds([grant])),
+  });
+  if (refusal) throw new RoomGrantError(refusal, GRANT_OWNER_MESSAGES[refusal], 403);
+};
+
 export const assertGrantUsable = async (
   options: GrantUsabilityOptions,
 ): Promise<IRoomGrant | Record<string, unknown>> => {
@@ -735,6 +818,7 @@ export const assertGrantUsable = async (
   if (!options.currentMemberIds) {
     throw new RoomGrantError('audience_context_required', 'current member list is required for audience checks', 403);
   }
+  await assertGrantOwnerUsable(grant, options.currentMemberIds);
   const audience = effectiveAudience(grant as Pick<IRoomGrant, 'audience'>, options.currentMemberIds);
   if (!audience.includes(String(options.agentUserId))) {
     throw new RoomGrantError('not_in_audience', 'agent is not in the grant audience', 403);
@@ -834,6 +918,89 @@ export const revokeConnectionGrants = async (options: {
   return revoked;
 };
 
+/**
+ * Revoke every live grant matching `query` through `revokeGrant`, so task-bound
+ * and attenuated children go with each and the record gets its line.
+ * Idempotent: an already revoked grant is not matched, and one revoked between
+ * the read and the write moves nothing. Every grant gets its attempt; the first
+ * failure other than "already gone" is thrown afterwards.
+ */
+const revokeOwnedGrants = async (
+  query: Record<string, unknown>,
+  reason: RoomGrantRevocationReason,
+): Promise<number> => {
+  const grants = await RoomGrant.find({ ...query, revokedAt: null })
+    .select('grantId').lean() as Array<{ grantId?: string }>;
+  let revoked = 0;
+  let failure: unknown = null;
+  for (const grant of grants) {
+    if (!grant?.grantId) continue;
+    try {
+      // eslint-disable-next-line no-await-in-loop
+      revoked += await revokeGrant(String(grant.grantId), SYSTEM_REVOKER, { reason });
+    } catch (error) {
+      if ((error as { code?: string })?.code !== 'grant_not_found') failure = failure ?? error;
+    }
+  }
+  if (failure) throw failure;
+  return revoked;
+};
+
+/**
+ * F660: revoke the pod-target grants `ownerId` owns, in one pod or (no `podId`)
+ * in every pod. Seat grants are not touched.
+ */
+export const revokeOwnerPodGrants = async (options: { ownerId: string; podId?: string }): Promise<number> => {
+  const ownerId = asId(options.ownerId, 'ownerId');
+  return revokeOwnedGrants({
+    'target.kind': 'pod',
+    ...(options.podId ? { 'target.id': asId(options.podId, 'podId') } : {}),
+    ownerId,
+  }, 'owner_left_pod');
+};
+
+/**
+ * F664: revoke every grant `ownerId` owns, of any target kind, seat grants
+ * included, with the reason `owner_deleted`. For account deletion. Grants with
+ * no recorded owner are not matched.
+ */
+export const revokeOwnerGrants = async (options: { ownerId: string }): Promise<number> => {
+  const ownerId = asId(options.ownerId, 'ownerId');
+  return revokeOwnedGrants({ ownerId }, 'owner_deleted');
+};
+
+/**
+ * F660: a membership ended (leave, removal). Ends the person's pod grants
+ * there and never throws, so the leave itself never fails on it: a miss is
+ * logged, and `assertGrantUsable` refuses the grant at use. Without `podId` it
+ * covers every pod.
+ */
+export const endMemberPodGrants = async (options: { userId: string; podId?: string }): Promise<number> => {
+  try {
+    return await revokeOwnerPodGrants({ ownerId: options.userId, podId: options.podId });
+  } catch (error) {
+    console.error('[grants] membership-end revoke failed for pod=%s user=%s; use is still refused',
+      String(options.podId ?? '*'), String(options.userId), describeError(error));
+    return 0;
+  }
+};
+
+/**
+ * F664: an account is being deleted. Ends every grant the person owns and
+ * never throws, so the deletion step is not failed by it: a miss is logged,
+ * every sweep round runs it again, and `assertGrantUsable` refuses the grant at
+ * use once the account has a deletion request or is gone, in every room.
+ */
+export const endOwnerGrants = async (options: { userId: string }): Promise<number> => {
+  try {
+    return await revokeOwnerGrants({ ownerId: options.userId });
+  } catch (error) {
+    console.error('[grants] account-deletion revoke failed for user=%s; use is still refused',
+      String(options.userId), describeError(error));
+    return 0;
+  }
+};
+
 export const getEffectiveAudience = effectiveAudience;
 
 export default {
@@ -843,6 +1010,13 @@ export default {
   revokeGrant,
   revokeConnectionGrants,
   revokeTaskGrants,
+  revokeOwnerPodGrants,
+  revokeOwnerGrants,
+  endMemberPodGrants,
+  endOwnerGrants,
+  grantOwnerRefusal,
+  existingGrantOwnerIds,
+  grantOwnerIds,
   onTaskClosed,
   assertGrantUsable,
   getGrantLineage,

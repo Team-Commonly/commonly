@@ -17,6 +17,7 @@ import express from 'express';
 import rateLimit from 'express-rate-limit';
 import { cloudflareIpRateLimitKeyGenerator } from '../middleware/ipRateLimit';
 import { createHash } from 'crypto';
+import { logOutboundFailure } from '../utils/safeErrorLog';
 
 const auth = require('../middleware/auth');
 const { AgentInstallation } = require('../models/AgentRegistry');
@@ -195,9 +196,15 @@ const relayWorkerError = (res: express.Response, error: any) => {
     return res.status(409).json({ code: error.code, message: error.message });
   }
   if (error instanceof hostedRuntime.HostedRuntimeError) {
+    // The error's message embeds the worker's response body or the fetch error
+    // (a host, a port). It is logged; the body says only which of two it was.
+    logOutboundFailure('[hosted] runtime error:', error);
+    const unconfigured = error.status === 503;
     return res.status(error.status).json({
-      code: error.status === 503 ? 'hosted_runtime_unconfigured' : 'hosted_runtime_unreachable',
-      message: error.message,
+      code: unconfigured ? 'hosted_runtime_unconfigured' : 'hosted_runtime_unreachable',
+      message: unconfigured
+        ? 'Hosted runtime is not configured on this instance; connect your own agent instead.'
+        : 'Hosted runtime is unreachable right now; try again shortly.',
     });
   }
   console.error('[hosted] unexpected error:', error);

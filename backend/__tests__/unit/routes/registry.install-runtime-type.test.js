@@ -48,6 +48,9 @@ jest.mock('../../../models/AgentTemplate', () => ({
   find: jest.fn(),
 }));
 
+// A template icon's upload references are looked up at install (F615).
+jest.mock('../../../models/File', () => ({ findByFileName: jest.fn().mockResolvedValue(null) }));
+
 jest.mock('../../../models/Activity', () => ({
   create: jest.fn(),
 }));
@@ -573,6 +576,64 @@ describe('registry install runtimeType fallback', () => {
         profilePicture: '/api/uploads/aria.png',
       }),
     );
+  });
+
+  // F615: a template saved before its icon was checked can still name a pod
+  // upload someone else made. Install drops that icon and carries on, the same
+  // way it falls back when no template matches; it does not fail the install.
+  it("drops a legacy template icon that is someone else's pod upload, installing without it", async () => {
+    const File = require('../../../models/File');
+    File.findByFileName.mockImplementation(async (name) => (
+      name === 'theirs.png' ? { uploadedBy: 'someone-else', podId: 'pod-9' } : null
+    ));
+    AgentRegistry.getByName.mockResolvedValue({
+      agentName: 'sample-agent',
+      displayName: 'Sample Agent',
+      description: 'Community marketplace app',
+      iconUrl: 'https://api.commonly.me/api/uploads/registry.png',
+      latestVersion: '1.0.0',
+      manifest: { context: { required: [] }, runtime: { type: 'standalone' } },
+    });
+    AgentTemplate.find.mockReturnValue({
+      select: jest.fn().mockReturnValue({
+        lean: jest.fn().mockResolvedValue([{
+          displayName: 'Aria',
+          iconUrl: '/api/uploads/theirs.png',
+          createdBy: 'someone-else',
+          visibility: 'public',
+        }]),
+      }),
+    });
+    const res = { status: jest.fn().mockReturnThis(), json: jest.fn() };
+    let lookedUp = [];
+
+    try {
+      await installHandler({
+        body: {
+          agentName: 'sample-agent',
+          podId: 'a0000000000000000000000a',
+          version: '1.0.0',
+          displayName: 'Aria',
+          config: {},
+          scopes: [],
+        },
+        user: { id: 'user-1', username: 'installer' },
+        userId: 'user-1',
+      }, res);
+    } finally {
+      lookedUp = File.findByFileName.mock.calls.map(([name]) => name);
+      File.findByFileName.mockReset();
+      File.findByFileName.mockResolvedValue(null);
+    }
+
+    // Checked as the installer, the caller of this request (F609's key).
+    expect(lookedUp).toContain('theirs.png');
+    const options = AgentIdentityService.getOrCreateAgentUser.mock.calls
+      .find(([name]) => name === 'sample-agent')[1];
+    expect(options.profilePicture).not.toContain('theirs.png');
+    expect(options.profilePicture).toBe('/api/uploads/registry.png');
+    expect(AgentInstallation.install).toHaveBeenCalled();
+    expect(res.status).not.toHaveBeenCalledWith(400);
   });
 
   describe('install intro in a solo pod (TASK-223)', () => {

@@ -4,7 +4,9 @@ import { Types } from 'mongoose';
 import Machine, { IMachine, IMachineAgentState, IMachineHost } from '../models/Machine';
 import AgentCredential from '../models/AgentCredential';
 import User from '../models/User';
+import Pod from '../models/Pod';
 import { issueDaemonCredential } from './daemonCredentialService';
+import { logOutboundFailure } from '../utils/safeErrorLog';
 
 // A daemon reports regularly; read paths derive offline from the last report
 // rather than writing stale state merely because somebody opened the page.
@@ -123,6 +125,43 @@ export async function noteMachineAnswered(
     await Machine.updateOne({ machineId, firstAnswerAt: null }, { $set: { firstAnswerAt: new Date() } });
   } catch (err) {
     console.warn('[machine] first-answer stamp failed:', (err as Error).message);
+  }
+}
+
+/**
+ * F639: an agent bound to a machine posted (a chat message or a comment), so
+ * the machine has answered. Every agent post path calls this, because the ack
+ * stamp above only sees what the seat's ack reports: a reply posted through a
+ * tool, or an answer to a person's plain message (a `message.posted` wake),
+ * never stamped. Set once and never moved. Fire and forget: it never fails or
+ * slows the post.
+ *
+ * "First answer" means a person saw their agent answer, so a post into an
+ * `agent-dm` pod doesn't count: that pod holds two agents and no person
+ * (ADR-001 §3.10). To keep the pod read off every post, an indexed exists()
+ * stops first for a machine that is already stamped; only an unstamped
+ * machine reads the pod's type (the Mongo Pod, which the route's podId names).
+ */
+const stampMachinePosted = async (machineId: string, podId: unknown): Promise<void> => {
+  if (!await Machine.exists({ machineId, firstAnswerAt: null })) return;
+  if (podId) {
+    const pod = await Pod.findById(podId).select('type').lean() as { type?: string } | null;
+    if (pod?.type === 'agent-dm') return;
+  }
+  await Machine.updateOne({ machineId, firstAnswerAt: null }, { $set: { firstAnswerAt: new Date() } });
+};
+
+export function noteMachinePosted(
+  agentUser: { botMetadata?: { machineId?: unknown } } | null | undefined,
+  { podId }: { podId?: unknown } = {},
+): void {
+  try {
+    const machineId = agentUser?.botMetadata?.machineId;
+    if (typeof machineId !== 'string' || !machineId) return;
+    stampMachinePosted(machineId, podId)
+      .catch((err: unknown) => logOutboundFailure('[machine] first-answer stamp failed:', err));
+  } catch (err) {
+    logOutboundFailure('[machine] first-answer stamp failed:', err);
   }
 }
 
@@ -298,28 +337,38 @@ export async function recordMachineHeartbeat(
   runtimeInventory?: unknown,
   hostSandbox?: unknown,
   hostReport?: unknown,
-): Promise<MachineView> {
-  machine.lastSeenAt = new Date();
+): Promise<MachineView | null> {
+  const now = new Date();
+  const set: Record<string, unknown> = { lastSeenAt: now, status: 'online' };
   // TASK-784: a check-in with a host report replaces the last one; an older
   // daemon's check-in carries none and leaves it standing.
   const { host, hostReportedAt } = hostFields(hostReport);
-  if (host) { machine.host = host; machine.hostReportedAt = hostReportedAt || new Date(); }
-  machine.status = 'online';
+  if (host) { set.host = host; set.hostReportedAt = hostReportedAt || now; }
   // A heartbeat WITHOUT an agents array leaves the last report standing (a
   // Phase-1 daemon keeps working); one WITH the array replaces it wholesale.
   const normalized = normalizeAgentStates(agentStates);
-  if (normalized !== null) machine.agentStates = normalized;
+  if (normalized !== null) set.agentStates = normalized;
   const inventory = normalizeRuntimeInventory(runtimeInventory);
-  if (inventory !== null) { machine.runtimeInventory = inventory; machine.inventoryAt = new Date(); }
+  if (inventory !== null) { set.runtimeInventory = inventory; set.inventoryAt = now; }
   if (typeof hostSandbox === 'string' && HOST_SANDBOX_REPORTS.unconfined.includes(hostSandbox)) {
-    machine.hostUnconfined = true;
-    machine.hostSandboxReportedAt = new Date();
+    set.hostUnconfined = true;
+    set.hostSandboxReportedAt = now;
   } else if (hostSandbox === HOST_SANDBOX_REPORTS.confined) {
-    machine.hostUnconfined = false;
-    machine.hostSandboxReportedAt = new Date();
+    set.hostUnconfined = false;
+    set.hostSandboxReportedAt = now;
   }
-  await machine.save();
-  return serializeMachine(machine.toObject ? machine.toObject() : machine);
+  // F623: a check-in is a last-write-wins status report, so it is one atomic
+  // $set with no version check. A document save() of a whole array adds a __v
+  // filter, and two overlapping check-ins from one machine made the second
+  // throw VersionError (a 500). The ids stay in the filter so the write can
+  // only land on the row the route authorized; null means the row was removed
+  // between the route's read and this write.
+  const updated = await Machine.findOneAndUpdate(
+    { _id: machine._id, machineId: machine.machineId, ownerUserId: machine.ownerUserId },
+    { $set: set },
+    { new: true },
+  );
+  return updated ? serializeMachine(updated.toObject()) : null;
 }
 
 export async function removeMachine({
@@ -406,8 +455,9 @@ const byCountThenName = <T extends { machines: number }>(key: (row: T) => string
 };
 
 /**
- * TASK-784 admin stats: machines by platform, with how many of them had an
- * agent answer a person, and machines by CLI version. Counts only, from the
+ * TASK-784 admin stats: machines by platform, with how many of them have
+ * answered (`firstAnswerAt` set: an agent posted a message or comment anywhere
+ * except an agent-to-agent DM, F639), and machines by CLI version. Counts only, from the
  * machine rows; no owner, name or id leaves this function.
  */
 export async function readMachinePlatformStats(): Promise<MachinePlatformStats> {

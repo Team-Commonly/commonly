@@ -16,4 +16,9 @@ describe('getV2EquivalentPath', () => {
     expect(getV2EquivalentPath('/', '')).toBeNull();
     expect(getV2EquivalentPath('/guides', '')).toBeNull();
   });
+
+  test('the pod context dev page moves into v2; the retired API dev page does not', () => {
+    expect(getV2EquivalentPath('/dev/pod-context', '?podId=p1')).toBe('/v2/dev/pod-context?podId=p1');
+    expect(getV2EquivalentPath('/dev/api', '')).toBeNull();
+  });
 });

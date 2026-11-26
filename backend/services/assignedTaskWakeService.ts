@@ -1,7 +1,5 @@
 import { escapeRegExp } from '../utils/escape';
 import { Types } from 'mongoose';
-import AgentTaskWakeState from '../models/AgentTaskWakeState';
-import AgentTaskRowWakeState from '../models/AgentTaskRowWakeState';
 import AgentEvent from '../models/AgentEvent';
 import AgentRun from '../models/AgentRun';
 import Task from '../models/Task';
@@ -10,6 +8,11 @@ import Pod from '../models/Pod';
 import { AgentInstallation } from '../models/AgentRegistry';
 import { carriesAgentMarkers, isReservedAgentEmail } from './agentIdentityService';
 import { formatBoardPodLine } from './boardPodCue';
+import { releaseWake, reserveWake } from '../repositories/agentTaskWakeStateRepository';
+import {
+  clearRowWakeStamps, countRowOutcome, findRowWakeStates, recordRowWakes, resetRowWake, stopRowWake, unstopRowWake,
+  type RowWakeStamp,
+} from '../repositories/agentTaskRowWakeStateRepository';
 
 const DELAY_MS = 5 * 60 * 1000;
 const INTERVAL_MS = 30 * 60 * 1000;
@@ -148,11 +151,10 @@ async function countOutcomes(states: RowState[]): Promise<void> {
     const failures = verdict === 'failed' ? (state.failures || 0) + 1 : verdict === 'succeeded' ? 0 : (state.failures || 0);
     // The prior countedEventId guards against two schedulers counting one run twice.
     // eslint-disable-next-line no-await-in-loop
-    const counted = await AgentTaskRowWakeState.updateOne(
-      { _id: state._id, countedEventId: state.countedEventId ?? null },
-      { $set: { countedEventId: state.lastWakeEventId, failures, lastVerdict: verdict } },
-    );
-    if (counted.modifiedCount) {
+    const counted = await countRowOutcome(state._id, state.countedEventId, {
+      countedEventId: state.lastWakeEventId, failures, lastVerdict: verdict,
+    });
+    if (counted) {
       state.countedEventId = state.lastWakeEventId;
       state.failures = failures;
       state.lastVerdict = verdict;
@@ -163,11 +165,7 @@ async function countOutcomes(states: RowState[]): Promise<void> {
 // Says so once on the row, in the agent's name, without touching updatedAt:
 // the note must not read as a fresh revision that offers the row again.
 async function stopRow(row: Row, state: RowState, install: Installation, principalId: string, now: Date): Promise<void> {
-  const stopped = await AgentTaskRowWakeState.updateOne(
-    { _id: state._id, stoppedAt: null },
-    { $set: { stoppedAt: now } },
-  );
-  if (!stopped.modifiedCount) return;
+  if (!await stopRowWake(state._id, now)) return;
   const writeNote = () => Task.updateOne(
     { _id: row._id },
     { $push: { updates: { text: STOPPED_NOTE, author: install.agentName, authorId: principalId, createdAt: now } } },
@@ -177,7 +175,7 @@ async function stopRow(row: Row, state: RowState, install: Installation, princip
     await writeNote().catch(writeNote);
   } catch (error) {
     // Un-stop so the next dispatch says so again, rather than a silent stop.
-    await AgentTaskRowWakeState.updateOne({ _id: state._id, stoppedAt: now }, { $set: { stoppedAt: null } });
+    await unstopRowWake(state._id, now);
     console.error('[assigned-task-wake] stop note not written:', state._id, (error as Error).message);
     return;
   }
@@ -220,8 +218,7 @@ async function movedOnSince(install: Installation, principalId: string, since: D
 async function wakeableRows(
   owned: Row[], install: Installation, principalId: string, seat: string, now: Date,
 ): Promise<Row[]> {
-  const states = await AgentTaskRowWakeState.find({ _id: { $in: owned.map((row) => rowKey(seat, row)) } })
-    .lean() as RowState[];
+  const states = await findRowWakeStates(owned.map((row) => rowKey(seat, row))) as RowState[];
   await countOutcomes(states);
   const byRow = new Map(states.map((state) => [state._id, state]));
   // Every row here is in the install's pod; read its activity once per cutoff.
@@ -252,7 +249,7 @@ async function wakeableRows(
     // eslint-disable-next-line no-await-in-loop
     if (failing && state.lastWakeAt && await anyHuman(updatedSince(row, new Date(state.lastWakeAt)))) {
       // eslint-disable-next-line no-await-in-loop
-      await AgentTaskRowWakeState.updateOne({ _id: state._id }, { $set: { failures: 0, stoppedAt: null } });
+      await resetRowWake(state._id);
       wakeable.push(row);
       continue;
     }
@@ -416,14 +413,14 @@ export async function dispatchAssignedTaskWakes(now = new Date()): Promise<{ eli
     let reserved = false;
     let enqueueStarted = false;
     try {
-      // Upsert's duplicate _id loser is the capped/racing worker. The cap is
+      // Not reserved means a capped or racing worker holds the slot. The cap is
       // per seat, not per pod, and survives process restarts and event GC.
       // eslint-disable-next-line no-await-in-loop
-      const state = await AgentTaskWakeState.findOneAndUpdate({
-        _id: key,
-        $or: [{ lastWakeAt: { $lte: new Date(now.getTime() - INTERVAL_MS) } }, { lastWakeAt: null }],
-      }, { $set: { lastWakeAt: now } }, { upsert: true, new: true });
-      reserved = Boolean(state);
+      reserved = await reserveWake(key, now, INTERVAL_MS);
+      if (!reserved) {
+        logSkip(install, owned, 'seat-interval', now);
+        continue;
+      }
       // An assignment, pause or queued wake can change during reservation.
       // Recheck the actual rows and installation before crossing enqueue.
       // eslint-disable-next-line no-await-in-loop
@@ -437,14 +434,13 @@ export async function dispatchAssignedTaskWakes(now = new Date()): Promise<{ eli
       const current = await actionableRows((currentRows as Row[]).filter((row) => owns(row, install, principalId)));
       if (!active || busy || !current.length || String(newest?._id) !== String(last._id)) {
         // eslint-disable-next-line no-await-in-loop
-        await AgentTaskWakeState.updateOne({ _id: key, lastWakeAt: now }, { $unset: { lastWakeAt: 1 } });
+        await releaseWake(key, now);
         logSkip(install, owned, 'recheck', now);
         continue;
       }
       const shown = current.slice(0, 5);
-      const recordRows = (update: Record<string, unknown>) => AgentTaskRowWakeState.bulkWrite(shown.map((row) => ({
-        updateOne: { filter: { _id: rowKey(key, row) }, update: { $set: update }, upsert: true },
-      })));
+      const shownKeys = shown.map((row) => rowKey(key, row));
+      const recordRows = (stamp: RowWakeStamp) => recordRowWakes(shownKeys, stamp);
       // Recorded before the wake is queued: a wake the stop rule cannot see
       // must not happen. On failure the slot is returned below and nothing queues.
       try {
@@ -454,10 +450,7 @@ export async function dispatchAssignedTaskWakes(now = new Date()): Promise<{ eli
         // An ordered write can stamp some rows before it fails. Those rows were
         // not woken, so clear the stamp: at worst one extra wake, never a lost one.
         // eslint-disable-next-line no-await-in-loop
-        await AgentTaskRowWakeState.updateMany(
-          { _id: { $in: shown.map((row) => rowKey(key, row)) }, lastWakeAt: now },
-          { $set: { lastWakeAt: null } },
-        ).catch((clearError: Error) => console.error('[assigned-task-wake] stamp not cleared:', key, clearError.message));
+        await clearRowWakeStamps(shownKeys, now).catch((clearError: Error) => console.error('[assigned-task-wake] stamp not cleared:', key, clearError.message));
         throw recordError;
       }
       // eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
@@ -488,6 +481,8 @@ export async function dispatchAssignedTaskWakes(now = new Date()): Promise<{ eli
         console.error('[assigned-task-wake] wake not linked to rows:', key, (stateError as Error).message);
       }
     } catch (error) {
+      // reserveWake answers a lost race with false; a duplicate key that still
+      // escapes it (dual's insert retried once and lost again) is the same loss.
       if ((error as { code?: number }).code === 11000 && !reserved) {
         logSkip(install, owned, 'seat-interval', now);
         continue;
@@ -495,7 +490,7 @@ export async function dispatchAssignedTaskWakes(now = new Date()): Promise<{ eli
       if (reserved && !enqueueStarted) {
         // No queue write was attempted, so returning this slot is safe.
         // eslint-disable-next-line no-await-in-loop
-        await AgentTaskWakeState.updateOne({ _id: key, lastWakeAt: now }, { $unset: { lastWakeAt: 1 } });
+        await releaseWake(key, now);
         console.error('[assigned-task-wake] preflight failed:', key, (error as Error).message);
         continue;
       }

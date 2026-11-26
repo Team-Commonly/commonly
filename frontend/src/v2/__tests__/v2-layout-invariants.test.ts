@@ -259,7 +259,6 @@ describe('v2 layout invariants (CSS rule presence)', () => {
   const avatarCropDialog = read('../components/V2AvatarCropDialog.tsx');
   const avatar = read('../components/V2Avatar.tsx');
   const billingPanel = read('../components/V2BillingPanel.tsx');
-  const appsManagement = read('../../components/AppsManagement.tsx');
   const podModel = read('../../../../backend/models/Pod.ts');
 
   test('agent Settings key metadata wraps within the page at phone width', () => {
@@ -1060,6 +1059,19 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     expect(v2).toMatch(/\.v2-root button\.v2-verification-banner__dismiss \{[\s\S]*?width: 44px;/);
   });
 
+  // The Discord card sits in the shell's banner row. Without an explicit row 1
+  // it would be auto-placed, and the app below would lose its full-height row.
+  test('the Discord card takes the banner row, wraps its text and keeps a 44px dismiss', () => {
+    const css = read('../components/V2DiscordCard.css');
+    const card = ruleBody(css, '.v2-discord-card');
+    expect(card).toContain('grid-row: 1');
+    expect(card).toContain('min-width: 0');
+    expect(ruleBody(css, '.v2-discord-card__text')).toContain('overflow-wrap: anywhere');
+    expect(css).toMatch(/\.v2-root button\.v2-discord-card__dismiss \{[\s\S]*?width: 44px;[\s\S]*?height: 44px;/);
+    const phone = css.slice(css.indexOf('@media (max-width: 760px)'));
+    expect(phone).toMatch(/grid-template-areas:[\s\S]*?"glyph text dismiss"[\s\S]*?"\. join join"/);
+  });
+
 
 
 
@@ -1599,9 +1611,14 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     expect(settingsPage).toContain('className="v2-settings__avatar"');
     expect(settingsPage).toContain('src={currentUser?.profilePicture || undefined}');
     expect(settingsPage).toContain('kind="human"');
-    expect(settingsPage).toContain('<AppsManagement variant="settings" showIntegrations={false} />');
+    // Developer apps (the MUI AppsManagement) were retired unreleased.
+    expect(settingsPage).not.toContain('AppsManagement');
+    // The Delete account fold keeps the padded, ruled body its rule gives it;
+    // that rule once lived under the developer-apps class and nearly went with it.
+    expect(read('../components/V2DeleteAccount.tsx')).toContain('className="v2-settings__delete-account"');
+    expect(ruleBody(ss, '.v2-settings__delete-account')).toContain('padding: 12px 16px');
+    expect(ruleBody(ss, '.v2-settings__delete-account')).toContain('border-top: 1px solid var(--v2-border-soft)');
     expect(settingsPage).toContain('to="/v2/connectors"');
-    expect(settingsPage).toContain(`<summary>{t('settings.developerApps')}</summary>`);
     expect(settingsPage).toContain('<V2BillingPanel />');
     expect(settingsPage).toContain('<V2DevicesPanel showHeading={false} asFold />');
     expect(ruleBody(ss, '.v2-settings__avatar')).toContain('width: 44px');
@@ -1709,17 +1726,6 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     expect(billingPanel).not.toContain('v2-billing__badge');
   });
 
-  test('Settings flattens connected apps and folds Developer Tips under the form', () => {
-    expect(appsManagement).toContain("const isSettingsVariant = variant === 'settings'");
-    expect(appsManagement).toContain('{!isSettingsVariant && <WebhookIcon color="primary" />}');
-    expect(appsManagement).toContain('{!isSettingsVariant && <SettingsIcon color="primary" />}');
-    expect(appsManagement).toContain('className="apps-management__developer-tips"');
-    expect(appsManagement).toContain('{!isSettingsVariant && (');
-    expect(appsManagement).toContain('? <Box className={className}>{children}</Box>');
-    expect(ruleBody(ss, '.v2-settings .apps-management--settings .apps-management__section + .apps-management__section')).toContain('border-top: 1px solid var(--v2-border-soft)');
-    expect(ruleBody(ss, '.v2-settings .apps-management--settings .apps-management__integration')).toContain('border: 1px solid var(--v2-border)');
-  });
-
   test('mention treatment is a tight chip on the handle, never a row wash or rail', () => {
     // Accent rails made otherwise ordinary cards look like generic callouts.
     // Message rows retain a neutral semantic wash, while quote edges stay
@@ -1797,14 +1803,39 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     expect(connectCta).toContain('color: var(--v2-on-fill)');
   });
 
+  test('no v2 source draws a MUI icon; marks come from icons/glyphs', () => {
+    const v2Root = path.join(__dirname, '..');
+    const drawsMuiIcon = (src: string) => /from\s*['"]@mui\/icons-material/.test(src);
+    const sources = (fs.readdirSync(v2Root, { recursive: true }) as string[])
+      .filter((f) => /\.tsx?$/.test(f) && !f.includes('__tests__'));
+    // Positive controls: the predicate catches the import, and the scan
+    // reaches nested production folders while skipping tests.
+    expect(drawsMuiIcon("import CloseIcon from '@mui/icons-material/Close';")).toBe(true);
+    expect(drawsMuiIcon('import CloseIcon from "@mui/icons-material/Close";')).toBe(true);
+    expect(drawsMuiIcon("import { Close } from\n  '@mui/icons-material';")).toBe(true);
+    expect(sources).toEqual(expect.arrayContaining([
+      path.join('components', 'V2PodBoard.tsx'),
+      path.join('icons', 'glyphs.tsx'),
+    ]));
+    expect(sources.some((f) => f.includes('__tests__'))).toBe(false);
+    const offenders = sources.filter((f) => drawsMuiIcon(fs.readFileSync(path.join(v2Root, f), 'utf8')));
+    expect(offenders).toEqual([]);
+  });
+
   test('the board craft-pass buttons use icon components instead of unicode glyphs', () => {
     // This is structural: accessible labels cannot prove a literal glyph has
-    // left the JSX. The MUI imports and icon nodes are the implementation
-    // contract for the two ruled board buttons.
-    expect(podBoard).toContain("import AddIcon from '@mui/icons-material/Add'");
-    expect(podBoard).toContain("import ArrowBackIcon from '@mui/icons-material/ArrowBack'");
-    expect(podBoard).toContain('<ArrowBackIcon fontSize="small" aria-hidden="true" />');
-    expect(podBoard).toContain('<AddIcon fontSize="small" aria-hidden="true" />');
+    // left the JSX. The v2 glyph nodes are the implementation contract for the
+    // two ruled board buttons.
+    // Scoped to each button's own markup: the pending column's add button
+    // also draws a plus.
+    const buttonOf = (cls: string) => {
+      const start = podBoard.indexOf(`className="${cls} `);
+      expect(start).toBeGreaterThan(-1);
+      return podBoard.slice(start, podBoard.indexOf('</button>', start));
+    };
+    expect(podBoard).toContain("import { ShellGlyph } from '../icons/glyphs'");
+    expect(buttonOf('v2-board__back')).toContain('<ShellGlyph name="back" />');
+    expect(buttonOf('v2-board__new')).toContain('<ShellGlyph name="plus" />');
     expect(podBoard).not.toContain('← {t(\'board.backToChat\')}');
     expect(podBoard).not.toContain('+ {t(\'board.newTask\')}');
   });
@@ -5384,6 +5415,18 @@ describe('BYO command boxes wrap at spaces', () => {
     expect(rule).not.toContain('word-break: break-all');
   });
 
+  // F629: the add-computer line broke `--unsandboxed` at its hyphen on a
+  // phone. Each token is an inline-block, so it moves to the next line whole
+  // when it fits there; max-width lets a token longer than the line (a long
+  // self-hosted URL) still wrap inside itself rather than push the box wider.
+  test('the add-computer command keeps each token whole and breaks only at its spaces', () => {
+    const token = ruleBody(byoCss, '.v2-byo__add-computer-row code .v2-byo__token');
+    expect(token).toContain('display: inline-block');
+    expect(token).toContain('max-width: 100%');
+    expect(ruleBody(byoCss, '.v2-byo__add-computer-row code')).toContain('overflow-wrap: anywhere');
+    expect(read('../components/V2AgentBYO.tsx')).toContain('<span className="v2-byo__token">');
+  });
+
   test('a mention item highlights on arrow-key and hover past the button reset', () => {
     // The prefixed rules keep the interaction states explicit. The reset is
     // intentionally low-specificity, so bare component rules can own their
@@ -5815,6 +5858,50 @@ test('OpenUI cards keep the approved phone controls and table records', () => {
   expect(css).toContain('.ui-table--records .ui-recs { display:grid; }');
   expect(css).toContain('.v2-root .v2-msg.v2-ui-card { display:flex; flex-direction:column;');
   expect(css).toContain('.ui.gone{border-style:dashed');
+});
+
+test('revision 3 charts scale to the card and draw in v2 tokens only', () => {
+  const css = read('../cards/uiCard.css');
+  // Without width:100% and height:auto the 480-wide viewBox overflows a phone card.
+  expect(css).toContain('.v2-ui-card .ui-ch-svg { display:block; width:100%; height:auto; max-width:100%;');
+  // The value table is for screen readers; it must never take layout width.
+  expect(css).toContain('.v2-ui-card .ui-ch-data { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden;');
+  const rules = css.split('\n').filter(line => /\.ui-(ch|pg)|--c[1-4]:/.test(line));
+  expect(rules.length).toBeGreaterThanOrEqual(10);
+  for (const rule of rules) expect(rule).not.toMatch(/#[0-9a-f]{3,8}\b|rgba?\(|hsla?\(|data-v2-theme|prefers-color-scheme/i);
+});
+
+test('card motion (spinner, pulse, progress, chart draw-in) stops under prefers-reduced-motion', () => {
+  const css = read('../cards/uiCard.css');
+  const start = css.indexOf('@media (prefers-reduced-motion: reduce)');
+  expect(start).toBeGreaterThan(-1);
+  // The media block's own rules, so a selector in a sibling rule that leaves
+  // the motion on cannot pass.
+  const block = css.slice(css.indexOf('{', start) + 1);
+  const rules = [...block.slice(0, block.search(/\n\}/)).matchAll(/([^{}]+)\{([^}]*)\}/g)]
+    .map(([, selectors, body]) => ({ selectors: selectors.split(',').map(s => s.trim()), body }));
+  ['li.active .gl .arc', 'li.pending .gl', '.ui-pg-t > span', '.ui-ch-svg .mk'].forEach((selector) => {
+    expect(css).toMatch(new RegExp(`${selector.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')} \\{[^}]*animation:ui-`));
+    const own = rules.filter(rule => rule.selectors.some(s => s.endsWith(selector)));
+    expect(own.length).toBeGreaterThan(0);
+    own.forEach(rule => {
+      expect(rule.body).toMatch(/animation:\s*none/);
+      expect(rule.body).toMatch(/transition:\s*none/);
+    });
+  });
+});
+
+test('OpenUI table cells break only between words; a long token scrolls the table inside its card (F650)', () => {
+  const css = read('../cards/uiCard.css').replace(/\/\*[\s\S]*?\*\//g, '');
+  // `overflow-wrap:anywhere` on a cell drops its min-content to one character, so
+  // the auto table layout squeezed "#4355" / "Merged" / "Status" mid-word at 1280.
+  expect(css).not.toMatch(/\.ui-tb[^{]*\b(td|th)\b[^{]*\{[^}]*overflow-wrap:\s*anywhere/);
+  expect(css).not.toMatch(/\.ui-tb[^{]*\b(td|th)\b[^{]*\{[^}]*word-break:\s*break-all/);
+  expect(css).toContain('.v2-ui-card .ui-table .ui-tb :is(th, td) { white-space:normal; overflow-wrap:normal; }');
+  // The overflow goes somewhere: the wrapper scrolls, and the grid item may shrink
+  // below its min-content so the card stays inside the message column.
+  expect(css).toContain('.v2-ui-card .ui-table .ui-tw { overflow-x:auto; }');
+  expect(css).toContain('.v2-ui-card .ui-table { min-width:0; }');
 });
 
 test('the card Source line (TASK-607) uses v2 tokens only, one value per token, no dark-only colours', () => {
@@ -6959,5 +7046,41 @@ describe('the phone tab bar steps aside for the keyboard', () => {
   });
   it('the phone pane height has its dvh pair', () => {
     expect(css).toMatch(/\.v2-shell \.v2-pane \{\s*height: 100vh;\s*height: 100dvh;\s*\}/);
+  });
+});
+
+// The pod context inspector (admin) shrinks and wraps through these
+// declarations; without them a long asset id or tag pushes the page sideways.
+describe('pod context inspector layout', () => {
+  const css = read('../v2.css');
+  const start = css.indexOf('\n.v2-pod-context {');
+  const block = css.slice(start, css.indexOf('/* ============ Admin analytics', start));
+  const phoneAt = block.indexOf('@media (max-width: 760px)');
+  const phone = block.slice(phoneAt);
+
+  it('finds its block and its phone query', () => {
+    expect(start).toBeGreaterThan(-1);
+    expect(phoneAt).toBeGreaterThan(-1);
+  });
+  it('lets grid columns shrink below their content', () => {
+    expect(ruleBody(css, '.v2-pod-context__grid', { within: block })).toContain('grid-template-columns: repeat(4, minmax(0, 1fr));');
+    expect(ruleBody(css, '.v2-pod-context__split', { within: block })).toContain('grid-template-columns: repeat(2, minmax(0, 1fr));');
+  });
+  it('lets flex children shrink', () => {
+    ['.v2-pod-context__section', '.v2-pod-context__field', '.v2-pod-context__input', '.v2-pod-context__item'].forEach((selector) => {
+      expect(ruleBody(css, selector, { within: block })).toContain('min-width: 0;');
+    });
+  });
+  it('wraps rows, chips and long text', () => {
+    ['.v2-pod-context__row', '.v2-pod-context__chips', '.v2-pod-context__item-title'].forEach((selector) => {
+      expect(ruleBody(css, selector, { within: block })).toContain('flex-wrap: wrap;');
+    });
+    ['.v2-pod-context__item-title', '.v2-pod-context__muted', '.v2-pod-context__markdown', '.v2-pod-context__pre'].forEach((selector) => {
+      expect(ruleBody(css, selector, { within: block })).toContain('overflow-wrap: anywhere;');
+    });
+  });
+  it('collapses the grid and the split on a phone', () => {
+    expect(ruleBody(css, '.v2-pod-context__grid', { within: phone })).toContain('grid-template-columns: repeat(2, minmax(0, 1fr));');
+    expect(ruleBody(css, '.v2-pod-context__split', { within: phone })).toContain('grid-template-columns: minmax(0, 1fr);');
   });
 });

@@ -2,6 +2,12 @@
 // Handles: POST /install
 const { copyInstallHandoffMemory } = require('../../services/installHandoffMemory');
 const express = require('express');
+const { logOutboundFailure, ownErrorMessage } = require('../../utils/safeErrorLog');
+
+// Thrown on purpose by AgentInstallation.install. A page tells "already
+// installed" from a failure by this text (V2AgentBYO, V2Thread), so it reaches
+// the caller even when it lands in the catch-all as a 500.
+const INSTALL_OWN_MESSAGES = ['Agent already installed'];
 const mongoose = require('mongoose');
 const rateLimit = require('express-rate-limit');
 const auth = require('../../middleware/auth');
@@ -36,6 +42,8 @@ const HostedEngine = require('../../services/hostedEngine');
 const { reservedAgentNameRefusal } = require('../../services/agentNameReservation');
 const { IDENTITY_COLLATION, PLACEHOLDER_AGENT_DESCRIPTION, installationIdentityFilter } = require('../../services/agentInstallationIdentity');
 const { normalizeAvatarUrl } = require('../../services/avatarService');
+const { referencesOthersPodUpload } = require('../../services/attachmentAccess');
+const { mirrorRegistryRow } = require('../../services/installable/registryReconciler');
 const { isPersonalPodType } = require('../../services/podTypePolicyService');
 const {
   hasForeignOwner, inheritablePodConfig, resolveAdditionSource, withRoutedRuntime,
@@ -420,6 +428,11 @@ const installAgent = async (req: any, res: any, addition?: { alreadyInPod: Recor
       agent = await AgentRegistry.create(registryData);
       if (req.body.memoryFrom !== undefined) {
         handoffRegistryClaim = { id: agent._id, agentName: agent.agentName, userId, version: agent.__v };
+      } else {
+        // Not during a memory handoff: a failed handoff deletes this registry
+        // row, and the mirror's Installable would outlive it. The sweep
+        // backfills a handoff row once it survives.
+        await mirrorRegistryRow(agent, 'install.ephemeral');
       }
       console.log('[cap self-serve-install]', {
         user: String(userId),
@@ -893,7 +906,16 @@ const installAgent = async (req: any, res: any, addition?: { alreadyInPod: Recor
         const template = matchingTemplates.find(
           (candidate: any) => String(candidate.createdBy || '') === String(userId),
         ) || matchingTemplates.find((candidate: any) => candidate.visibility === 'public');
-        avatarSeed = normalizeAvatarUrl(template?.iconUrl) || avatarSeed;
+        // A template saved before its icon was checked (F615) can still name a
+        // pod upload someone else made. Drop that icon, as if no template had
+        // matched, rather than fail the install; checked as the installer, the
+        // same key F609 uses for a direct avatar write. A failed lookup drops
+        // the icon too, so it can never fail the identity step below.
+        const templateIcon = normalizeAvatarUrl(template?.iconUrl);
+        const iconRefused = templateIcon
+          ? await referencesOthersPodUpload(templateIcon, String(userId)).catch(() => true)
+          : true;
+        if (!iconRefused) avatarSeed = templateIcon;
       }
       agentUser = await AgentIdentityService.getOrCreateAgentUser(agent.agentName, {
         instanceId: normalizedInstanceId,
@@ -911,7 +933,18 @@ const installAgent = async (req: any, res: any, addition?: { alreadyInPod: Recor
         agentUser, podId, effectiveRuntimeType, newHostedEngine,
       );
       if (!joined) {
-        return isPersonalPodType(pod.type)
+        // Answer from the pod as it is now: it may have become a DM, or gone,
+        // between the read above and ensureAgentInPod's atomic add (F605).
+        // Read by the id the server loaded, not the request body. A failed
+        // read stops here: the identity catch below would log and go on to
+        // write an installation for an agent that was just refused.
+        let current;
+        try {
+          current = await Pod.findById(pod._id).lean();
+        } catch {
+          return res.status(503).json({ error: 'Pod membership could not be confirmed. Retry the install.' });
+        }
+        return current && isPersonalPodType(current.type)
           ? res.status(403).json({
             code: 'dm_membership_refused',
             error: 'This is a private conversation; another agent can\'t be added to it.',
@@ -1317,16 +1350,22 @@ const installAgent = async (req: any, res: any, addition?: { alreadyInPod: Recor
         });
       }
     }
-    console.error('Error installing agent:', error);
+    logOutboundFailure('Error installing agent:', error);
     const status = (error as { status?: number }).status;
     // A memory-handoff refusal names its kind, so a page can say it in the
     // person's language. Only these string codes: a driver's numeric code
     // (Mongo's 11000) is not a reason.
     const code = (error as { code?: unknown }).code;
-    res.status(status === 400 || status === 403 || status === 409 ? status : 500)
+    // A 400/403/409 is a refusal we wrote for the person to read. Anything else
+    // is unexpected and answers fixed text.
+    const refusal = status === 400 || status === 403 || status === 409;
+    // safe-5xx: our own message (only a 400/403/409 refusal carries its text)
+    res.status(refusal ? status : 500)
       .json({
         ...(typeof code === 'string' && code.startsWith('memory_handoff_') ? { code } : {}),
-        error: (error as Error).message || 'Failed to install agent',
+        error: refusal
+          ? ((error as Error).message || 'Failed to install agent')
+          : ownErrorMessage(error, INSTALL_OWN_MESSAGES, 'Failed to install agent'),
       });
   }
 };

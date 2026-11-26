@@ -46,6 +46,8 @@ export interface IDecisionRequest extends Document {
   options: DecisionOption[];
   status: 'pending' | 'ruled';
   messageId?: string;
+  /** Set only on the decision behind an agent card's acting Buttons: its card's message id. */
+  cardMessageId?: string;
   threadRootId?: string;
   ruling?: DecisionRuling;
   /** Absent: any human member may rule. Present: only these people may. */
@@ -86,6 +88,7 @@ const DecisionRequestSchema = new Schema<IDecisionRequest>(
     // Assigned only after the asker's source message persists. Pending rows
     // without it are intentionally invisible to the Activity projection.
     messageId: { type: String, trim: true },
+    cardMessageId: { type: String, trim: true },
     threadRootId: { type: String, trim: true },
     ruling: {
       value: { type: String, trim: true, maxlength: 2000 },
@@ -117,6 +120,12 @@ const DecisionRequestSchema = new Schema<IDecisionRequest>(
 DecisionRequestSchema.index({ podId: 1, status: 1, createdAt: -1 });
 // Channel receipts resolve by the ask's PG message id, including across pods.
 DecisionRequestSchema.index({ messageId: 1 });
+// One decision per acting card, so two first clicks share one row. Partial, so
+// decision-card rows (which never carry the key) are untouched.
+DecisionRequestSchema.index(
+  { cardMessageId: 1 },
+  { unique: true, partialFilterExpression: { cardMessageId: { $type: 'string' } } },
+);
 
 const DecisionRequest: Model<IDecisionRequest> = (mongoose.models.DecisionRequest as Model<IDecisionRequest>)
   || mongoose.model<IDecisionRequest>('DecisionRequest', DecisionRequestSchema);

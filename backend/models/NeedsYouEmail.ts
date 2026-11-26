@@ -1,4 +1,5 @@
 import mongoose, { Document, Model, Schema, Types } from 'mongoose';
+import { dualStorePlugin } from '../repositories/dualStore';
 
 interface INeedsYouEmail extends Document {
   attentionItemId: Types.ObjectId;
@@ -20,6 +21,9 @@ const schema = new Schema<INeedsYouEmail>({
   clickedAt: Date,
   includedInDigestAt: Date,
 }, { timestamps: true });
+
+// ADR-034 step 2: the repair markers (pgVersion, pgPending, pgDeleted) and their sparse index.
+dualStorePlugin(schema);
 
 const NeedsYouEmail: Model<INeedsYouEmail> = mongoose.models.NeedsYouEmail
   || mongoose.model<INeedsYouEmail>('NeedsYouEmail', schema);

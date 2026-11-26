@@ -284,7 +284,7 @@ describe('DELETE /api/integrations/:id over a hosted-MCP row', () => {
     // vendor path instead.
     expect(res.status).toBe(502);
     expect(res.body.code).toBe('provider_revoke_failed');
-    expect(res.body.message).toMatch(/names no known entry/);
+    expect(res.body.message).toMatch(/did not confirm the revoke/);
 
     const row = await Integration.findById(connection._id).lean();
     expect(row).not.toBeNull();

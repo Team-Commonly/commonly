@@ -12,6 +12,8 @@ const { AgentRegistry, AgentInstallation } = require('../models/AgentRegistry');
 const AgentIdentityService = require('./agentIdentityService');
 // eslint-disable-next-line global-require
 const AgentEventService = require('./agentEventService');
+// eslint-disable-next-line global-require
+const { mirrorRegistryRow } = require('./installable/registryReconciler');
 
 const DEFAULT_SUMMARY_AGENT = 'commonly-bot';
 const DEFAULT_SUMMARY_SCOPES = [
@@ -116,6 +118,7 @@ const ensureSummaryAgentRegistry = async (): Promise<Record<string, unknown>> =>
     versions: [{ version: '1.0.0', publishedAt: new Date() }],
     stats: { installs: 0, rating: 0, ratingCount: 0 },
   });
+  await mirrorRegistryRow(agent, 'pod-curation.commonly-bot');
 
   return agent;
 };

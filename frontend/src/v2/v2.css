@@ -3031,20 +3031,6 @@ body.modern-ui.v2-canvas {
   border: 2px solid var(--v2-surface);
 }
 
-/* Reset top padding for embedded dev tools so the v2 feature header is the
-   only top-of-page chrome the user sees. The dev pages were authored to
-   stand alone and add their own 24px+ top padding. */
-.v2-feature__legacy .api-dev-root,
-.v2-feature__legacy .pod-context-dev-root {
-  padding-top: 0 !important;
-}
-
-.v2-feature__legacy .api-dev-container,
-.v2-feature__legacy .pod-context-dev-container {
-  padding-left: 0 !important;
-  padding-right: 0 !important;
-}
-
 .v2-feature__legacy [style*="#1d9bf0"],
 .v2-feature__legacy [style*="#1976d2"],
 .v2-feature__legacy [style*="#6366f1"],
@@ -3605,6 +3591,245 @@ body.modern-ui.v2-canvas {
     font-size: 16px !important;
   }
 
+}
+
+/* Pod context inspector (/v2/dev/pod-context), an admin operator tool. */
+.v2-pod-context {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  max-width: 1100px;
+}
+
+.v2-pod-context__section {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-width: 0;
+}
+
+.v2-pod-context__card {
+  padding: 16px;
+  border: 1px solid var(--v2-border-soft);
+  border-radius: var(--v2-radius-lg);
+  background: var(--v2-surface);
+}
+
+.v2-pod-context__title {
+  margin: 0;
+  font-size: 17px;
+  font-weight: 700;
+  color: var(--v2-text-primary);
+}
+
+.v2-pod-context__sub {
+  margin: 2px 0 0;
+  font-size: 13px;
+  color: var(--v2-text-tertiary);
+}
+
+.v2-pod-context__card-title {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--v2-text-primary);
+}
+
+.v2-pod-context__group-title {
+  margin: 4px 0 0;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--v2-text-secondary);
+}
+
+.v2-pod-context__grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.v2-pod-context__field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.v2-pod-context__field--wide {
+  grid-column: span 2;
+}
+
+.v2-pod-context__label {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--v2-text-secondary);
+}
+
+.v2-pod-context__hint {
+  font-size: 12px;
+  color: var(--v2-text-tertiary);
+}
+
+.v2-pod-context__input {
+  box-sizing: border-box;
+  width: 100%;
+  min-width: 0;
+  height: 36px;
+  padding: 0 10px;
+  border: 1px solid var(--v2-border);
+  border-radius: var(--v2-radius-sm);
+  background: var(--v2-surface);
+  color: var(--v2-text-primary);
+  font: inherit;
+  font-size: 14px;
+  outline: none;
+}
+
+.v2-pod-context__input:focus {
+  border-color: var(--v2-accent);
+  box-shadow: var(--v2-focus-ring);
+}
+
+.v2-pod-context__row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px 16px;
+}
+
+.v2-pod-context__row .v2-pod-context__field {
+  width: 110px;
+}
+
+.v2-pod-context__check {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  color: var(--v2-text-primary);
+  cursor: pointer;
+}
+
+.v2-pod-context__check input {
+  accent-color: var(--v2-accent);
+}
+
+.v2-pod-context__chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.v2-pod-context__split {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 20px;
+}
+
+.v2-pod-context__item {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.v2-pod-context__item--boxed {
+  padding: 10px 12px;
+  border: 1px solid var(--v2-border-soft);
+  border-radius: var(--v2-radius-sm);
+}
+
+.v2-pod-context__item-title {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--v2-text-primary);
+  overflow-wrap: anywhere;
+}
+
+.v2-pod-context__meta {
+  font-size: 12px;
+  font-weight: 400;
+  color: var(--v2-text-tertiary);
+}
+
+.v2-pod-context__muted {
+  margin: 0;
+  font-size: 13px;
+  color: var(--v2-text-tertiary);
+  overflow-wrap: anywhere;
+}
+
+.v2-pod-context__markdown {
+  padding: 10px 12px;
+  border: 1px solid var(--v2-border-soft);
+  border-radius: var(--v2-radius-sm);
+  background: var(--v2-page-bg);
+  font-size: 13px;
+  color: var(--v2-text-primary);
+  overflow-wrap: anywhere;
+}
+
+.v2-pod-context__markdown > :first-child {
+  margin-top: 0;
+}
+
+.v2-pod-context__markdown > :last-child {
+  margin-bottom: 0;
+}
+
+.v2-pod-context__excerpt {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding-top: 12px;
+  border-top: 1px solid var(--v2-border-soft);
+}
+
+.v2-pod-context__pre {
+  margin: 0;
+  padding: 10px 12px;
+  border: 1px solid var(--v2-border-soft);
+  border-radius: var(--v2-radius-sm);
+  background: var(--v2-page-bg);
+  font: 12.5px/1.5 var(--v2-font-mono);
+  color: var(--v2-text-primary);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.v2-pod-context__notice {
+  padding: 10px 12px;
+  border-radius: var(--v2-radius-sm);
+  font-size: 13px;
+}
+
+.v2-pod-context__notice--error {
+  background: var(--v2-danger-soft);
+  color: var(--v2-danger-text);
+}
+
+.v2-pod-context__notice--warning {
+  background: var(--v2-warning-soft);
+  color: var(--v2-warning-text);
+}
+
+.v2-pod-context__notice--success {
+  background: var(--v2-success-soft);
+  color: var(--v2-success-text);
+}
+
+@media (max-width: 760px) {
+  .v2-pod-context__grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .v2-pod-context__split {
+    grid-template-columns: minmax(0, 1fr);
+  }
 }
 
 /* ============ Admin analytics (GH#662) ============ */

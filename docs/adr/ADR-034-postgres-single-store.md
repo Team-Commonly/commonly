@@ -9,10 +9,17 @@ too strict for models with clock-derived fields).
 
 **Amended 2026-11-05 (D7: considered, not adopted).** Running self-host's Mongo layer on FerretDB
 was measured and walked, and the founder dropped it the same day: FerretDB's last release is v2.7.0
-(2025-11-10). **Self-host is MongoDB plus Postgres**, and that path is walked nightly. The
-migration to Postgres only is paused until the founder reopens it, so the open waves in D6 are not
-work in progress. What already shipped stays enforced: the D4 freeze on new Mongo models fails CI,
-and `requirePgConfigured` stands. D7 stays below as the record.
+(2025-11-10). **Self-host is MongoDB plus Postgres**, and that path is walked nightly. D7 stays
+below as the record, and its outcome stands. What already shipped stays enforced: the D4 freeze on
+new Mongo models fails CI, and `requirePgConfigured` stands.
+
+**Amended 2026-11-25: the migration is reopened, and step 4 is held.** On 2026-11-05 the migration
+was first paused, when D7 was dropped. Later that same day the founder reopened the move to Postgres
+only ("how about fullspeed migrate to postgres"), so the waves in D6 are work in progress again.
+Models move through D3's steps 1 to 3. **Step 4 for any model, and dropping Mongo, are held until
+after 2026-11-30.** The first model at step 2 is `AgentPodReadCursor`
+(migration `0016`), the second `AgentFirstContact` (`0017`); the per-model procedure is
+[`docs/runbooks/adr-034-model-move.md`](../runbooks/adr-034-model-move.md).
 
 **Deciders:** founder (direction), eng lead (plan).
 
@@ -47,7 +54,8 @@ and `requirePgConfigured` stands. D7 stays below as the record.
   `CREATE TABLE IF NOT EXISTS`, outside the runner: `message_claims` (`services/messageClaimService.ts`),
   and `tool_calls` and `tool_call_budgets` (`models/ToolCall.ts`). `message_claims` exists only that way.
 - **Repositories.** `messageRepository`, `agentPodReadCursorRepository` and `recordChainRepository`
-  exist. Only `AgentPodReadCursor` is fenced by lint (`backend/.eslintrc.js`, `no-restricted-imports`).
+  exist, and `agentFirstContactRepository` since step 2 of `AgentFirstContact`. Only `AgentPodReadCursor`
+  and `AgentFirstContact` are fenced by lint (`backend/.eslintrc.js`, `no-restricted-imports`).
 - **Self-host.** `docker-compose.local.yml` runs Postgres beside Mongo (#2806), so `./install.sh` no
   longer runs chat on a fallback. It does need both databases.
 
@@ -84,7 +92,7 @@ boundary holds.
 | Step | What | Rollback |
 |---|---|---|
 | 1. Extract | Callers move to the repository, which still reads and writes Mongo. No behaviour change. | Revert the PR. |
-| 2. Dual | Writes go to both stores. Reads stay on Mongo, and a sample is read from Postgres too, compared, and any mismatch logged. A per-model mode (`mongo`, `dual`, `pg-read`, `pg`; default `mongo`) selects the step. A backfill copies history. | Mode to `mongo`. The next backfill discards the Postgres rows. |
+| 2. Dual | Writes go to both stores. Reads stay on Mongo, and a sample is read from Postgres too, compared, and any mismatch logged. A per-model mode (`mongo`, `dual`, `pg-read`, `pg`; default `mongo`) selects the step. A backfill copies history. | Mode to `mongo`. Mongo is complete. The Postgres rows go stale and stay; `TRUNCATE` the table before the next backfill, which never discards rows itself (runbook). |
 | 3. Read cut | Reads come from Postgres; writes still go to both. | Mode to `dual`. Mongo is still complete. |
 | 4. Drop | Mongo writes stop, and the Mongo code is deleted one release later. | Before deletion: mode to `dual` plus a reverse backfill that carries each row's `pg_version` into the document's version. After: restore from backup. |
 
@@ -96,7 +104,11 @@ conditional update that matches that version, so an earlier write finishing late
 write's marker. A crash between the two leaves the marker set, so nothing depends on recording the
 failure after the fact. **A delete is two-phase:** it first marks the document deleted and pending in
 Mongo, then deletes the Postgres row, and only then removes the Mongo document. A delete that crashes
-halfway is therefore still a flagged document. A sparse index on `pgPending` makes the repair a cheap
+halfway is therefore still a flagged document. **That is not yet enough for a model whose callers
+delete:** a completed delete removes the version with the document and the row, so a recreated id starts
+again at version 1, under any late copy of the old one. Until deletes are tombstones in both stores that
+keep the version, the helper refuses `remove` outside `mongo` unless a store opts in, and such a model
+stays in `mongo`. A sparse index on `pgPending` makes the repair a cheap
 scan: it re-copies each flagged document, or deletes its Postgres row if it is marked deleted, then
 clears the marker the same conditional way. The dual-store helper's tests cover two writes interleaving,
 and a delete crashing at each step. A failed Postgres write counts as a mismatch, and a model in `pg-read` goes back to `dual` while
@@ -112,6 +124,12 @@ keeps the document flagged, so reads stay on Mongo instead of serving the row.
 Step 4 is the only one-way door, and it is taken per model. **A model reaches step 3 when the
 `commonly verify` scenarios pass against both stores and the compare log shows zero unexplained
 mismatches**, not after a fixed number of days.
+
+**How a model moves** (backup, mode, backfill, verify, watch, read cut, and the rollback for each):
+[`docs/runbooks/adr-034-model-move.md`](../runbooks/adr-034-model-move.md). A model whose write is an
+atomic upsert (a `$max` watermark, a counter) goes through the helper's `upsert`, which takes the change
+twice: as a Mongo update pipeline, and as the same change in JS for where Postgres is the store. A
+parity test holds the two together.
 
 ### D4. No new Mongo model
 Every collection added from now on is a Postgres table: a numbered file in `backend/config/migrations/`

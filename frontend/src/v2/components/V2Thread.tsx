@@ -1,9 +1,7 @@
 import React, {
   useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState,
 } from 'react';
-import ArrowBackIcon from '@mui/icons-material/ArrowBack';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
-import ViewSidebarOutlinedIcon from '@mui/icons-material/ViewSidebarOutlined';
 import { ShellGlyph } from '../icons/glyphs';
 import V2GetStarted from './V2GetStarted';
 import V2Avatar from './V2Avatar';
@@ -11,6 +9,8 @@ import V2Hint from './V2Hint';
 import V2CatchUpStrip from './V2CatchUpStrip';
 import V2Composer from './V2Composer';
 import { type V2DecisionCardData, type V2DecisionRuling } from './V2DecisionCard';
+import { MentionLabelsContext } from './V2MentionChip';
+import { buildAgentDisplayNames, useMentionLabelMap } from '../utils/mentionLabels';
 import V2ThreadMessages, { ASK_START_ID, V2ThreadHistoryStatus } from './V2ThreadMessages';
 import { landOnMessage } from './V2MessageRow';
 import V2ThreadStarter from './V2ThreadStarter';
@@ -55,7 +55,9 @@ import {
   slugifyAgentHandle,
 } from '../utils/threadAgentIdentity';
 import { agentConnectLink, agentKeyOf } from '../utils/agentConnectLink';
+import { addressDraftToPod, mentionHandleFor } from '../utils/agentMentionHandle';
 import { trackUsage, trackUsageOnce } from '../utils/usageEvents';
+import { noteOwnPost } from '../utils/ownPost';
 
 // The connect start's label, as SCOUT_STARTS sends it (id connect-agent)
 // (backend/config/native-agents/scout.ts). A click posts exactly this text.
@@ -110,6 +112,8 @@ interface AgentStateRow {
   deliveryError?: { at: string; kind: 'http' | 'timeout' | 'network' | 'refused'; status?: number };
   /** F515: why a never-connected agent's first run stopped, as the code it reported. */
   listenReason?: { reason: string; harness: string | null };
+  /** Never connected, but its key was used over MCP: it reads when opened in its app, never on a mention. */
+  mcpOnly?: boolean;
 }
 const REACH_IS_ACTIVE = new Set<AgentReachState>(['listening', 'reachable']);
 
@@ -731,6 +735,10 @@ const V2Thread: React.FC<V2ThreadProps> = ({ detail, podsState, firstRunVisible 
       map.set(agentName.toLowerCase(), s);
       if (typeof s.instanceId === 'string' && s.instanceId && s.instanceId !== 'default') {
         map.set(s.instanceId.toLowerCase(), s);
+      } else {
+        // F607: the default install's explicit handle, the backend's
+        // `<agentName>-default` key, which the composer inserts beside a sibling.
+        map.set(`${agentName}-default`.toLowerCase(), s);
       }
     });
     return map;
@@ -1524,31 +1532,14 @@ const V2Thread: React.FC<V2ThreadProps> = ({ detail, podsState, firstRunVisible 
   // If we re-introduce a lead concept, it needs real data on the
   // AgentInstallation row, not a frontend heuristic.
 
-  // Map of agent-user username → per-installation displayName. Mirrors
-  // backend AgentIdentityService.buildAgentUsername: '<agentName>' when
-  // instanceId is 'default' or matches the agentName, else
-  // '<agentName>-<instanceId>'. Lets V2MessageRow render "Engineer (Nova)"
-  // instead of the raw User row username "openclaw-nova".
-  //
-  // Note: the backend payload key is `name` (per buildAgentInstallationPayload
-  // in registry helpers), but V2Agent's TypeScript shape declares `agentName`
-  // — the type doesn't match the wire. Read both to survive either source.
-  const agentDisplayNames = React.useMemo(() => {
-    const map = new Map<string, string>();
-    if (!agents) return map;
-    for (const agent of agents) {
-      const rawName = (agent as { name?: string; agentName?: string }).name
-        || agent.agentName || '';
-      const name = rawName.toLowerCase();
-      const instance = (agent.instanceId || '').toLowerCase();
-      const username = !instance || instance === 'default' || instance === name
-        ? name
-        : `${name}-${instance}`;
-      const display = agent.displayName || agent.profile?.displayName || rawName;
-      if (username && display) map.set(username, display);
-    }
-    return map;
-  }, [agents]);
+  // Agent User-row username → the name its messages are signed with, so
+  // V2MessageRow renders "Engineer (Nova)" instead of "openclaw-nova". F645:
+  // the mention labels are built from the same names, so a chip and the byline
+  // of one agent never disagree.
+  const agentDisplayNames = React.useMemo(() => buildAgentDisplayNames(agents || []), [agents]);
+  // Every handle the pod can mention → the name people read. Keyed on the
+  // names, not array identity, so the context value survives parent re-renders.
+  const mentionLabels = useMentionLabelMap(members || [], agents || []);
   // Staging walk 2026-11-02: until the pod's creator sends anything after
   // Scout's welcome, the composer names the agent who just spoke, with an
   // example, instead of the pod.
@@ -1733,7 +1724,7 @@ const V2Thread: React.FC<V2ThreadProps> = ({ detail, podsState, firstRunVisible 
       title={t('podChat.header.backToPods')}
       aria-label={t('podChat.header.backToPods')}
     >
-      <ArrowBackIcon fontSize="small" aria-hidden="true" />
+      <ShellGlyph name="back" size={17} />
     </button>
   ) : null;
 
@@ -1743,12 +1734,20 @@ const V2Thread: React.FC<V2ThreadProps> = ({ detail, podsState, firstRunVisible 
   // per navigation, then dropped from history so a reload does not refill it.
   // Declared above the `!pod` early return: every hook must run on every render.
   const composeDraftKeyRef = useRef<string | null>(null);
+  // The draft as it was handed over, while the person hasn't typed into it.
+  const handedDraftRef = useRef<string | null>(null);
+  // Declared before the effect that sets it, so a pod change clears the last
+  // pod's draft first and never the one this pod was just handed.
+  useEffect(() => { handedDraftRef.current = null; }, [pod?._id]);
   useEffect(() => {
     const composeDraft = (location.state as { composeDraft?: unknown } | null)?.composeDraft;
     if (!pod?._id || typeof composeDraft !== 'string' || !composeDraft.trim()) return;
     if (composeDraftKeyRef.current === location.key) return;
     composeDraftKeyRef.current = location.key;
-    const text = composeDraft.slice(0, 200);
+    // F607: the handed draft names a default install by its bare name, which
+    // beside a sibling install can wake the sibling. Address it to the default.
+    const text = addressDraftToPod(composeDraft.slice(0, 200), agents || []);
+    handedDraftRef.current = text;
     setDraft(text);
     requestAnimationFrame(() => {
       const input = composerInputRef.current;
@@ -1760,6 +1759,16 @@ const V2Thread: React.FC<V2ThreadProps> = ({ detail, podsState, firstRunVisible 
     // The effect keys on the navigation and the pod arriving, nothing else.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [location.key, pod?._id]);
+  // The pod's agents can arrive after the draft. Re-address it then, unless
+  // the person has already typed into it.
+  useEffect(() => {
+    const handed = handedDraftRef.current;
+    if (!handed) return;
+    const addressed = addressDraftToPod(handed, agents || []);
+    if (addressed === handed) return;
+    handedDraftRef.current = addressed;
+    setDraft((current) => (current === handed ? addressed : current));
+  }, [agents, setDraft]);
 
   if (!pod) {
     return (
@@ -1984,6 +1993,7 @@ const V2Thread: React.FC<V2ThreadProps> = ({ detail, podsState, firstRunVisible 
       );
       if (created) {
         rememberSentMessage(sendPodId, created);
+        noteOwnPost();
         // A fact that a first message went out from the welcome; its words stay in chat.
         if (welcomeShown) trackUsageOnce(`first-message-sent:${sendPodId}`, 'first-message-sent', { podId: sendPodId });
         // A direct-room post is not evidence that the agent is alive or
@@ -2031,7 +2041,10 @@ const V2Thread: React.FC<V2ThreadProps> = ({ detail, podsState, firstRunVisible 
           ? exampleAgent.instanceId
           : (slugifyAgentHandle(exampleAgent?.displayName || exampleAgent?.profile?.displayName)
             || exampleAgent?.agentName);
-        const mentionHandle = normalizeAgentSegment(rawMentionHandle);
+        // F607: beside a sibling install the default's bare name can wake the
+        // sibling, so the hint suggests its explicit handle.
+        const mentionHandle = (exampleAgent && mentionHandleFor(exampleAgent, agents))
+          || normalizeAgentSegment(rawMentionHandle);
         if (
           delivery
           && delivery.enqueued === 0
@@ -2196,6 +2209,7 @@ const V2Thread: React.FC<V2ThreadProps> = ({ detail, podsState, firstRunVisible 
         );
         if (created) {
           rememberSentMessage(pod._id, created);
+          noteOwnPost();
           setReplyTarget(null);
           setThreadTarget(null);
         }
@@ -2296,7 +2310,8 @@ const V2Thread: React.FC<V2ThreadProps> = ({ detail, podsState, firstRunVisible 
         && !isOpaqueInstanceToken(ownAgent.instanceId)
         ? ownAgent.instanceId
         : (slugifyAgentHandle(ownAgent.displayName || ownAgent.profile?.displayName) || ownAgent.agentName);
-      handleStarterPrompt(`@${normalizeAgentSegment(handle)} `);
+      // F607: beside a sibling install, the default gets its explicit handle.
+      handleStarterPrompt(`@${mentionHandleFor(ownAgent, agents || []) || normalizeAgentSegment(handle)} `);
     } else {
       composerInputRef.current?.focus();
     }
@@ -2331,6 +2346,7 @@ const V2Thread: React.FC<V2ThreadProps> = ({ detail, podsState, firstRunVisible 
   }
 
   return (
+    <MentionLabelsContext.Provider value={mentionLabels}>
     <main className="v2-pane v2-pane--main">
       <div className="v2-chat v2-thread">
         <header className={`v2-thread__header v2-pod-header${isDirectPod ? ' v2-pod-header--direct' : ''}`}>
@@ -2434,7 +2450,7 @@ const V2Thread: React.FC<V2ThreadProps> = ({ detail, podsState, firstRunVisible 
                 aria-label={t('podChat.team.view')}
                 aria-pressed={false}
               >
-                <ViewSidebarOutlinedIcon fontSize="small" aria-hidden="true" />
+                <ShellGlyph name="panel" size={17} />
               </button>
             )}
           </div>
@@ -2866,6 +2882,7 @@ const V2Thread: React.FC<V2ThreadProps> = ({ detail, podsState, firstRunVisible 
             )}
       </div>
     </main>
+    </MentionLabelsContext.Provider>
   );
 };
 

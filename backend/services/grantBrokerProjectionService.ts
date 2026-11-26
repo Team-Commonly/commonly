@@ -35,7 +35,9 @@ import { grantHoldsPrWrite, isPrWriteTool } from './prWriteScope';
 import { PENDING_APPROVAL_NOTE } from './brokerResultMarker';
 import Pod from '../models/Pod';
 import RoomGrant from '../models/RoomGrant';
-import { assertGrantUsable, RoomGrantError } from './roomGrantService';
+import {
+  assertGrantUsable, existingGrantOwnerIds, grantOwnerRefusal, RoomGrantError, grantOwnerIds,
+} from './roomGrantService';
 import type { RoomGrantTaskBinding } from '../models/RoomGrant';
 
 type GrantTarget = { kind?: unknown; id?: unknown };
@@ -140,6 +142,15 @@ export const selectLiveGrantsForIdentities = async (
     ]),
   );
 
+  // The owner checks the call runs (`grantOwnerRefusal`), so the list never
+  // offers a grant the call would refuse on its owner: every grant needs its
+  // owner's account to exist, and a pod grant its owner in the pod (F664).
+  const existingOwnerIds = await existingGrantOwnerIds(
+    grantOwnerIds(grants as unknown as Array<Record<string, unknown>>),
+  );
+  const censusOf = (grant: LiveGrant, id: string): string[] => (grant.target.kind === 'pod'
+    ? [...(podMembers.get(String(grant.target.id)) || [])] : [id]);
+
   for (const id of ids) {
     const candidates = grants.filter((grant) => {
       const grantId = typeof grant.grantId === 'string' ? grant.grantId : '';
@@ -148,11 +159,16 @@ export const selectLiveGrantsForIdentities = async (
       if (!inAudience) return false;
       const target = grant.target || {};
       const targetId = String(target.id || '');
-      if (target.kind === 'seat') return targetId === id;
+      let covers = false;
+      if (target.kind === 'seat') covers = targetId === id;
       if (target.kind === 'pod') {
-        return scopedPodIds.includes(targetId) && Boolean(podMembers.get(targetId)?.has(id));
+        covers = scopedPodIds.includes(targetId) && Boolean(podMembers.get(targetId)?.has(id));
       }
-      return false;
+      if (!covers) return false;
+      return !grantOwnerRefusal(grant as unknown as Record<string, unknown>, {
+        currentMemberIds: censusOf(grant, id),
+        existingOwnerIds,
+      });
     });
     const selected: LiveGrant[] = [];
     for (const grant of candidates) {
@@ -160,7 +176,7 @@ export const selectLiveGrantsForIdentities = async (
         try {
           // Same authority as list/call; no task context supplied by the model.
           await assertGrantUsable({ grant: grant as unknown as Record<string, unknown>, agentUserId: id,
-            currentMemberIds: grant.target.kind === 'pod' ? [...(podMembers.get(String(grant.target.id)) || [])] : [id] });
+            currentMemberIds: censusOf(grant, id) });
         } catch (error) {
           if (error instanceof RoomGrantError) continue;
           throw error;
@@ -370,7 +386,9 @@ export const dispatchHostedBrokerTool = async (
         ? { untrustedSourceTitle: result.untrustedSourceTitle } : {}),
     };
   } catch (error) {
-    const e = error as { code?: string; message?: string; details?: Record<string, unknown> };
+    const e = error as {
+      code?: string; message?: string; details?: Record<string, unknown>; untrustedSourceTitle?: unknown;
+    };
     const callId = typeof e.details?.callId === 'string' ? e.details.callId : undefined;
     if (e.code === 'approval_required') {
       return {
@@ -391,6 +409,9 @@ export const dispatchHostedBrokerTool = async (
       },
       callId,
       outcome: executionErrorOutcome(error),
+      // A failure thrown from the provider call may carry the provider's words.
+      ...(typeof e.untrustedSourceTitle === 'string' && e.untrustedSourceTitle
+        ? { untrustedSourceTitle: e.untrustedSourceTitle } : {}),
     };
   }
 };

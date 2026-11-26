@@ -1070,8 +1070,8 @@ export const renderAppShell = (template) => {
   return shell.replace(pageContentMarker, '');
 };
 
-// Logged-out page counts (D286). One count per page load and per signup or
-// pricing click, sent to our own API with no cookie, no stored key and no
+// Logged-out page counts (D286). One count per page load and per signup,
+// pricing or Discord click, sent to our own API with no cookie, no stored key and no
 // identifier. It does nothing for a signed-in visitor (the app sends their
 // events), or when Do Not Track or Global Privacy Control is on. The server
 // keeps a day's total per page and campaign code, and nothing else.
@@ -1088,7 +1088,7 @@ fetch(api+'/api/stats/public-hit',{method:'POST',keepalive:true,credentials:'omi
 send('page-view');
 document.addEventListener('click',function(e){var a=e.target&&e.target.closest?e.target.closest('a[href]'):null;if(!a)return;
 var href=a.getAttribute('href')||'',cta;
-if(href.indexOf('pricing')>=0)cta='pricing';else if(href.indexOf('register')<0)return;
+if(href.indexOf('discord.gg/')>=0)cta='discord';else if(href.indexOf('pricing')>=0)cta='pricing';else if(href.indexOf('register')<0)return;
 else if(a.closest('header,nav'))cta='nav-signup';
 else cta=page.indexOf('/guides/')===0?'guide-inline':page.indexOf('/compare/')===0?'compare-inline':'hero-start';
 send('cta-click',cta)},true);

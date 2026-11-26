@@ -791,8 +791,42 @@ class AgentIdentityService {
           podId, agentUser.botMetadata?.agentName, agentUser.botMetadata?.instanceId,
         );
       }
+      // F605: add the agent with one conditional write. The filter carries
+      // both rules the reads above checked, so they hold at the write too:
+      // not already a member (an invite redeem or joinPod landing during the
+      // policy check above must not leave the agent in `members` twice) and
+      // not a 1:1 DM pod. Pod's save hook only acts on a new pod, so skipping
+      // save() skips nothing; `timestamps` sets updatedAt on updateOne too.
+      // The `__v` bump is what the old push+save sent: a doc loaded before
+      // this add that rewrites `members` whole (removeAgentFromPod) filters
+      // on `__v`, so it gets a VersionError instead of silently dropping the
+      // agent this call just added and mirrored.
+      const added = await Pod.updateOne(
+        {
+          _id: pod._id,
+          members: { $ne: agentId },
+          type: { $nin: Array.from(DM_POD_TYPES_GUARD) },
+        },
+        { $addToSet: { members: agentId }, $inc: { __v: 1 } },
+      );
+      if (!added.modifiedCount) {
+        // Lost the race, or the pod changed under us. Re-read to say which.
+        const current = await Pod.findById(pod._id).select('type members').lean();
+        if (!current) return null;
+        const nowMember = (current.members || []).some((m: unknown) => String(m) === String(agentId));
+        if (!nowMember) {
+          console.warn(
+            `[ensureAgentInPod] refused: pod ${pod._id} became type=${current.type} (1:1 DM) `
+            + `before ${agentId} was added. ADR-001 §3.10.`,
+          );
+          return null;
+        }
+        // Someone else added the agent meanwhile and mirrored their own add.
+        pod.members.push(agentId);
+        return pod;
+      }
+      // Callers read the pod as joined, so the returned doc includes the agent.
       pod.members.push(agentId);
-      await pod.save();
       // F183: best-effort PG mirror write; never fails the install.
       // eslint-disable-next-line @typescript-eslint/no-require-imports, global-require
       await require('./pgMirrorWrite').mirrorMemberAdded(String(pod._id), String(agentId));
@@ -814,6 +848,9 @@ class AgentIdentityService {
     if (hadMember) {
       pod.members = pod.members.filter((member: unknown) => String(member).toString() !== agentId);
       await pod.save();
+      // F660: any pod grant this agent owns there ends with it. Never throws.
+      // eslint-disable-next-line @typescript-eslint/no-require-imports, global-require
+      await require('./roomGrantService').endMemberPodGrants({ podId: String(pod._id), userId: agentId });
     }
 
     if (process.env.PG_HOST && PGPod) {

@@ -62,7 +62,6 @@ Line numbers are v2.css at `323595193`; they shift as earlier lines change, so s
 - L7868 `.v2-root .v2-settings button.v2-settings__icon-btn:hover`
 - L7869 `.v2-settings__edit` — pinned by v2-layout-invariants.test.ts
 - L7870 `.v2-settings__edit--closed` — pinned by v2-layout-invariants.test.ts
-- L7871 `.v2-settings__group .v2-settings__developer-disclosure` — not seen live
 - L7872 `.v2-settings__token-detail` — not seen live
 - L7874 `.v2-settings__layout` in `@media (max-width: 560px)` — pinned by v2-phone-shell.test.ts
 - L7875 `.v2-settings__row > .v2-settings__row-label` in `@media (max-width: 560px)`
@@ -70,9 +69,7 @@ Line numbers are v2.css at `323595193`; they shift as earlier lines change, so s
 - L7877 `.v2-settings__row-actions` in `@media (max-width: 560px)` — not seen live
 - L7878 `.v2-settings__row--plan > .v2-billing` in `@media (max-width: 560px)`
 - L7879 `.v2-settings__row--plan .v2-billing__actions` in `@media (max-width: 560px)`
-- L7882–7886 `.v2-settings__developer-disclosure`
-- L7887–7891 `.v2-settings__developer-disclosure > summary` — not seen live
-- L7892 `.v2-settings__developer-disclosure[open] > summary` — not seen live
+- `.v2-settings__delete-account` (was `.v2-settings__developer-disclosure`; the Delete account fold in Account actions)
 - L7894–7901 `.v2-settings__content` — pinned by v2-layout-invariants.test.ts, v2-phone-shell.test.ts
 - L7903 `.v2-settings__account-row`
 - L7905–7912 `.v2-settings__avatar` — pinned by v2-layout-invariants.test.ts
@@ -162,20 +159,6 @@ Line numbers are v2.css at `323595193`; they shift as earlier lines change, so s
 - L8413 `.v2-settings__look .v2-settings__row` — pinned by v2-layout-invariants.test.ts
 - L8414 `.v2-settings__look .v2-settings__row > :last-child` — pinned by v2-layout-invariants.test.ts
 - L8415 `.v2-settings__look .v2-settings__row + .v2-settings__row` — pinned by v2-layout-invariants.test.ts
-- L8420–8423 `.v2-settings .apps-management--settings` — not seen live; pinned by v2-layout-invariants.test.ts
-- L8425–8427 `.v2-settings .apps-management--settings .MuiCardContent-root` — not seen live; pinned by v2-layout-invariants.test.ts
-- L8429–8431 `.v2-settings .apps-management--settings .MuiCardActions-root` — not seen live; pinned by v2-layout-invariants.test.ts
-- L8433–8437 `.v2-settings .apps-management--settings .apps-management__section + .apps-management__section` — not seen live; pinned by v2-layout-invariants.test.ts
-- L8439–8443 `.v2-settings .apps-management--settings .apps-management__integration` — not seen live; pinned by v2-layout-invariants.test.ts
-- L8445–8451 `.v2-settings .apps-management--settings .apps-management__developer-tips` — not seen live; pinned by v2-layout-invariants.test.ts
-- L8453–8458 `.v2-settings .apps-management--settings .MuiTypography-root` — not seen live; pinned by v2-layout-invariants.test.ts; rule lists 4 selectors
-- L8453–8458 `.v2-settings .apps-management--settings .MuiInputBase-input` — not seen live; pinned by v2-layout-invariants.test.ts; rule lists 4 selectors
-- L8453–8458 `.v2-settings .apps-management--settings .MuiInputLabel-root` — not seen live; pinned by v2-layout-invariants.test.ts; rule lists 4 selectors
-- L8453–8458 `.v2-settings .apps-management--settings .MuiButton-root` — not seen live; pinned by v2-layout-invariants.test.ts; rule lists 4 selectors
-- L8460–8463 `.v2-settings .apps-management--settings .MuiSvgIcon-colorPrimary` — not seen live; pinned by v2-layout-invariants.test.ts; rule lists 2 selectors
-- L8460–8463 `.v2-settings .apps-management--settings .MuiButton-textPrimary` — not seen live; pinned by v2-layout-invariants.test.ts; rule lists 2 selectors
-- L8466–8471 `.v2-settings .apps-management--settings .MuiButton-containedPrimary` — not seen live; pinned by v2-layout-invariants.test.ts
-- L8473–8476 `.v2-settings .apps-management--settings .MuiButton-containedPrimary:hover` — not seen live; pinned by v2-layout-invariants.test.ts
 - L8479–8482 `.v2-settings .v2-devices__heading` in `@media (max-width: 560px)`
 - L8484–8486 `.v2-settings .v2-devices__heading > button` in `@media (max-width: 560px)`
 - L8490–8493 `.v2-settings__layout` in `@media (max-width: 680px)` — pinned by v2-phone-shell.test.ts

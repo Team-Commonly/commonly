@@ -72,3 +72,152 @@ describe('@ picker', () => {
     expect(open('lar', 'larissa')).toContain('laruiss');
   });
 });
+
+// F607: a pod can hold a default install and a sibling of the same agent. The
+// bare name then routes to whichever install the backend's loose display-slug
+// key gave it last, so picking the default inserts its explicit
+// `<agentName>-default` key, which always reaches it. A lone default keeps the
+// bare handle, and a sibling keeps its own handle.
+describe('@ picker beside a sibling install (F607)', () => {
+  const dflt = { agentName: 'codex', instanceId: 'default' };
+  const ops = { agentName: 'codex', instanceId: 'ops' };
+
+  const pick = (podAgents, query = 'codex') => {
+    const draft = `@${query}`;
+    const setDraft = jest.fn();
+    const inputRef = { current: { selectionStart: draft.length, focus: jest.fn(), setSelectionRange: jest.fn() } };
+    const wrapper = ({ children }) => <AuthContext.Provider value={auth('laruiss')}>{children}</AuthContext.Provider>;
+    const { result } = renderHook(() => useV2ThreadMentions({
+      members: [], agents: podAgents, agentStateByHandle: new Map(), draft, setDraft, inputRef,
+    }), { wrapper });
+    act(() => { result.current.updateMentionState(draft, draft.length); });
+    return {
+      values: result.current.filteredMentions.map((item) => item.value),
+      insert: (value) => {
+        const item = result.current.filteredMentions.find((row) => row.value === value);
+        act(() => { result.current.selectMention(item); });
+        return setDraft.mock.calls[0][0];
+      },
+    };
+  };
+
+  test('picking the default beside a sibling inserts @codex-default', () => {
+    const { values, insert } = pick([dflt, ops]);
+    expect(values).toEqual(expect.arrayContaining(['codex-default', 'ops']));
+    expect(values).not.toContain('codex');
+    expect(insert('codex-default')).toBe('@codex-default ');
+  });
+
+  test('the sibling listed first still gives the default its explicit handle', () => {
+    expect(pick([ops, dflt]).values).toEqual(expect.arrayContaining(['codex-default', 'ops']));
+  });
+
+  test('a lone default keeps the bare @codex', () => {
+    const { values, insert } = pick([dflt]);
+    expect(values).toEqual(['codex']);
+    expect(insert('codex')).toBe('@codex ');
+  });
+
+  test('the sibling inserts its own handle, as before', () => {
+    expect(pick([dflt, ops]).insert('ops')).toBe('@ops ');
+  });
+
+  test('a different agent beside the default is not a sibling', () => {
+    expect(pick([dflt, { agentName: 'claude', instanceId: 'ops' }]).values).toContain('codex');
+  });
+});
+
+// F622: an install whose instanceId is an opaque per-user token and that has
+// no display name would insert the bare `@<agentName>` beside a sibling, a
+// loose key either install can win. It inserts its canonical username, which
+// the backend claims at the top rank for exactly that install.
+describe('@ picker for an opaque-token sibling with no display name (F622)', () => {
+  const dflt = { agentName: 'codex', instanceId: 'default' };
+  const opaque = { agentName: 'codex', instanceId: 'u3f9c2a1b7d' };
+
+  const valuesFor = (podAgents) => {
+    const draft = '@codex';
+    const inputRef = { current: { selectionStart: draft.length, focus: jest.fn(), setSelectionRange: jest.fn() } };
+    const wrapper = ({ children }) => <AuthContext.Provider value={auth('laruiss')}>{children}</AuthContext.Provider>;
+    const { result } = renderHook(() => useV2ThreadMentions({
+      members: [], agents: podAgents, agentStateByHandle: new Map(), draft, setDraft: jest.fn(), inputRef,
+    }), { wrapper });
+    act(() => { result.current.updateMentionState(draft, draft.length); });
+    return result.current.filteredMentions.map((item) => item.value);
+  };
+
+  test('beside the default it inserts its canonical username', () => {
+    const values = valuesFor([dflt, opaque]);
+    expect(values).toContain('codex-u3f9c2a1b7d');
+    expect(values).toContain('codex-default');
+    expect(values).not.toContain('codex');
+  });
+
+  test('beside another opaque install each gets its own canonical username', () => {
+    const other = { agentName: 'codex', instanceId: 'u0a1b2c3d4e' };
+    expect(valuesFor([opaque, other])).toEqual(
+      expect.arrayContaining(['codex-u3f9c2a1b7d', 'codex-u0a1b2c3d4e']),
+    );
+  });
+
+  test('a display name keeps its slug handle', () => {
+    expect(valuesFor([dflt, { ...opaque, displayName: 'Scout' }])).toContain('scout');
+  });
+
+  test('a display name held only in profile keeps its slug handle', () => {
+    const values = valuesFor([dflt, { ...opaque, profile: { displayName: 'Scout' } }]);
+    expect(values).toContain('scout');
+    expect(values).not.toContain('codex-u3f9c2a1b7d');
+  });
+
+  test('a readable instanceId keeps it', () => {
+    expect(valuesFor([dflt, { agentName: 'codex', instanceId: 'ops' }])).toContain('ops');
+  });
+
+  test('a lone opaque install keeps the bare name', () => {
+    expect(valuesFor([opaque])).toEqual(['codex']);
+  });
+});
+
+// F645: the picker reads as the name people know and shows the handle it
+// inserts; the text still gets the handle, so the mention pipeline is unchanged.
+describe('@ picker shows display names', () => {
+  const podMembers = [
+    { _id: 'u-self', username: 'laruiss' },
+    { _id: 'h-1', username: 'growth-t002-10160904a', displayName: 'Alex', isBot: false },
+    { _id: 'b-1', username: 'claude-code-gw3-claude', isBot: true, displayLabel: 'gw3-claude' },
+  ];
+  const podAgents = [{ agentName: 'claude-code', instanceId: 'gw3-claude', displayName: 'Claude Code' }];
+  const setup = (query) => {
+    let draft = `@${query}`;
+    const setDraft = jest.fn((next) => { draft = typeof next === 'function' ? next(draft) : next; });
+    const inputRef = { current: { selectionStart: draft.length, focus: jest.fn(), setSelectionRange: jest.fn() } };
+    const wrapper = ({ children }) => <AuthContext.Provider value={auth('laruiss')}>{children}</AuthContext.Provider>;
+    const { result } = renderHook(() => useV2ThreadMentions({
+      members: podMembers, agents: podAgents, agentStateByHandle: new Map(), draft, setDraft, inputRef,
+    }), { wrapper });
+    act(() => { result.current.updateMentionState(draft, draft.length); });
+    return { result, setDraft, read: () => draft };
+  };
+
+  test('an agent row reads as its display label beside its handle, and inserts the handle', () => {
+    jest.spyOn(window, 'requestAnimationFrame').mockImplementation(() => 0);
+    const { result, read } = setup('cla');
+    const item = result.current.filteredMentions.find((row) => row.value === 'gw3-claude');
+    expect(item.label).toBe('Claude Code');
+    expect(item.subtitle).toContain('@gw3-claude');
+    expect(item.label).not.toBe('claude-code');
+    act(() => { result.current.selectMention(item); });
+    expect(read()).toBe('@gw3-claude ');
+  });
+
+  test('a person row reads as their display name beside their handle, and inserts the handle', () => {
+    jest.spyOn(window, 'requestAnimationFrame').mockImplementation(() => 0);
+    const { result, read } = setup('ale');
+    const item = result.current.filteredMentions.find((row) => row.value === 'growth-t002-10160904a');
+    expect(item.label).toBe('Alex');
+    expect(item.subtitle).toContain('@growth-t002-10160904a');
+    act(() => { result.current.selectMention(item); });
+    expect(read()).toBe('@growth-t002-10160904a ');
+  });
+});

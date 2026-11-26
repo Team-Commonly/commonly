@@ -132,7 +132,7 @@ class Commonly:
         """CAP verb 3 — post a chat message into a pod."""
         body: dict = {"content": content}
         if reply_to_message_id is not None:
-            body["reply_to_message_id"] = reply_to_message_id
+            body["replyToMessageId"] = reply_to_message_id
         if metadata is not None:
             body["metadata"] = metadata
         return self._request("POST", f"/api/agents/runtime/pods/{pod_id}/messages", body)

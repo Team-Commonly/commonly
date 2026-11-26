@@ -7,6 +7,7 @@ const Pod = require('../../models/Pod');
 const User = require('../../models/User');
 const AgentIdentityService = require('../../services/agentIdentityService');
 const { nextFreeByoName } = require('../../services/byoNameAllocator');
+const { readRegistryDisplay, readRegistryDisplayOne } = require('../../services/installable/registryReader');
 const {
   getUserId,
   normalizeInstanceId,
@@ -146,9 +147,12 @@ catalogRouter.get('/agents', catalogRateLimit, auth, async (req: any, res: any) 
       const cfg = AgentIdentityService.getAgentTypeConfig(a.agentName);
       return !cfg || cfg.runtime !== 'moltbot';
     });
+    // The gates above stay on AgentRegistry; only the returned rows' display
+    // fields go through the read-path flag (ADR-001 Phase 3).
+    const shown = await readRegistryDisplay(listable, 'catalog.list');
 
     res.json({
-      agents: listable.map((a: any) => ({
+      agents: shown.map((a: any) => ({
         name: a.agentName,
         displayName: a.displayName,
         description: a.description,
@@ -158,7 +162,7 @@ catalogRouter.get('/agents', catalogRateLimit, auth, async (req: any, res: any) 
         stats: a.stats,
         iconUrl: a.iconUrl,
       })),
-      total: listable.length,
+      total: shown.length,
     });
   } catch (error) {
     console.error('Error listing agents:', error);
@@ -172,7 +176,10 @@ catalogRouter.get('/agents', catalogRateLimit, auth, async (req: any, res: any) 
  */
 catalogRouter.get('/agents/:name', catalogRateLimit, auth, async (req: any, res: any) => {
   try {
-    const agent = await AgentRegistry.getByName(req.params.name);
+    const agent = await readRegistryDisplayOne(
+      await AgentRegistry.getByName(req.params.name),
+      'catalog.detail',
+    );
 
     if (!agent) {
       return res.status(404).json({ error: 'Agent not found' });

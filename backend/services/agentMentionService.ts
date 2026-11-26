@@ -246,11 +246,14 @@ const slugify = (value = ''): string => value
 // two installs from holding the same one, so it wins. (buildAgentUsername is
 // not injective, so that refusal is what keeps it unique, not the key.) Then the
 // explicit agent-instance key, then the bare name and its curated aliases
-// (single-install only), then the instanceId and the display-name slug, which
-// nothing keeps unique. An equal claim keeps the rule every key had before
-// ranks existed: the later install wins.
+// (single-install only), then the instanceId, then the display-name slug.
+// Nothing keeps those last two unique, but an instanceId is the install's own
+// name and a display slug is a label anyone can choose, so when one install's
+// instanceId spells another's slug, the instanceId wins in either order, the
+// same rule the composer's mention labels follow (F645). An equal claim keeps
+// the rule every key had before ranks existed: the later install wins.
 const KEY_STRENGTH = {
-  canonical: 4, explicit: 3, bare: 2, loose: 1,
+  canonical: 5, explicit: 4, bare: 3, instance: 2, loose: 1,
 } as const;
 
 const buildMentionMap = (
@@ -291,7 +294,7 @@ const buildMentionMap = (
     if (canonical !== agentName.toLowerCase()) {
       claim(canonical, { agentName, instanceId }, KEY_STRENGTH.canonical);
     }
-    claim(instanceId.toLowerCase(), { agentName, instanceId }, KEY_STRENGTH.loose);
+    claim(instanceId.toLowerCase(), { agentName, instanceId }, KEY_STRENGTH.instance);
     if (displaySlug) {
       claim(displaySlug, { agentName, instanceId }, KEY_STRENGTH.loose);
     }
@@ -548,7 +551,8 @@ const autoJoinAgentToPod = async (
 
   // Add to pod.members if not already.
   try {
-    await Pod.updateOne({ _id: podId }, { $addToSet: { members: targetUser._id } });
+    // F621: bump the version so a stale whole-array save can't undo this add.
+    await Pod.updateOne({ _id: podId }, { $addToSet: { members: targetUser._id }, $inc: { __v: 1 } });
     // F183: best-effort PG mirror write; it swallows its own failure.
     // eslint-disable-next-line @typescript-eslint/no-require-imports, global-require
     await require('./pgMirrorWrite').mirrorMemberAdded(String(podId), String(targetUser._id));
@@ -3229,4 +3233,7 @@ export {
   // which is exactly the kind of detail a second copy gets subtly wrong.
   wakeOnMessageEnabled,
   boardWakeEnabled,
+  // Exported for the stale-save version test (F621); the mention path is its
+  // only production caller.
+  autoJoinAgentToPod,
 };

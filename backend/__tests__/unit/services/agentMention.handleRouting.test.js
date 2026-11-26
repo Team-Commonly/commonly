@@ -68,6 +68,29 @@ describe('a canonical username names one install, whatever the order', () => {
   });
 });
 
+// F607: with no display names, both installs' display slugs are the bare
+// agentName, so the bare handle is a loose key the later install takes. The
+// explicit `<agentName>-default` key is what reaches the default install, in
+// either order, and it is the handle the composer inserts beside a sibling.
+describe('beside a sibling, <agentName>-default reaches the default install and the bare name does not', () => {
+  const dflt = { agentName: 'codex', instanceId: 'default' };
+  const ops = { agentName: 'codex', instanceId: 'ops' };
+
+  test.each([
+    ['default first', [dflt, ops]],
+    ['sibling first', [ops, dflt]],
+  ])('%s', (_order, installs) => {
+    const { map } = buildMentionMap(installs, []);
+    expect(map.get('codex-default')).toEqual({ agentName: 'codex', instanceId: 'default' });
+    expect(map.get('codex-ops')).toEqual({ agentName: 'codex', instanceId: 'ops' });
+  });
+
+  test('the bare name falls to the display slug, which the later install takes', () => {
+    const { map } = buildMentionMap([dflt, ops], []);
+    expect(map.get('codex')).toEqual({ agentName: 'codex', instanceId: 'ops' });
+  });
+});
+
 describe('routedMentionHandle names a handle that routes to the install in this pod', () => {
   const pair = [
     { agentName: 'codex', instanceId: 'default', displayName: 'Default codex' },
@@ -109,6 +132,23 @@ describe('an explicit agent-instance key beats a display slug equal to it', () =
   ])('%s', (_order, installs) => {
     const { map } = buildMentionMap(installs, []);
     expect(map.get('codex-default')).toEqual({ agentName: 'codex', instanceId: 'default' });
+  });
+});
+
+// F645: an instanceId is the install's own name and outranks another install's
+// display slug that spells it, in either order, so `@review` wakes the install
+// the composer labels it as.
+describe('an instanceId beats a sibling display slug equal to it', () => {
+  const dflt = { agentName: 'assistant', instanceId: 'default', displayName: 'Review' };
+  const sibling = { agentName: 'assistant', instanceId: 'review', displayName: 'Second Reviewer' };
+
+  test.each([
+    ['default first', [dflt, sibling]],
+    ['sibling first', [sibling, dflt]],
+  ])('%s', (_order, installs) => {
+    const { map } = buildMentionMap(installs, []);
+    expect(map.get('review')).toEqual({ agentName: 'assistant', instanceId: 'review' });
+    expect(map.get('assistant-default')).toEqual({ agentName: 'assistant', instanceId: 'default' });
   });
 });
 

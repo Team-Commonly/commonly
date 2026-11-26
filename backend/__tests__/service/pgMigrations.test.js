@@ -14,7 +14,12 @@ const SHIPPED = ['0001_legacy_schema.sql', '0002_record_chains.sql', '0003_self_
   '0006_message_receipt.sql', '0007_tool_call_caller_confinement.sql',
   '0008_pg_mirror_repair_runs.sql', '0009_message_top_level_answer.sql',
   '0010_record_openings.sql', '0011_thread_read_point.sql', '0012_mention_email.sql', '0013_email_sends.sql',
-  '0014_pod_read_point.sql', '0015_agent_connect_codes.sql'];
+  '0014_pod_read_point.sql', '0015_agent_connect_codes.sql', '0016_agent_pod_read_cursors.sql',
+  '0017_agent_first_contacts.sql', '0018_agent_digest_states.sql', '0019_agent_task_wake_states.sql',
+  '0020_needs_you_email_quotas.sql', '0021_agent_computer_takeovers.sql', '0022_billing_events.sql',
+  '0023_discord_summary_histories.sql', '0024_needs_you_emails.sql', '0025_agent_task_row_wake_states.sql',
+  '0026_agent_provider_keys.sql', '0027_hosted_mcp_dcr_registrations.sql',
+  '0028_waitlist_requests.sql'];
 // The three tables 0003 took over from runtime DDL, and every column each must
 // end with (0004 adds tool_calls' provider columns). Shared by the fresh and the
 // retrofit case: both must reach it.

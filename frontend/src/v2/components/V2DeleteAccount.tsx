@@ -62,7 +62,7 @@ const V2DeleteAccount: React.FC = () => {
   };
 
   return (
-    <div className="v2-settings__developer-disclosure">
+    <div className="v2-settings__delete-account">
       <button
         ref={triggerRef}
         type="button"

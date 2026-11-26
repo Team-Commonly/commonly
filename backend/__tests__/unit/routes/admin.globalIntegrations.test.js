@@ -354,7 +354,7 @@ describe('admin global integrations route', () => {
     // second admin's feed would pause on its first sync without this write.
     expect(Pod.updateOne).toHaveBeenCalledWith(
       { _id: 'pod-global' },
-      { $addToSet: { members: 'admin-2' } },
+      { $addToSet: { members: 'admin-2' }, $inc: { __v: 1 } },
     );
     // The pod handed on is the refetched one, so its members match the write.
     expect(Pod.findById).toHaveBeenCalledWith('pod-global');
@@ -482,6 +482,50 @@ describe('admin global integrations route', () => {
         { id: '11', username: 'openai', name: 'OpenAI' },
         { id: '22', username: 'github', name: 'GitHub' },
       ],
+    });
+  });
+
+  describe('x/following failures (F626)', () => {
+    const connected = () => {
+      feedCredentials.store.set('ref-x-access', 'x-token');
+      Integration.findOne.mockResolvedValueOnce({
+        _id: 'int-x', type: 'x', status: 'connected', isActive: true,
+        config: { feedAccessTokenRef: 'ref-x-access', userId: 'x-user-1' },
+      });
+    };
+    const leak = 'connect ECONNREFUSED db.internal.example:5432 relation "secret_table" does not exist';
+
+    it('a provider 5xx answers fixed text, not the provider body', async () => {
+      const errSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
+      connected();
+      axios.get.mockRejectedValueOnce(Object.assign(new Error(leak), { response: { status: 503, data: { detail: leak } } }));
+      const res = createRes();
+      await getRouteHandler('/x/following', 'get')({ userId: 'admin-1', query: {} }, res);
+      expect(res.status).toHaveBeenCalledWith(503);
+      expect(res.json).toHaveBeenCalledWith({ error: 'Failed to fetch X following list' });
+      errSpy.mockRestore();
+    });
+
+    it('a network error with no response answers fixed text', async () => {
+      const errSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
+      connected();
+      axios.get.mockRejectedValueOnce(new Error(leak));
+      const res = createRes();
+      await getRouteHandler('/x/following', 'get')({ userId: 'admin-1', query: {} }, res);
+      expect(res.status).toHaveBeenCalledWith(500);
+      expect(res.json).toHaveBeenCalledWith({ error: 'Failed to fetch X following list' });
+      errSpy.mockRestore();
+    });
+
+    it('a provider 4xx keeps its detail', async () => {
+      const errSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
+      connected();
+      axios.get.mockRejectedValueOnce(Object.assign(new Error('x'), { response: { status: 429, data: { title: 'Too Many Requests' } } }));
+      const res = createRes();
+      await getRouteHandler('/x/following', 'get')({ userId: 'admin-1', query: {} }, res);
+      expect(res.status).toHaveBeenCalledWith(429);
+      expect(res.json).toHaveBeenCalledWith({ error: 'Too Many Requests' });
+      errSpy.mockRestore();
     });
   });
 

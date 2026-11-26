@@ -88,7 +88,11 @@ beforeEach(() => {
     select: jest.fn().mockReturnValue({ lean: jest.fn().mockResolvedValue([]) }),
   });
   Task.aggregate.mockResolvedValue([]);
-  AgentInstallation.find.mockReturnValue({ lean: jest.fn().mockResolvedValue([]) });
+  // One eligible implementer seat in POD_A by default, so the pass reaches the
+  // aggregate. Tests that need none (the F632 early stop) override it.
+  AgentInstallation.find.mockReturnValue({
+    lean: jest.fn().mockResolvedValue([{ agentName: 'impl', podId: POD_A }]),
+  });
   mockNotifyFoundWork.mockResolvedValue({ woken: 1 });
   mockNotifyLeaseWarning.mockResolvedValue({ warned: true });
   // Default: the holder cannot be resolved at all, which is the pre-#1080
@@ -317,22 +321,21 @@ describe('#1080 part 3 — provenance survives the clearing', () => {
   });
 });
 
-describe('wakeForFoundWork reads installs once per pass', () => {
-  it('reads every pod\'s installs in one query and hands each pod its own', async () => {
-    // Measured on production 2026-11-02: 436 pods with due work, read one pod
-    // at a time, took 16.9s of round trips; one $in over the same pods took
-    // 212ms and returned the same 171 installs.
+describe('wakeForFoundWork reads only eligible seats, once per pass (F632)', () => {
+  it('reads eligible seats in one query, scans only their pods, and hands each pod its own', async () => {
+    // One read for the whole pass (436 pods read one at a time took 16.9s on
+    // production, 2026-11-02), and since F632 only seats that can be woken:
+    // active implementers with discovery on, projected to what the wake reads.
     const POD_B = new mongoose.Types.ObjectId().toString();
-    const POD_C = new mongoose.Types.ObjectId().toString();
     const row = (taskId) => ({ tasks: [{ taskId, title: taskId }], count: 1 });
     Task.aggregate.mockResolvedValue([
       { _id: POD_A, ...row('TASK-A') },
       { _id: POD_B, ...row('TASK-B') },
-      { _id: POD_C, ...row('TASK-C') },
     ]);
+    const podA = new mongoose.Types.ObjectId(POD_A);
     AgentInstallation.find.mockReturnValue({
       lean: jest.fn().mockResolvedValue([
-        { agentName: 'a1', podId: new mongoose.Types.ObjectId(POD_A) },
+        { agentName: 'a1', podId: podA },
         { agentName: 'b1', podId: POD_B },
         { agentName: 'b2', podId: POD_B },
       ]),
@@ -342,27 +345,51 @@ describe('wakeForFoundWork reads installs once per pass', () => {
 
     expect(AgentInstallation.find).toHaveBeenCalledTimes(1);
     expect(AgentInstallation.find.mock.calls[0][0]).toEqual({
-      podId: { $in: [POD_A, POD_B, POD_C] }, status: 'active',
+      status: 'active',
+      'config.workDiscovery.enabled': true,
+      'config.workDiscovery.role': 'implementer',
     });
-    // A pod with no install still gets its call, with none, so it is counted
-    // as skipped exactly as before.
+    expect(Object.keys(AgentInstallation.find.mock.calls[0][1]).sort()).toEqual([
+      'agentName', 'config.boardWake', 'config.wakeOnMessage', 'config.workDiscovery', 'instanceId', 'podId', 'status',
+    ]);
+    const match = Task.aggregate.mock.calls[0][0][0].$match;
+    // Cast to ObjectId whatever the install held: an aggregate is not cast.
+    expect(match.podId.$in.every((id) => id instanceof mongoose.Types.ObjectId)).toBe(true);
+    expect(match.podId.$in.map(String)).toEqual([POD_A, POD_B]);
     const handed = mockNotifyFoundWork.mock.calls
       .map(([podId, , , , installs]) => [String(podId), installs.map((i) => i.agentName)]);
-    expect(handed).toEqual([[POD_A, ['a1']], [POD_B, ['b1', 'b2']], [POD_C, []]]);
+    expect(handed).toEqual([[POD_A, ['a1']], [POD_B, ['b1', 'b2']]]);
   });
 
-  it('lets each pod read its own installs when the batched read fails', async () => {
+  it('stops before the task scan when no seat is eligible', async () => {
+    AgentInstallation.find.mockReturnValue({ lean: jest.fn().mockResolvedValue([]) });
     Task.aggregate.mockResolvedValue([{ _id: POD_A, tasks: [{ taskId: 'TASK-A' }], count: 1 }]);
-    AgentInstallation.find.mockReturnValue({ lean: jest.fn().mockRejectedValue(new Error('pool closed')) });
-    jest.spyOn(console, 'warn').mockImplementation(() => {});
 
     const result = await KernelWorkSweepService.wakeForFoundWork(NOW);
 
-    // The batched read was tried, and only its failure hands over undefined.
-    expect(AgentInstallation.find.mock.calls[0][0]).toEqual({ podId: { $in: [POD_A] }, status: 'active' });
+    expect(result).toEqual({ woken: 0, skippedNoWork: 0, scannedPods: 0 });
+    expect(Task.aggregate).not.toHaveBeenCalled();
+    expect(mockNotifyFoundWork).not.toHaveBeenCalled();
+  });
+
+  it('lets each pod read its own installs when the eligible-seat read fails', async () => {
+    // Review-checklist rule 19: a failed lookup fails toward over-delivery.
+    // The fallback is the pre-F632 pass: the unrestricted aggregate, and each
+    // pod reading its own installs ("slower, not wrong").
+    Task.aggregate.mockResolvedValue([{ _id: POD_A, tasks: [{ taskId: 'TASK-A' }], count: 1 }]);
+    AgentInstallation.find.mockReturnValue({ lean: jest.fn().mockRejectedValue(new Error('pool closed')) });
+    const error = jest.spyOn(console, 'error').mockImplementation(() => {});
+
+    const result = await KernelWorkSweepService.wakeForFoundWork(NOW);
+
+    expect(AgentInstallation.find).toHaveBeenCalledTimes(1);
+    expect(error).toHaveBeenCalledTimes(1);
+    const match = Task.aggregate.mock.calls[0][0][0].$match;
+    expect(match).not.toHaveProperty('podId');
+    // Only the failure hands over undefined, so notifyFoundWork reads its own.
     expect(mockNotifyFoundWork.mock.calls[0][4]).toBeUndefined();
-    expect(result.woken).toBe(1);
-    console.warn.mockRestore();
+    expect(result).toEqual({ woken: 1, skippedNoWork: 0, scannedPods: 1 });
+    error.mockRestore();
   });
 });
 

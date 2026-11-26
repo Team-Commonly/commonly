@@ -15,9 +15,13 @@ const mockRoomGrant = { find: jest.fn() };
 const mockPod = { find: jest.fn() };
 const mockIntegration = { findOne: jest.fn(), findById: jest.fn() };
 const mockCallTool = jest.fn();
+const OWNER_ID = '507f1f77bcf86cd799439016';
+// The owner check's one account read (F664): the fixture owner has an account.
+const mockUser = { find: jest.fn(() => ({ select: () => ({ lean: async () => [{ _id: OWNER_ID }] }) })) };
 
 jest.mock('../../../models/RoomGrant', () => ({ __esModule: true, default: mockRoomGrant }));
 jest.mock('../../../models/Pod', () => ({ __esModule: true, default: mockPod }));
+jest.mock('../../../models/User', () => ({ __esModule: true, default: mockUser }));
 jest.mock('../../../models/Integration', () => ({ __esModule: true, default: mockIntegration }));
 jest.mock('../../../services/toolBrokerService', () => ({
   ...jest.requireActual('../../../services/toolBrokerService'),
@@ -227,16 +231,17 @@ describe('hostedBrokerToolsForRun', () => {
     test('an issue write stays off a Connect row, and its other writes are still offered', async () => {
       mockIntegration.findOne.mockResolvedValue(null);
       mockIntegration.findById.mockResolvedValue({
-        _id: 'row-1', type: 'github-app', status: 'connected', createdBy: 'owner-1', createdAt: new Date(0),
+        _id: 'row-1', type: 'github-app', status: 'connected', createdBy: OWNER_ID, createdAt: new Date(0),
         config: { installationId: 'inst-1', owner: 'o', repo: 'r', app: 'connect' },
       });
       process.env.GITHUB_CONNECT_APP_ID = '1';
       process.env.GITHUB_CONNECT_APP_PRIVATE_KEY = 'test-only';
       grantQuery([podGrant({
-        writeMode: 'write-with-confirm', connectionId: '507f1f77bcf86cd799439015', ownerId: 'owner-1',
+        writeMode: 'write-with-confirm', connectionId: '507f1f77bcf86cd799439015', ownerId: OWNER_ID,
         createdAt: new Date(1000),
         tools: ['github.create_issue', 'github.comment_on_issue', 'github.comment_on_pull_request'],
-      })]);
+        // The owner is in the pod: a pod grant whose owner is not is never offered (F664).
+      })], [{ _id: POD_A, members: [SEAT, OWNER_ID] }]);
       expect(await names()).toEqual(['github_comment_on_pull_request']);
       delete process.env.GITHUB_CONNECT_APP_ID;
       delete process.env.GITHUB_CONNECT_APP_PRIVATE_KEY;

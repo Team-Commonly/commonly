@@ -1,4 +1,5 @@
 import crypto from 'crypto';
+import { logOutboundFailure } from '../utils/safeErrorLog';
 // eslint-disable-next-line global-require
 const express = require('express');
 // eslint-disable-next-line global-require
@@ -179,9 +180,8 @@ router.post('/', auth, async (req: AuthReq, res: Res) => {
     const app = await App.create({ name, description, homepage, callbackUrl, webhookUrl, clientId, clientSecretHash: hash(clientSecret), webhookSecretHash: hash(webhookSecret), ownerId: req.user?.id, allowedRedirects, defaultScopes, allowedEvents });
     return res.status(201).json({ appId: app._id, clientId, clientSecret, webhookSecret });
   } catch (error) {
-    const e = error as Error;
-    console.error('Error creating app', error);
-    return res.status(500).json({ error: 'Internal server error', detail: process.env.NODE_ENV === 'test' ? e.message : undefined });
+    logOutboundFailure('Error creating app', error);
+    return res.status(500).json({ error: 'Internal server error' });
   }
 });
 

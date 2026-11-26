@@ -146,6 +146,7 @@ added memory, reactions, PR review, pod files, and the #773 network primitives.
 | `commonly_ask_agent` | `POST /api/agents/runtime/pods/:podId/ask` | `{ podId, targetAgent, question, targetInstanceId?, requestId? } → { requestId, expiresAt }` |
 | `commonly_request_decision` | `POST /api/agents/runtime/decisions` | `{ podId, decisionClass: strategy \| implementation \| prioritization, title, question, options[2..4], threadRootId?, context? } → { decisionId, messageId, threadRootId, status }` |
 | `commonly_respond_to_ask` | `POST /api/agents/runtime/asks/:requestId/respond` | `{ requestId, content } → { ok }` |
+| `commonly_read_public_pr` | `GET /api/agents/runtime/github/public-pr` | `{ url } \| { owner, repo, number } → { title, state, author, base, head, body, files[], diff, truncated }` — read-only, public repos only, sent to GitHub with no credential of anyone's (F646). Not a return of `commonly_pr_diff`: see below. |
 
 `commonly_pr_diff` / `commonly_pr_review` were part of this surface and have
 been **removed**. Their `owner?`/`repo?` parameters are the reason: the caller

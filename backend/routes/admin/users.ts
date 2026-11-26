@@ -10,13 +10,17 @@ const adminAuth = require('../../middleware/adminAuth');
 const User = require('../../models/User');
 const { clearCloudRuntimeCache } = require('../../services/cloudRuntimeOwnership');
 const InvitationCode = require('../../models/InvitationCode');
-const WaitlistRequest = require('../../models/WaitlistRequest');
+const {
+  assertWaitlistWritable, listWaitlistRequests, setWaitlistRequestStatus, findWaitlistRequestForInvitation,
+  markWaitlistRequestInvited, findWaitlistRequestPopulated,
+} = require('../../repositories/waitlistRequestRepository');
 const { cloudflareIpRateLimitKeyGenerator } = require('../../middleware/ipRateLimit');
 const { sendEmail } = require('../../services/emailService');
 const Integration = require('../../models/Integration');
 const { HOSTED_MCP_TYPE } = require('../../services/connectionRemovalService');
 const { deleteOpeningsFor } = require('../../repositories/recordChainRepository');
 const AccountDeletion = require('../../models/AccountDeletion');
+const { logOutboundFailure, smtp2goReason } = require('../../utils/safeErrorLog');
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const { cancelSubscriptionForDeletion } = require('../../services/billingService');
 
@@ -134,7 +138,7 @@ router.get('/', auth, adminAuth, async (req: any, res: any) => {
       total: users.length,
     });
   } catch (error) {
-    console.error('Failed to list users:', error);
+    console.error('Failed to list users:', error); // safe-log: no outbound call
     return res.status(500).json({ error: 'Failed to list users' });
   }
 });
@@ -191,7 +195,7 @@ router.patch('/:userId/role', adminWriteLimiter, auth, adminAuth, async (req: an
     if (error instanceof AdminUserMutationError) {
       return res.status(error.status).json({ error: error.message, code: error.code });
     }
-    console.error('Failed to update user role:', error);
+    logOutboundFailure('Failed to update user role:', error);
     return res.status(500).json({ error: 'Failed to update user role' });
   }
 });
@@ -246,7 +250,7 @@ router.patch('/:userId/entitlements', adminWriteLimiter, auth, adminAuth, async 
       user: { ...sanitizeUser(target), entitlements: target.entitlements },
     });
   } catch (error) {
-    console.error('Failed to update user entitlements:', error);
+    logOutboundFailure('Failed to update user entitlements:', error);
     return res.status(500).json({ error: 'Failed to update user entitlements' });
   }
 });
@@ -294,7 +298,7 @@ router.patch('/:userId/ban', adminWriteLimiter, auth, adminAuth, async (req: any
     if (error instanceof AdminUserMutationError) {
       return res.status(error.status).json({ error: error.message, code: error.code });
     }
-    console.error('Failed to update ban state:', error);
+    logOutboundFailure('Failed to update ban state:', error);
     return res.status(500).json({ error: 'Failed to update ban state' });
   }
 });
@@ -311,7 +315,7 @@ router.post('/:userId/sessions/revoke', adminWriteLimiter, auth, adminAuth, asyn
     disconnectUserSessionSockets(String(target._id));
     return res.json({ message: 'Sessions revoked' });
   } catch (error) {
-    console.error('Failed to revoke user sessions:', error);
+    logOutboundFailure('Failed to revoke user sessions:', error);
     return res.status(500).json({ error: 'Failed to revoke user sessions' });
   }
 });
@@ -445,7 +449,7 @@ router.delete('/:userId', adminWriteLimiter, auth, adminAuth, async (req: any, r
     if (error instanceof AdminUserMutationError) {
       return res.status(error.status).json({ error: error.message, code: error.code });
     }
-    console.error('Failed to delete user:', error);
+    logOutboundFailure('Failed to delete user:', error);
     return res.status(500).json({ error: 'Failed to delete user' });
   }
 });
@@ -478,7 +482,7 @@ router.get('/invitations', auth, adminAuth, async (req: any, res: any) => {
       totalPages,
     });
   } catch (error) {
-    console.error('Failed to list invitation codes:', error);
+    console.error('Failed to list invitation codes:', error); // safe-log: no outbound call
     return res.status(500).json({ error: 'Failed to list invitation codes' });
   }
 });
@@ -531,7 +535,7 @@ router.post('/invitations', auth, adminAuth, async (req: any, res: any) => {
       invitation: sanitizeInvitation(hydrated),
     });
   } catch (error) {
-    console.error('Failed to create invitation code:', error);
+    console.error('Failed to create invitation code:', error); // safe-log: no outbound call
     return res.status(500).json({ error: 'Failed to create invitation code' });
   }
 });
@@ -554,7 +558,7 @@ router.post('/invitations/:invitationId/revoke', auth, adminAuth, async (req: an
       invitation: sanitizeInvitation(invitation),
     });
   } catch (error) {
-    console.error('Failed to revoke invitation code:', error);
+    console.error('Failed to revoke invitation code:', error); // safe-log: no outbound call
     return res.status(500).json({ error: 'Failed to revoke invitation code' });
   }
 });
@@ -568,29 +572,9 @@ router.get('/waitlist', auth, adminAuth, async (req: any, res: any) => {
     const requestedLimit = parsePositiveInt(req.query.limit, 20);
     const limit = Math.min(requestedLimit, 100);
     const skip = (page - 1) * limit;
-    const query: any = {};
-
-    if (q) {
-      query.$or = [
-        { email: { $regex: q, $options: 'i' } },
-        { name: { $regex: q, $options: 'i' } },
-        { organization: { $regex: q, $options: 'i' } },
-      ];
-    }
-    if (['pending', 'invited', 'closed'].includes(status)) {
-      query.status = status;
-    }
-
-    const [requests, total] = await Promise.all([
-      WaitlistRequest.find(query)
-        .populate('invitationCode', 'code')
-        .populate('invitedBy', 'username email')
-        .sort({ createdAt: -1 })
-        .skip(skip)
-        .limit(limit)
-        .lean(),
-      WaitlistRequest.countDocuments(query),
-    ]);
+    const { requests, total } = await listWaitlistRequests({
+      q, status, skip, limit,
+    });
     const totalPages = Math.max(1, Math.ceil(total / limit));
 
     return res.json({
@@ -601,7 +585,7 @@ router.get('/waitlist', auth, adminAuth, async (req: any, res: any) => {
       totalPages,
     });
   } catch (error) {
-    console.error('Failed to list waitlist requests:', error);
+    console.error('Failed to list waitlist requests:', error); // safe-log: no outbound call
     return res.status(500).json({ error: 'Failed to list waitlist requests' });
   }
 });
@@ -622,13 +606,7 @@ router.patch('/waitlist/:requestId', auth, adminAuth, async (req: any, res: any)
       update.invitedBy = null;
     }
 
-    const request = await WaitlistRequest.findByIdAndUpdate(
-      req.params.requestId,
-      { $set: update },
-      { new: true },
-    )
-      .populate('invitationCode', 'code')
-      .populate('invitedBy', 'username email');
+    const request = await setWaitlistRequestStatus(req.params.requestId, update);
 
     if (!request) {
       return res.status(404).json({ error: 'Waitlist request not found' });
@@ -639,7 +617,7 @@ router.patch('/waitlist/:requestId', auth, adminAuth, async (req: any, res: any)
       request: sanitizeWaitlist(request),
     });
   } catch (error) {
-    console.error('Failed to update waitlist request:', error);
+    console.error('Failed to update waitlist request:', error); // safe-log: no outbound call
     return res.status(500).json({ error: 'Failed to update waitlist request' });
   }
 });
@@ -647,7 +625,9 @@ router.patch('/waitlist/:requestId', auth, adminAuth, async (req: any, res: any)
 // POST /api/admin/users/waitlist/:requestId/send-invitation
 router.post('/waitlist/:requestId/send-invitation', auth, adminAuth, async (req: any, res: any) => {
   try {
-    const waitlistRequest = await WaitlistRequest.findById(req.params.requestId);
+    // pg refuses before an invitation code is created or an email goes out.
+    assertWaitlistWritable('sendInvitation');
+    const waitlistRequest = await findWaitlistRequestForInvitation(req.params.requestId);
     if (!waitlistRequest) {
       return res.status(404).json({ error: 'Waitlist request not found' });
     }
@@ -740,17 +720,15 @@ router.post('/waitlist/:requestId/send-invitation', auth, adminAuth, async (req:
       htmlBody,
     });
 
-    waitlistRequest.status = 'invited';
-    waitlistRequest.invitationCode = invitation._id;
-    waitlistRequest.invitedAt = now;
-    waitlistRequest.invitationSentAt = now;
-    waitlistRequest.invitedBy = req.user.id;
-    await waitlistRequest.save();
+    await markWaitlistRequestInvited(waitlistRequest, {
+      status: 'invited',
+      invitationCode: invitation._id,
+      invitedAt: now,
+      invitationSentAt: now,
+      invitedBy: req.user.id,
+    });
 
-    const hydrated = await WaitlistRequest.findById(waitlistRequest._id)
-      .populate('invitationCode', 'code')
-      .populate('invitedBy', 'username email')
-      .lean();
+    const hydrated = await findWaitlistRequestPopulated(waitlistRequest._id);
 
     return res.json({
       message: 'Invitation email sent',
@@ -758,7 +736,8 @@ router.post('/waitlist/:requestId/send-invitation', auth, adminAuth, async (req:
       request: sanitizeWaitlist(hydrated),
     });
   } catch (error) {
-    console.error('Failed to send waitlist invitation email:', (error as any)?.response?.data || error);
+    const reason = smtp2goReason(error);
+    logOutboundFailure('Failed to send waitlist invitation email:', error, ...(reason ? [reason] : []));
     return res.status(500).json({ error: 'Failed to send invitation email' });
   }
 });

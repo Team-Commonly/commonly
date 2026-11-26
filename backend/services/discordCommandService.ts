@@ -9,6 +9,7 @@ const summarizerService = require('./summarizerService');
 const Pod = require('../models/Pod');
 import { assertCanBindSurface, SurfaceBindRefusedError } from './chatRelay/bindSurface';
 import { SUMMARY_COOLING, claimSummaryRun } from './discordSummaryCooldown';
+import { logOutboundFailure } from '../utils/safeErrorLog';
 
 // The bridge's wording for a bound row that is not connected (discordRelayCommandService NOT_ACTIVE).
 const CONNECTION_NOT_ACTIVE = "This channel's connection to Commonly isn't active. Reconnect it from the pod's Connectors page.";
@@ -192,7 +193,7 @@ class DiscordCommandService {
       }
       return true;
     } catch (error) {
-      console.error('Error initializing Discord command service:', error);
+      logOutboundFailure('Error initializing Discord command service:', error);
       return false;
     }
   }
@@ -240,7 +241,7 @@ class DiscordCommandService {
         content: formattedSummary,
       };
     } catch (error) {
-      console.error('Error handling summary command:', error);
+      logOutboundFailure('Error handling summary command:', error);
       return {
         success: false,
         content: '❌ An error occurred while fetching the summary.',
@@ -259,7 +260,7 @@ class DiscordCommandService {
 
       return result;
     } catch (error) {
-      console.error('Error handling summary command with defer:', error);
+      logOutboundFailure('Error handling summary command with defer:', error);
 
       const discordService = new DiscordService(this.integration!._id);
       await discordService.sendFollowupMessage(
@@ -305,7 +306,7 @@ class DiscordCommandService {
 
       return { success: true, content: statusMessage };
     } catch (error) {
-      console.error('Error handling status command:', error);
+      logOutboundFailure('Error handling status command:', error);
       return { success: false, content: '❌ An error occurred while fetching the status.' };
     }
   }
@@ -332,7 +333,7 @@ class DiscordCommandService {
         content: '✅ Auto sync enabled! Discord channel activity will now be fetched and summarized hourly, then queued for Commonly Bot.',
       };
     } catch (error) {
-      console.error('Error handling enable command:', error);
+      logOutboundFailure('Error handling enable command:', error);
       return { success: false, content: '❌ An error occurred while enabling the webhook listener.' };
     }
   }
@@ -359,7 +360,7 @@ class DiscordCommandService {
         content: '🔕 Auto sync disabled. Discord channel activity will no longer be fetched or posted to your Commonly pod.',
       };
     } catch (error) {
-      console.error('Error handling disable command:', error);
+      logOutboundFailure('Error handling disable command:', error);
       return { success: false, content: '❌ An error occurred while disabling the webhook listener.' };
     }
   }
@@ -412,7 +413,7 @@ class DiscordCommandService {
       }
       return { success: false, content: `❌ ${syncResult.content}` };
     } catch (error) {
-      console.error('Error handling push command:', error);
+      logOutboundFailure('Error handling push command:', error);
       return { success: false, content: '❌ An error occurred while pushing Discord activity.' };
     }
   }
@@ -437,7 +438,7 @@ class DiscordCommandService {
 
         content = await summarizerService.generateSummary(messageContent, 'discord') as string;
       } catch (error) {
-        console.error('Failed to generate AI summary for Discord messages:', error);
+        logOutboundFailure('Failed to generate AI summary for Discord messages:', error);
         content = '⚠️ AI summary is temporarily unavailable. Please try again shortly.';
       }
     }

@@ -87,6 +87,11 @@ Configure the tunnel's public hostnames on the Cloudflare side:
   lists the env vars left out and why.
 - **Postgres is local.** It runs on the compose network with no TLS and no
   published port.
+- **MongoDB is reached through Cloud NAT** when the VM has no external IP.
+  Cloud NAT caps source ports per destination address, 64 by default, and the
+  backend's pool to the primary can reach that. When it does, new connections to
+  the primary time out while the existing ones keep serving. See
+  [`../runbooks/mongo-new-connections-time-out.md`](../runbooks/mongo-new-connections-time-out.md).
 - **No ingress request-size cap.** ingress-nginx refused bodies over 10 MB, and
   Cloudflare passes larger ones up to its plan limit. The backend still sets its
   own limits: JSON bodies use express's 100 KB default, the grant push route

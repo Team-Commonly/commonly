@@ -119,22 +119,32 @@ const toAllowedRequest = (raw: string, allowedOrigins: ReadonlyMap<string, strin
   return { url, target: `${origin}${url.pathname.slice(1)}${url.search}` };
 };
 
-const readBytesCapped = async (response: Response, maxBytes: number): Promise<Buffer> => {
-  if (!response.body) return Buffer.alloc(0);
+/**
+ * Read a body up to `maxBytes`. Past the cap it throws, or with `truncate` it
+ * keeps the first `maxBytes` and reports that it cut.
+ */
+const readBytesCapped = async (
+  response: Response,
+  maxBytes: number,
+  truncate = false,
+): Promise<{ bytes: Buffer; truncated: boolean }> => {
+  if (!response.body) return { bytes: Buffer.alloc(0), truncated: false };
   const reader = response.body.getReader();
   const chunks: Uint8Array[] = [];
   let received = 0;
   for (;;) {
     const { done, value } = await reader.read();
     if (done) break;
-    received += value.byteLength;
-    if (received > maxBytes) {
+    if (received + value.byteLength > maxBytes) {
       await reader.cancel();
-      throw new Error(`response body exceeds ${maxBytes} bytes`);
+      if (!truncate) throw new Error(`response body exceeds ${maxBytes} bytes`);
+      chunks.push(value.subarray(0, maxBytes - received));
+      return { bytes: Buffer.concat(chunks), truncated: true };
     }
+    received += value.byteLength;
     chunks.push(value);
   }
-  return Buffer.concat(chunks);
+  return { bytes: Buffer.concat(chunks), truncated: false };
 };
 
 interface AllowedHostFetchOptions {
@@ -145,6 +155,11 @@ interface AllowedHostFetchOptions {
   allowedOrigins: ReadonlyMap<string, string>;
   maxBytes: number;
   headers?: Record<string, string>;
+  /**
+   * How much of a non-2xx body to keep (cut, never thrown), for a caller that
+   * classifies an error by its message. Default 0: the body is discarded.
+   */
+  maxErrorBytes?: number;
 }
 
 interface AllowedHostFetchResult {
@@ -157,19 +172,29 @@ interface AllowedHostFetchResult {
 interface AllowedHostBytesResult {
   ok: boolean;
   status: number;
-  /** The body, read up to `maxBytes`. Empty when `ok` is false. */
+  /** The body, read up to `maxBytes`. When `ok` is false, at most `maxErrorBytes` (default empty). */
   bytes: Buffer;
 }
 
+interface AllowedHostReadResult extends AllowedHostBytesResult {
+  /** The final response's headers, a non-2xx one's included (a rate limit's reset, say). */
+  headers: Headers;
+  /** True when `truncate` was asked for and the body passed `maxBytes`. */
+  truncated: boolean;
+}
+
 /**
- * The one loop both readers share: every hop is rebuilt on the caller's
+ * The one loop every reader shares: every hop is rebuilt on the caller's
  * constant origin, redirects are followed by hand and re-checked, one deadline
  * spans all of it, and the final body is read against `maxBytes`.
  */
 const getFromAllowedHost = async (
   rawUrl: string,
-  { allowedOrigins, maxBytes, headers }: AllowedHostFetchOptions,
-): Promise<AllowedHostBytesResult> => {
+  {
+    allowedOrigins, maxBytes, headers, maxErrorBytes = 0,
+  }: AllowedHostFetchOptions,
+  truncate = false,
+): Promise<AllowedHostReadResult> => {
   const signal = AbortSignal.timeout(OUTBOUND_TIMEOUT_MS);
   let request = toAllowedRequest(rawUrl, allowedOrigins);
   for (let redirects = 0; ; redirects += 1) {
@@ -177,10 +202,21 @@ const getFromAllowedHost = async (
     const location = REDIRECT_STATUSES.has(response.status) ? response.headers.get('location') : null;
     if (location === null) {
       if (!response.ok) {
+        if (maxErrorBytes > 0) {
+          const { bytes } = await readBytesCapped(response, Math.min(maxErrorBytes, maxBytes), true);
+          return {
+            ok: false, status: response.status, bytes, headers: response.headers, truncated: false,
+          };
+        }
         await response.body?.cancel();
-        return { ok: false, status: response.status, bytes: Buffer.alloc(0) };
+        return {
+          ok: false, status: response.status, bytes: Buffer.alloc(0), headers: response.headers, truncated: false,
+        };
       }
-      return { ok: true, status: response.status, bytes: await readBytesCapped(response, maxBytes) };
+      const { bytes, truncated } = await readBytesCapped(response, maxBytes, truncate);
+      return {
+        ok: true, status: response.status, bytes, headers: response.headers, truncated,
+      };
     }
     await response.body?.cancel();
     if (redirects >= MAX_REDIRECTS) throw new OutboundUrlRefusedError(`more than ${MAX_REDIRECTS} redirects`, 'redirects');
@@ -210,7 +246,28 @@ export const fetchTextFromAllowedHost = async (
 export const fetchBytesFromAllowedHost = async (
   rawUrl: string,
   options: AllowedHostFetchOptions,
-): Promise<AllowedHostBytesResult> => getFromAllowedHost(rawUrl, options);
+): Promise<AllowedHostBytesResult> => {
+  const { ok, status, bytes } = await getFromAllowedHost(rawUrl, options);
+  return { ok, status, bytes };
+};
+
+/**
+ * The same hosts, redirects, deadline and cap, for a caller that reads the
+ * final response's headers (an upstream rate limit) and would rather keep the
+ * first `maxBytes` of an oversized body than fail: past the cap the text is cut
+ * and `truncated` is true. First caller: githubPublicPr.ts.
+ */
+export const readTextFromAllowedHost = async (
+  rawUrl: string,
+  options: AllowedHostFetchOptions,
+): Promise<AllowedHostFetchResult & { headers: Headers; truncated: boolean }> => {
+  const {
+    ok, status, bytes, headers, truncated,
+  } = await getFromAllowedHost(rawUrl, options, true);
+  return {
+    ok, status, text: bytes.toString('utf8'), headers, truncated,
+  };
+};
 
 // ── Open destinations ───────────────────────────────────────────────────────
 

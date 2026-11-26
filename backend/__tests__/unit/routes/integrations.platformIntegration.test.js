@@ -162,8 +162,9 @@ describe('platformIntegration virtual (#1672)', () => {
   });
 
   // Vera's 67858 probe: with the 500 gone, the pod list and the admin list
-  // returned every credential the config carries. A member still sees the
-  // Telegram connectCode, which is the one value the Connectors page pastes.
+  // returned every credential the config carries. The Telegram connectCode is
+  // not a credential, but neither list has a reader for it, so both drop it;
+  // the Connectors page reads it from the owner's /user/all.
   it('no integration response carries a credential', async () => {
     const SECRETS = {
       botToken: 'tg-bot-token',
@@ -176,7 +177,7 @@ describe('platformIntegration virtual (#1672)', () => {
       oauthStateNonce: 'nonce-1',
     };
     await Integration.create([
-      row({ type: 'telegram', config: { chatId: '-100', connectCode: 'CODE-1', botToken: SECRETS.botToken, secretToken: SECRETS.secretToken, botTokenRef: SECRETS.botTokenRef } }),
+      row({ type: 'telegram', config: { chatId: '-100', connectCode: 'CODE-1', connectCodeExpiresAt: new Date(Date.now() + 60_000), botToken: SECRETS.botToken, secretToken: SECRETS.secretToken, botTokenRef: SECRETS.botTokenRef } }),
       row({ type: 'x', config: { username: 'ops', accessToken: SECRETS.accessToken, refreshToken: SECRETS.refreshToken } }),
       row({ type: 'slack', config: { teamId: 'T1', signingSecret: SECRETS.signingSecret, webhookUrl: SECRETS.webhookUrl, oauthStateNonce: SECRETS.oauthStateNonce, pendingBind: { teamId: 'T1', botTokenRef: SECRETS.botTokenRef } } }),
     ]);
@@ -197,9 +198,10 @@ describe('platformIntegration virtual (#1672)', () => {
       const serialized = JSON.stringify(body);
       Object.values(SECRETS).forEach((value) => expect(serialized).not.toContain(value));
     }
-    // The enable code survives the secret strip on the pod list, which ChatRoom
-    // reads it from; the admin list has no reader for it and drops it.
-    expect(pod.body.find((entry) => entry.type === 'telegram').config.connectCode).toBe('CODE-1');
-    expect(admin.body.find((entry) => entry.type === 'telegram').config).not.toHaveProperty('connectCode');
+    for (const body of [admin.body, pod.body]) {
+      const telegram = body.find((entry) => entry.type === 'telegram');
+      expect(telegram.config).not.toHaveProperty('connectCode');
+      expect(telegram.config).not.toHaveProperty('connectCodeExpiresAt');
+    }
   });
 });

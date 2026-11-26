@@ -4,8 +4,10 @@
  * the ON CONFLICT clause is what keeps a late write from overwriting a newer
  * one, so it is proven against the engine that enforces it.
  */
+const mongoose = require('mongoose');
 const { createRealPgSchema } = require('../utils/realPgSchema');
-const { pgTableAdapter } = require('../../repositories/dualStore');
+const { pgTableAdapter, createDualStore, dualStorePlugin } = require('../../repositories/dualStore');
+const { setupMongoDb, closeMongoDb } = require('../utils/testUtils');
 
 const real = process.env.INTEGRATION_TEST === 'true' ? describe : describe.skip;
 const ID = '6a692a1be833c668acdb84cf';
@@ -15,8 +17,10 @@ real('pgTableAdapter on real PostgreSQL', () => {
   let adapter;
   beforeEach(async () => {
     database = await createRealPgSchema();
+    // The id column sorts by ICU's root collation ('a' < 'B' < 'b'), not byte
+    // order, so the scan's keyset paging holds only through its COLLATE "C".
     await database.pool.query(`CREATE TABLE widgets (
-      id TEXT PRIMARY KEY, title TEXT, payload JSONB, pg_version INTEGER NOT NULL)`);
+      id TEXT COLLATE "und-x-icu" PRIMARY KEY, title TEXT, payload JSONB, pg_version INTEGER NOT NULL)`);
     adapter = pgTableAdapter({
       pool: database.pool, table: 'widgets', idColumn: 'id', columns: ['title', 'payload'],
     });
@@ -77,6 +81,75 @@ real('pgTableAdapter on real PostgreSQL', () => {
     expect(await adapter.get(ID)).toBeNull();
   });
 
+  it('scans in id byte order, a page at a time, whatever the collation', async () => {
+    const ids = ['b', 'B', 'a:1', 'a', '6a692a1be833c668acdb84cf', 'Z'];
+    for (const [i, id] of ids.entries()) await adapter.upsert({ id, title: `t${i}`, payload: null }, i);
+    // The fixture must disagree with byte order, or this test proves nothing.
+    const natural = (await database.pool.query('SELECT id FROM widgets ORDER BY id')).rows.map((r) => r.id);
+    expect(natural).not.toEqual([...ids].sort());
+    const seen = [];
+    let after = null;
+    for (;;) {
+      const page = await adapter.scan(after, 2);
+      if (!page.length) break;
+      expect(page.length).toBeLessThanOrEqual(2);
+      seen.push(...page.map((entry) => entry.id));
+      after = page[page.length - 1].id;
+    }
+    expect(seen).toEqual([...ids].sort());
+    expect((await adapter.scan(null, 1))[0]).toEqual({
+      id: '6a692a1be833c668acdb84cf', row: { id: '6a692a1be833c668acdb84cf', title: 't4', payload: null }, version: 4,
+    });
+  });
+
+  describe('$in and $exists in a filtered read', () => {
+    let marks;
+    const at = (minute) => new Date(Date.UTC(2026, 0, 1, 0, minute));
+    beforeEach(async () => {
+      await database.pool.query(`CREATE TABLE marks (
+        id TEXT PRIMARY KEY, title TEXT, n INTEGER, seen_at TIMESTAMPTZ, pg_version INTEGER NOT NULL)`);
+      marks = pgTableAdapter({
+        pool: database.pool,
+        table: 'marks',
+        idColumn: 'id',
+        columns: ['title', 'n', 'seen_at'],
+        presenceColumns: ['seen_at'],
+      });
+      await marks.upsert({ id: 'a', title: 'one', n: 1, seen_at: null }, 1);
+      await marks.upsert({ id: 'b', title: "it's", n: 2, seen_at: at(5) }, 1);
+      await marks.upsert({ id: 'c', title: 'three', n: 3, seen_at: at(10) }, 1);
+      await marks.upsert({ id: 'd', title: null, n: null, seen_at: null }, 1);
+    });
+    const ids = (rows) => rows.map(({ row }) => row.id);
+
+    it('binds $in as one array parameter, typed by each column, and never matches NULL', async () => {
+      expect(ids(await marks.findWhere({ title: { $in: ["it's", 'three', 'none'] } }))).toEqual(['b', 'c']);
+      expect(ids(await marks.findWhere({ n: { $in: [1, 3] } }))).toEqual(['a', 'c']);
+      expect(ids(await marks.findWhere({ seen_at: { $in: [at(10), at(99)] } }))).toEqual(['c']);
+      expect(ids(await marks.findWhere({ id: { $in: ['d', 'a'] }, n: { $gte: 1 } }))).toEqual(['a']);
+      // A string that looks like SQL is one value of the list.
+      expect(ids(await marks.findWhere({ title: { $in: ["one') OR true --"] } }))).toEqual([]);
+      expect(await marks.findWhere({ title: { $in: ['one', 'three'] } }, 1)).toEqual([
+        { row: { id: 'a', title: 'one', n: 1, seen_at: null }, version: 1 },
+      ]);
+    });
+
+    it('maps $exists to IS NULL and IS NOT NULL on a presence column', async () => {
+      expect(ids(await marks.findWhere({ seen_at: { $exists: false } }))).toEqual(['a', 'd']);
+      expect(ids(await marks.findWhere({ seen_at: { $exists: true } }))).toEqual(['b', 'c']);
+      expect(ids(await marks.findWhere({ seen_at: { $exists: true }, n: { $in: [3] } }))).toEqual(['c']);
+    });
+
+    it('refuses an empty $in, a null element and $exists off a presence column, before any query', async () => {
+      const query = jest.spyOn(database.pool, 'query');
+      await expect(marks.findWhere({ title: { $in: [] } })).rejects.toThrow(/non-empty array/);
+      await expect(marks.findWhere({ title: { $in: [null] } })).rejects.toThrow(/never null/);
+      await expect(marks.findWhere({ title: { $exists: false } })).rejects.toThrow(/\$exists is not allowed/);
+      expect(query).not.toHaveBeenCalled();
+      query.mockRestore();
+    });
+  });
+
   it('rejects an identifier it would have to interpolate unsafely', () => {
     const { pool } = database;
     expect(() => pgTableAdapter({
@@ -94,5 +167,110 @@ real('pgTableAdapter on real PostgreSQL', () => {
     expect(() => pgTableAdapter({
       pool, table: 'widgets', idColumn: 'id', columns: ['title'], jsonColumns: ['payload'],
     })).toThrow(/jsonColumns must be listed in columns/);
+  });
+});
+
+/**
+ * findOneAndUpdateWhere end to end: decided on a real Mongo, copied to a real
+ * Postgres table through pgTableAdapter, then checked by the helper's own
+ * verify. The AgentProviderKey shapes: an $inc upsert and a generation lock.
+ */
+real('findOneAndUpdateWhere on real Mongo and real PostgreSQL', () => {
+  const ENV = 'STORE_MODE_DUAL_STORE_REAL_PG_KEY';
+  const keySchema = new mongoose.Schema({
+    agent: { type: String, required: true, unique: true },
+    owner: { type: String, required: true },
+    generation: { type: Number, default: 0 },
+    secretRef: { type: String, default: null },
+  }, { timestamps: true });
+  dualStorePlugin(keySchema);
+  const Key = mongoose.models.DualStoreRealPgKey || mongoose.model('DualStoreRealPgKey', keySchema);
+  const toRow = (doc) => ({
+    id: String(doc._id),
+    agent: doc.agent,
+    owner: doc.owner,
+    generation: doc.generation ?? null,
+    secret_ref: doc.secretRef ?? null,
+    created_at: doc.createdAt ?? null,
+    updated_at: doc.updatedAt ?? null,
+  });
+  const filter = { agent: 'a1', owner: 'o1' };
+  let database;
+  let pg;
+  let store;
+
+  beforeAll(async () => {
+    await setupMongoDb();
+    await Key.init();
+  });
+  afterAll(closeMongoDb);
+  beforeEach(async () => {
+    process.env[ENV] = 'dual';
+    await Key.deleteMany({});
+    database = await createRealPgSchema();
+    await database.pool.query(`CREATE TABLE provider_keys (
+      id TEXT PRIMARY KEY, agent TEXT, owner TEXT, generation DOUBLE PRECISION, secret_ref TEXT,
+      created_at TIMESTAMPTZ, updated_at TIMESTAMPTZ, pg_version INTEGER NOT NULL)`);
+    pg = pgTableAdapter({
+      pool: database.pool,
+      table: 'provider_keys',
+      idColumn: 'id',
+      columns: ['agent', 'owner', 'generation', 'secret_ref', 'created_at', 'updated_at'],
+    });
+    store = createDualStore({
+      name: 'DualStoreRealPgKey', model: Key, pg, toRow, fromRow: (row) => row,
+    });
+  });
+  afterEach(async () => {
+    delete process.env[ENV];
+    if (database) await database.close();
+  });
+
+  const expectClean = async () => {
+    const counts = await store.verify();
+    expect(counts).toMatchObject({ missing: 0, differs: 0, extra: 0 });
+    expect(counts.checksumPg).toBe(counts.checksumMongo);
+    return counts;
+  };
+
+  it('racing $inc upserts make one document, and Postgres holds the same number at the same version', async () => {
+    const steps = [1, 1, 1, 1, 0.5, -0.25, 1, 1];
+    const results = await Promise.all(steps.map((by) => store.findOneAndUpdateWhere(
+      filter, { $inc: { generation: by } }, { returnDocument: 'after', upsert: true },
+    )));
+    expect(results.every(Boolean)).toBe(true);
+    const raw = await Key.findOne(filter).lean();
+    expect(raw).toMatchObject({ generation: 6.25, pgVersion: 8 });
+    expect(raw.pgPending).toBeUndefined();
+    const got = await pg.get(String(raw._id));
+    expect(got.version).toBe(8);
+    expect(got.row.generation).toBe(6.25);
+    expect(await expectClean()).toMatchObject({ mongo: 1, pg: 1 });
+  });
+
+  it('racing generation locks have one winner; the pre-image is the old row and Postgres the new one', async () => {
+    await store.findOneAndUpdateWhere(filter, { $inc: { generation: 1 } }, { returnDocument: 'after', upsert: true });
+    const outcomes = await Promise.all(Array.from({ length: 6 }, (_, i) => store.findOneAndUpdateWhere(
+      { ...filter, generation: 1 }, { $set: { secretRef: `r${i}` }, $inc: { generation: 1 } },
+      { returnDocument: 'before' },
+    )));
+    const winners = outcomes.filter(Boolean);
+    expect(winners).toHaveLength(1);
+    expect(winners[0]).toMatchObject({ generation: 1, secretRef: null });
+    const raw = await Key.findOne(filter).lean();
+    expect(raw).toMatchObject({ generation: 2, pgVersion: 2 });
+    expect((await pg.get(String(raw._id))).row.secret_ref).toBe(raw.secretRef);
+    await expectClean();
+  });
+
+  it('refuses pg mode before touching either store', async () => {
+    process.env[ENV] = 'pg';
+    const query = jest.spyOn(database.pool, 'query');
+    await expect(store.findOneAndUpdateWhere(filter, { $inc: { generation: 1 } }, {
+      returnDocument: 'after', upsert: true,
+    })).rejects.toThrow(/not supported in pg mode until step 4/);
+    expect(query).not.toHaveBeenCalled();
+    expect(await Key.countDocuments({})).toBe(0);
+    query.mockRestore();
   });
 });

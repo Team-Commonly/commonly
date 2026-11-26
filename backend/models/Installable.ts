@@ -1,4 +1,6 @@
 import mongoose, { Document, Model, Schema, Types } from 'mongoose';
+import { REGISTRY_BACKFILL_ORIGIN } from '../services/installable/registryBackfillOrigin';
+import type { InstallableOrigin } from '../services/installable/registryBackfillOrigin';
 
 /**
  * Installable — unified catalog model for every kind of thing a user (or agent)
@@ -55,6 +57,7 @@ export type InstallableSource =
 export type InstallableKind = 'agent' | 'app' | 'skill' | 'bundle';
 
 export type InstallableScope = 'instance' | 'pod' | 'user' | 'dm';
+
 
 export type InstallableStatus =
   | 'active'
@@ -308,6 +311,10 @@ export interface IInstallable extends Document {
   // Lifecycle
   status: InstallableStatus;
 
+  // Set on rows the AgentRegistry bridge synthesized. Such a row is not a
+  // marketplace listing: marketplace routes skip it, and a publish takes it over.
+  origin?: InstallableOrigin;
+
   // Version history (for marketplace packages with deprecation/rollback)
   versions?: IVersionEntry[];
 
@@ -319,6 +326,11 @@ export interface IInstallable extends Document {
 
   // Stats
   stats: IInstallableStats;
+
+  // Fencing token of the marketplace publish or fork that last wrote this row
+  // (routes/marketplace-api.ts, the installableId claim). Missing on rows
+  // written before the fence, which counts as lowest.
+  claimFence?: number;
 
   createdAt: Date;
   updatedAt: Date;
@@ -563,6 +575,8 @@ const InstallableSchema = new Schema<IInstallable>(
       default: 'active',
     },
 
+    origin: { type: String, enum: [REGISTRY_BACKFILL_ORIGIN] },
+
     versions: { type: [VersionSubSchema], default: undefined },
 
     forkedFrom: { type: ForkedFromSubSchema },
@@ -574,6 +588,9 @@ const InstallableSchema = new Schema<IInstallable>(
       forkCount: { type: Number, default: 0 },
       lastActivity: { type: Date },
     },
+
+    // Declared so strict mode keeps it in writes and filters; see the interface.
+    claimFence: { type: Number },
   },
   { timestamps: true },
 );

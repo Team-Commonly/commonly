@@ -24,6 +24,7 @@ import { prWriteApprovalSummary } from './prWriteScope';
 import { APPROVAL_OUTCOME_UNKNOWN } from './brokerWriteOutcome';
 import { PLACEHOLDER_AGENT_DESCRIPTION } from './agentInstallationIdentity';
 import { releaseRunRequest, noteRunRequestDeclined } from './runRequestService';
+import { mirrorRegistryRow } from './installable/registryReconciler';
 
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const { AgentInstallation, AgentRegistry } = require('../models/AgentRegistry');
@@ -2111,6 +2112,7 @@ const executeConnectLocalAgent = async (row: IApprovalAction): Promise<unknown> 
       publisher: { userId: row.ownerUserId },
       ephemeral: true,
     });
+    await mirrorRegistryRow(registryRow, 'approval.ephemeral');
   }
 
   await AgentInstallation.findOneAndUpdate(
@@ -2272,7 +2274,8 @@ const executeCreatePod = async (row: IApprovalAction): Promise<unknown> => {
     if (botUser?._id) {
       await Pod.updateOne(
         { _id: pod._id, members: { $ne: botUser._id } },
-        { $push: { members: botUser._id } },
+        // F621: bump the version so a stale whole-array save can't undo this add.
+        { $push: { members: botUser._id }, $inc: { __v: 1 } },
       );
       // F183: best-effort PG mirror write; never fails the approval.
       // eslint-disable-next-line @typescript-eslint/no-require-imports, global-require

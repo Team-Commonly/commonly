@@ -16,18 +16,6 @@ import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useSta
 import { flushSync } from 'react-dom';
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
-import AddIcon from '@mui/icons-material/Add';
-import ArrowBackIcon from '@mui/icons-material/ArrowBack';
-import SearchIcon from '@mui/icons-material/Search';
-import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
-import BoltOutlinedIcon from '@mui/icons-material/BoltOutlined';
-import BlockIcon from '@mui/icons-material/Block';
-import CheckIcon from '@mui/icons-material/Check';
-import CloseIcon from '@mui/icons-material/Close';
-import MoreHorizIcon from '@mui/icons-material/MoreHoriz';
-import PersonOutlineIcon from '@mui/icons-material/PersonOutline';
-import PlayArrowIcon from '@mui/icons-material/PlayArrow';
-import ReplayIcon from '@mui/icons-material/Replay';
 import { useV2Api } from '../hooks/useV2Api';
 import { useV2Confirm } from '../hooks/useV2Confirm';
 import { useSocket } from '../../context/SocketContext';
@@ -121,7 +109,7 @@ interface ColumnMeta {
   // their canonical column instead of disappearing.
   statuses: string[];
   // Click-to-move targets offered on cards in this column.
-  moves: Array<{ to: CanonicalStatus; labelKey: string; Icon: typeof PlayArrowIcon }>;
+  moves: Array<{ to: CanonicalStatus; labelKey: string; glyph: 'play' | 'block' | 'check' | 'replay' }>;
 }
 
 // The drawer shows this many newest updates, as the d215 frame draws; older ones fold.
@@ -133,8 +121,8 @@ const COLUMNS: ColumnMeta[] = [
     emptyKey: 'board.emptyCol.pending',
     statuses: ['pending', 'todo', 'open'],
     moves: [
-      { to: 'claimed', labelKey: 'board.move.start', Icon: PlayArrowIcon },
-      { to: 'blocked', labelKey: 'board.move.block', Icon: BlockIcon },
+      { to: 'claimed', labelKey: 'board.move.start', glyph: 'play' },
+      { to: 'blocked', labelKey: 'board.move.block', glyph: 'block' },
     ],
   },
   {
@@ -143,8 +131,8 @@ const COLUMNS: ColumnMeta[] = [
     emptyKey: 'board.emptyCol.inProgress',
     statuses: ['claimed', 'in_progress', 'in-progress'],
     moves: [
-      { to: 'done', labelKey: 'board.move.finish', Icon: CheckIcon },
-      { to: 'blocked', labelKey: 'board.move.block', Icon: BlockIcon },
+      { to: 'done', labelKey: 'board.move.finish', glyph: 'check' },
+      { to: 'blocked', labelKey: 'board.move.block', glyph: 'block' },
     ],
   },
   {
@@ -153,8 +141,8 @@ const COLUMNS: ColumnMeta[] = [
     emptyKey: 'board.emptyCol.blocked',
     statuses: ['blocked'],
     moves: [
-      { to: 'claimed', labelKey: 'board.move.resume', Icon: PlayArrowIcon },
-      { to: 'pending', labelKey: 'board.move.reopen', Icon: ReplayIcon },
+      { to: 'claimed', labelKey: 'board.move.resume', glyph: 'play' },
+      { to: 'pending', labelKey: 'board.move.reopen', glyph: 'replay' },
     ],
   },
   {
@@ -163,7 +151,7 @@ const COLUMNS: ColumnMeta[] = [
     emptyKey: 'board.emptyCol.done',
     statuses: ['done', 'completed', 'complete'],
     moves: [
-      { to: 'pending', labelKey: 'board.move.reopen', Icon: ReplayIcon },
+      { to: 'pending', labelKey: 'board.move.reopen', glyph: 'replay' },
     ],
   },
 ];
@@ -363,7 +351,7 @@ const V2PodBoard: React.FC = () => {
     if (task.status === 'blocked') {
       if (!task.dep) return null;
       const needs = t('board.card.needs', { dep: task.dep });
-      return <span className="v2-board__blocked-mark" role="img" aria-label={needs} title={needs}><BlockIcon aria-hidden="true" /></span>;
+      return <span className="v2-board__blocked-mark" role="img" aria-label={needs} title={needs}><ShellGlyph name="block" /></span>;
     }
     const lease = leaseFor(task);
     if (!lease.claimed) {
@@ -905,7 +893,7 @@ const V2PodBoard: React.FC = () => {
         aria-pressed={filters.includes(f.key)}
         onClick={() => toggleFilter(f.key)}
       >
-        {f.key === 'mine' && <PersonOutlineIcon aria-hidden="true" />}
+        {f.key === 'mine' && <ShellGlyph name="person" />}
         {t(f.labelKey)}
       </button>
     ))}
@@ -934,7 +922,7 @@ const V2PodBoard: React.FC = () => {
         aria-pressed={searchOpen}
         onClick={() => { setSearchOpen((open) => !open); if (searchOpen) setQuery(''); }}
       >
-        <SearchIcon aria-hidden="true" />
+        <ShellGlyph name="search" />
       </button>
     </>
   );
@@ -949,7 +937,7 @@ const V2PodBoard: React.FC = () => {
           title={t('board.backToChat')}
           onClick={() => navigate(`/v2/pods/${podId}`)}
         >
-          <ArrowBackIcon fontSize="small" aria-hidden="true" />
+          <ShellGlyph name="back" />
         </button>
         <div className="v2-board__title-wrap">
           <h1 className="v2-board__title">{podName || t('board.title')}</h1>
@@ -970,13 +958,13 @@ const V2PodBoard: React.FC = () => {
           title={t('board.newTask')}
           onClick={openCreateTask}
         >
-          <AddIcon fontSize="small" aria-hidden="true" />
+          <ShellGlyph name="plus" />
         </button>
       </header>
 
       <details className="v2-board__focus" aria-labelledby="v2-board-focus-title">
         <summary className="v2-board__focus-strip">
-          <BoltOutlinedIcon className="v2-board__focus-icon" aria-hidden="true" />
+          <ShellGlyph name="bolt" className="v2-board__focus-icon" />
           <span className="v2-board__focus-eyebrow">{t('board.focus.eyebrow')}</span>
           <h2 id="v2-board-focus-title" className="v2-board__focus-title">
             {focusRead?.focus ? focusRead.focus.goal : t('board.focus.title')}
@@ -994,7 +982,7 @@ const V2PodBoard: React.FC = () => {
               {focusRead.focus ? t('board.focus.edit') : t('board.focus.set')}
             </button>
           )}
-          <ExpandMoreIcon className="v2-board__focus-chevron" aria-hidden="true" />
+          <ShellGlyph name="chevron" className="v2-board__focus-chevron" />
         </summary>
         {focusLoading && !focusRead && <div className="v2-board__focus-muted">{t('board.focus.loading')}</div>}
         {focusError && (
@@ -1087,7 +1075,7 @@ const V2PodBoard: React.FC = () => {
                       title={t('board.addTo', { column: t(col.labelKey) })}
                       onClick={openCreateTask}
                     >
-                      <AddIcon aria-hidden="true" />
+                      <ShellGlyph name="plus" />
                     </button>
                   )}
                   {col.key === 'done' && (
@@ -1135,7 +1123,7 @@ const V2PodBoard: React.FC = () => {
                           title={t(move.labelKey)}
                           onClick={() => moveTask(task, move.to)}
                         >
-                          <move.Icon aria-hidden="true" />
+                          <ShellGlyph name={move.glyph} />
                         </button>
                       ))}
                     </div>
@@ -1146,7 +1134,7 @@ const V2PodBoard: React.FC = () => {
             );
           })}
           <aside className="v2-board__donecol" aria-label={t('board.col.done')}>
-            <span className="v2-board__donecol-label"><CheckIcon aria-hidden="true" />{t('board.col.done')}</span>
+            <span className="v2-board__donecol-label"><ShellGlyph name="check" />{t('board.col.done')}</span>
             <span className="v2-board__donecol-count">{(columnTasks.get('done') || []).length}</span>
             <button type="button" className="v2-board__donecol-show v2-board__key v2-board__key--soft v2-board__key--sm" onClick={() => setShowDone(true)}>
               {t('board.doneRail.show')}
@@ -1210,7 +1198,7 @@ const V2PodBoard: React.FC = () => {
                 ref={moreButtonRef}
                 onClick={() => setMoreOpen((open) => !open)}
               >
-                <MoreHorizIcon aria-hidden="true" />
+                <ShellGlyph name="more" />
               </button>
               {moreOpen && (
                 <div className="v2-board__more-menu" role="menu" aria-label={t('board.detail.more')} ref={moreMenuRef}>
@@ -1236,7 +1224,7 @@ const V2PodBoard: React.FC = () => {
                 title={t('common.close')}
                 onClick={() => openTask(null)}
               >
-                <CloseIcon aria-hidden="true" />
+                <ShellGlyph name="close" />
               </button>
             </div>
             <div className="v2-board__drawer-body">
@@ -1335,7 +1323,7 @@ const V2PodBoard: React.FC = () => {
                   </ul>
                   {(drawerTask.updates?.length || 0) > VISIBLE_UPDATES && (
                     <button type="button" className="v2-board__updates-toggle" aria-expanded={updatesExpanded} onClick={() => setUpdatesExpanded((open) => !open)}>
-                      <ExpandMoreIcon aria-hidden="true" />
+                      <ShellGlyph name="chevron" />
                       {updatesExpanded
                         ? t('board.detail.hideEarlierUpdates')
                         : t('board.detail.showEarlierUpdates', { count: (drawerTask.updates?.length || 0) - VISIBLE_UPDATES })}

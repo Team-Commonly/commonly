@@ -444,9 +444,12 @@ describe('ADR-002 Phase 1b-a — signed-URL mint (integration)', () => {
       const fileName = 'user-o-13-pod.png';
       const { author, pod } = await seed({ fileName, authorInPod: true });
       const own = await Pod.create({ name: 'own', type: 'chat', createdBy: author._id, members: [author._id] });
-      mockPgPool.query.mockResolvedValue({
-        rows: [{ pod_id: own._id.toString(), user_id: author._id.toString() }],
-      });
+      // The reference query carries the author rule as `user_id = ANY($2)`
+      // (F610); the mock answers it the way Postgres would.
+      const row = { pod_id: own._id.toString(), user_id: author._id.toString() };
+      mockPgPool.query.mockImplementation(async (sql, params) => ({
+        rows: /ANY\(\$2/.test(sql) && !params[1].includes(row.user_id) ? [] : [row],
+      }));
       await Pod.updateOne({ _id: pod._id }, { $pull: { members: author._id } });
 
       await mint(author, fileName).expect(403);

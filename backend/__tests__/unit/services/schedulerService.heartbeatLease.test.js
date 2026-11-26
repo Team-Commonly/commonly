@@ -75,13 +75,25 @@ describe('SchedulerService automatic heartbeat dispatch lease', () => {
 
     expect(directDispatch).toHaveBeenCalledTimes(1);
     expect(results.filter((result) => result.skippedByLease)).toEqual([
-      { scanned: 0, enqueued: 0, skippedByInterval: 0, skippedByLease: true },
+      {
+        scanned: 0,
+        enqueued: 0,
+        skippedByInterval: 0,
+        skippedByLease: true,
+        // F633: the losing run reports only how long the lease took.
+        timingsMs: { total: expect.any(Number), lease: expect.any(Number) },
+      },
     ]);
     expect(results.find((result) => !result.skippedByLease)).toEqual({
       scanned: 3,
       enqueued: 2,
       skippedByInterval: 1,
       skippedByLease: false,
+      // F633: step timings ride along; the direct dispatch is mocked, so none checked.
+      checked: 0,
+      // F635: unread-digest groups that passed the install checks.
+      due: 0,
+      timingsMs: expect.any(Object),
     });
   });
 
@@ -98,7 +110,8 @@ describe('SchedulerService automatic heartbeat dispatch lease', () => {
       enqueued: 0,
       skippedByInterval: 0,
     });
-    expect(AgentInstallation.find).toHaveBeenCalledWith({ status: 'active' });
+    // F668: only opted-in installs are read.
+    expect(AgentInstallation.find).toHaveBeenCalledWith({ status: 'active', 'config.heartbeat.enabled': true });
   });
 
   it('only wakes a pod with digest unread for 60 minutes and no recent or pending wake', async () => {

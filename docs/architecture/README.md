@@ -10,6 +10,7 @@ This directory contains high-level system architecture documentation.
 |----------|-------------|
 | [ARCHITECTURE.md](./ARCHITECTURE.md) | System overview, component relationships, deployment architecture |
 | [long-term-review-2026-10.md](./long-term-review-2026-10.md) | Which refactors to do now, later, or never, with the number behind each; Commonly in 6 months |
+| [installable-registry-bridge.md](./installable-registry-bridge.md) | ADR-001 Phase 3: how AgentRegistry rows map to Installable, the backfill sweep (inserts, refreshes display fields on rows it created), and the published rule |
 | [fleet-health.md](./fleet-health.md) | Design note (not built): a Fleet health page for operators, built from AgentRun, AgentEvent and runner observations |
 
 ## System Components

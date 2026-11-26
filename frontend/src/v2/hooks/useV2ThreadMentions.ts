@@ -4,13 +4,9 @@ import { useAuth } from '../../context/AuthContext';
 import type { V2Agent } from './useV2PodDetail';
 import type { V2PodMember } from './useV2Pods';
 import type { V2ComposerMention, V2ComposerWarning } from '../components/V2Composer';
-import {
-  buildAgentUsername,
-  isOpaqueInstanceToken,
-  rawAgentName,
-  slugifyAgentHandle,
-} from '../utils/threadAgentIdentity';
+import { buildAgentUsername, rawAgentName } from '../utils/threadAgentIdentity';
 import { agentConnectLink } from '../utils/agentConnectLink';
+import { agentDisplayLabel, agentMentionValues, personDisplayLabel } from '../utils/mentionLabels';
 
 type MentionReachState = 'listening' | 'gone-dark' | 'never-connected' | 'reachable' | 'unknown';
 
@@ -23,6 +19,8 @@ interface MentionAgentState {
   noSavedKey?: boolean;
   /** A push webhook's last delivery failed: it is not a listener that went quiet. */
   deliveryError?: unknown;
+  /** Used only over MCP: it reads when opened in its app and never hears a mention. */
+  mcpOnly?: boolean;
 }
 
 interface MentionItem extends V2ComposerMention {
@@ -81,24 +79,25 @@ export const useV2ThreadMentions = ({
       const name = rawAgentName(agent);
       if (!name) return null;
       const username = buildAgentUsername(name, agent.instanceId);
-      const label = agent.displayName || agent.profile?.displayName || name;
-      const instance = (agent.instanceId || 'default').toLowerCase();
-      const value = instance && instance !== 'default' && instance !== name.toLowerCase()
-        && !isOpaqueInstanceToken(instance)
-        ? instance
-        : (slugifyAgentHandle(label) || name.toLowerCase());
-      const row = agentStateByHandle.get(value) || agentStateByHandle.get(name.toLowerCase());
+      // F607: beside a sibling install the default's usual handle can wake the
+      // sibling, so it gets its explicit `<agentName>-default` key.
+      const { value, usualValue } = agentMentionValues(agent, agents);
+      // F645: the row reads as the name people know (never the runtime
+      // agentName); the handle it inserts is in the subtitle.
+      const label = agentDisplayLabel(agent, member, value);
+      const row = agentStateByHandle.get(value) || agentStateByHandle.get(usualValue)
+        || agentStateByHandle.get(name.toLowerCase());
       const reach = row?.state;
       const webhookFailed = Boolean(row?.deliveryError);
       const subtitle = reach === 'never-connected'
-        ? t('podChat.mentionState.typeaheadNever', { handle: value })
+        ? t(row?.mcpOnly ? 'podChat.mentionState.typeaheadMcpOnly' : 'podChat.mentionState.typeaheadNever', { handle: value })
         : reach === 'gone-dark'
           ? t(webhookFailed ? 'podChat.mentionState.typeaheadWebhook' : 'podChat.mentionState.typeaheadDark', { handle: value })
           : t('podChat.mentions.agentSubtitle', { handle: value });
       return {
         id: username,
         label,
-        labelLower: `${label} ${name} ${username} ${value}`.toLowerCase(),
+        labelLower: `${label} ${agent.displayName || ''} ${name} ${username} ${value}`.toLowerCase(),
         subtitle,
         // The member is the agent's User row, which also supplies the thread's
         // profile_picture and user_id. Keep those two surfaces on one identity.
@@ -127,11 +126,12 @@ export const useV2ThreadMentions = ({
         if (item) items.push(item);
         return;
       }
+      const label = personDisplayLabel(member);
       items.push({
         id: member._id || username,
-        label: username,
-        labelLower: username.toLowerCase(),
-        subtitle: t('podChat.mentions.member'),
+        label,
+        labelLower: `${label} ${username}`.toLowerCase(),
+        subtitle: t('podChat.mentions.memberSubtitle', { handle: username }),
         avatar: member.profilePicture || null,
         kind: 'human',
         seed: member._id || username,
@@ -170,6 +170,7 @@ export const useV2ThreadMentions = ({
         fixCommand: state.fixCommand,
         ...(connectLink ? { connectLink } : {}),
         ...(state.deliveryError ? { webhookFailed: true } : {}),
+        ...(state.state === 'never-connected' && state.mcpOnly ? { mcpOnly: true } : {}),
       });
       return rows;
     }, []);

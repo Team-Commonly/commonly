@@ -6,8 +6,9 @@
 #
 # What this file changes:
 # - Caps on every service. Staging can never starve prod: hard memory and CPU
-#   ceilings, a quarter of prod's CPU weight under contention, and a high OOM
-#   score so the kernel kills staging first.
+#   ceilings (CPU at most 1.2 in total, well under the 2-CPU VM), a quarter of
+#   prod's CPU weight under contention, and a high OOM score so the kernel kills
+#   staging first.
 # - Its own databases: MongoDB as a container here (prod's Mongo is Atlas), and
 #   the prod file's Postgres, in this project's own volume.
 # - An in-project email sink in place of SMTP2GO, so no staging mail leaves the VM.
@@ -34,12 +35,12 @@ services:
   postgres:
     <<: *caps
     mem_limit: 384m
-    cpus: 0.25
+    cpus: 0.1
 
   backend:
     <<: *caps
     mem_limit: 900m
-    cpus: 0.5
+    cpus: 0.35
     depends_on:
       mongo:
         condition: service_healthy
@@ -55,17 +56,19 @@ services:
   redis:
     <<: *caps
     mem_limit: 96m
-    cpus: 0.1
+    cpus: 0.04
 
   frontend:
     <<: *caps
     image: ${COMMONLY_IMAGE_REGISTRY:?set COMMONLY_IMAGE_REGISTRY in .env}/commonly-frontend:${COMMONLY_IMAGE_TAG:?set COMMONLY_IMAGE_TAG in .env}-staging
     mem_limit: 64m
-    cpus: 0.1
+    cpus: 0.04
 
   litellm:
     <<: *caps
     mem_limit: 1g
+    # 0.4, not 0.2: at 0.2 LiteLLM's boot (schema migrations, then readiness) missed
+    # its healthcheck and failed the staging deploy of 3e54a58a (2026-11-26).
     cpus: 0.4
 
   # Staging's own tunnel (never prod's). Its ingress (staging.commonly.me and
@@ -83,7 +86,7 @@ services:
       - ./staging-secrets/cloudflared.yml:/etc/cloudflared/config.yml:ro
       - ./staging-secrets/cloudflared-credentials.json:/etc/cloudflared/credentials.json:ro
     mem_limit: 96m
-    cpus: 0.1
+    cpus: 0.04
 
   # Off on staging: no backups of disposable data, and no commonly-bot (staging never
   # ran one).
@@ -103,15 +106,17 @@ services:
     volumes:
       - mongo-data:/data/db
     mem_limit: 640m
-    cpus: 0.25
+    cpus: 0.15
     networks:
       - commonly
     healthcheck:
       test: ["CMD", "mongosh", "--quiet", "--eval", "db.adminCommand('ping').ok"]
       interval: 10s
-      timeout: 5s
+      # 15s, not 5s: at its 0.15 CPU cap, under prod contention during a staging
+      # `up`, mongosh's ping timed out at 5s three times running (2026-11-26).
+      timeout: 15s
       retries: 12
-      start_period: 30s
+      start_period: 60s
 
   # The backend image carries the compiled sink (as the chart's email-sink does).
   email-sink:
@@ -124,7 +129,7 @@ services:
       - PORT=8080
       - EMAIL_SINK_READ_TOKEN=${STAGING_EMAIL_SINK_READ_TOKEN:?set STAGING_EMAIL_SINK_READ_TOKEN in .env}
     mem_limit: 128m
-    cpus: 0.1
+    cpus: 0.04
     networks:
       - commonly
 
@@ -132,7 +137,7 @@ services:
   # mail from the sink above. staging.sh journey runs it once.
   stranger-journey:
     <<: *caps
-    cpus: 0.1
+    cpus: 0.04
     environment:
       - JOURNEY_API=https://api-staging.commonly.me
       - JOURNEY_TRIGGER=${JOURNEY_TRIGGER:-staging-smoke}

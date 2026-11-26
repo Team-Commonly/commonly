@@ -311,10 +311,78 @@ describe('DecisionRequestService', () => {
   test('a second tab sees the standing ruling and cannot create another wake', async () => {
     const ruled = pending({ status: 'ruled', ruling: { value: 'Canary', byUsername: 'Sam', at: new Date(), messageId: '901' } });
     mockDecision.findById.mockResolvedValue(ruled);
+    // A pod member in a second tab (F645: the standing ruling is for members).
+    mockUser.findById.mockReturnValue(userChain({ _id: 'human-2', username: 'lily', isBot: false }));
+    mockPod.findById.mockImplementation(() => podChain({ createdBy: 'human-1', members: ['human-1', 'human-2'], type: 'team' }));
     const result = await chooseDecision({ decisionId: 'decision-1', callerUserId: 'human-2', value: 'Fast lane' });
     expect(result).toMatchObject({ status: 409, body: { decision: { ruling: { value: 'Canary', by: 'Sam' } } } });
     expect(mockPGMessage.create).not.toHaveBeenCalled();
     expect(mockEnqueue).not.toHaveBeenCalled();
+  });
+
+  const F645_HUMAN_ID = '64b0000000000000000000a1';
+  const F645_MEMBER_ID = '64b0000000000000000000a2';
+  const F645_OUTSIDER_ID = '64b0000000000000000000a3';
+
+  // F645: people read the ruler's display name; `by` stays the handle the wake carries.
+  test('a ruling names its ruler by display name, keeping the handle in by', async () => {
+    const row = pending();
+    mockDecision.findById.mockResolvedValue(row);
+    mockUser.findById.mockReturnValue(userChain({
+      _id: F645_HUMAN_ID, username: 'growth-t002-10160904a', displayName: 'Alex', isBot: false,
+    }));
+    mockPod.findById.mockImplementation(() => podChain({ createdBy: F645_HUMAN_ID, members: [F645_HUMAN_ID], type: 'team' }));
+    mockDecision.findOneAndUpdate
+      .mockResolvedValueOnce({ ...row, rulingLock: { token: 'lock' } })
+      .mockResolvedValueOnce({
+        ...row,
+        status: 'ruled',
+        ruling: {
+          value: 'Canary', byUserId: F645_HUMAN_ID, byUsername: 'growth-t002-10160904a',
+          at: new Date('2026-09-06T08:00:00.000Z'), messageId: '901',
+        },
+      });
+
+    const result = await chooseDecision({ decisionId: 'decision-1', callerUserId: F645_HUMAN_ID, value: 'Canary' });
+
+    expect(result.body.decision.ruling).toMatchObject({ by: 'growth-t002-10160904a', byName: 'Alex' });
+    expect(mockEnqueue.mock.calls[0][0].payload.ruledBy).toEqual({ userId: F645_HUMAN_ID, username: 'growth-t002-10160904a' });
+  });
+
+  test('a standing ruling read by someone else names its ruler by display name', async () => {
+    const ruled = pending({
+      status: 'ruled',
+      ruling: {
+        value: 'Canary', byUserId: '64b000000000000000000001', byUsername: 'growth-t002-10160904a', at: new Date(), messageId: '901',
+      },
+    });
+    mockDecision.findById.mockResolvedValue(ruled);
+    mockUser.findById.mockReturnValue(userChain({ _id: F645_MEMBER_ID, username: 'lily', isBot: false }));
+    mockPod.findById.mockImplementation(() => podChain({ createdBy: F645_HUMAN_ID, members: [F645_HUMAN_ID, F645_MEMBER_ID], type: 'team' }));
+    mockUser.find.mockReturnValue({ select: () => ({ lean: async () => [
+      { _id: '64b000000000000000000001', username: 'growth-t002-10160904a', displayName: 'Alex' },
+    ] }) });
+    const result = await chooseDecision({ decisionId: 'decision-1', callerUserId: F645_MEMBER_ID, value: 'Fast lane' });
+    expect(result).toMatchObject({
+      status: 409,
+      body: { decision: { ruling: { by: 'growth-t002-10160904a', byName: 'Alex' } } },
+    });
+  });
+
+  test('a non-member asking about a ruled card learns nothing about the ruling or its ruler', async () => {
+    const ruled = pending({
+      status: 'ruled',
+      ruling: {
+        value: 'Canary', byUserId: '64b000000000000000000001', byUsername: 'growth-t002-10160904a', at: new Date(), messageId: '901',
+      },
+    });
+    mockDecision.findById.mockResolvedValue(ruled);
+    mockUser.findById.mockReturnValue(userChain({ _id: F645_OUTSIDER_ID, username: 'outsider', isBot: false }));
+    mockPod.findById.mockImplementation(() => podChain({ createdBy: F645_HUMAN_ID, members: [F645_HUMAN_ID], type: 'team' }));
+    const result = await chooseDecision({ decisionId: 'decision-1', callerUserId: F645_OUTSIDER_ID, value: 'Fast lane' });
+    expect(result).toEqual({ status: 403, body: { error: 'Only human pod members can rule on this decision' } });
+    expect(JSON.stringify(result)).not.toMatch(/growth-t002|Alex|Canary/);
+    expect(mockUser.find).not.toHaveBeenCalled();
   });
 
   test('refuses a bot caller before it reads pod membership or claims the decision', async () => {

@@ -1,6 +1,8 @@
 // eslint-disable-next-line global-require
 const axios = require('axios');
 // eslint-disable-next-line global-require
+const { warnOutboundFailure } = require('../../utils/safeErrorLog');
+// eslint-disable-next-line global-require
 const { manifests } = require('../manifests');
 // eslint-disable-next-line global-require
 const {
@@ -420,12 +422,10 @@ function createXProvider(integration: { _id: unknown; config?: XConfig; [key: st
                 if (user?.id) resolvedUsers.push(user);
               });
             } catch (refreshError) {
-              const re = refreshError as { response?: { data?: unknown }; message?: string };
-              console.warn('[xProvider] failed to fetch following list after token refresh:', re?.response?.data || re?.message || refreshError);
+              warnOutboundFailure('[xProvider] failed to fetch following list after token refresh:', refreshError, (refreshError as { response?: { data?: unknown } })?.response?.data);
             }
           } else {
-            const e = error as { response?: { data?: unknown }; message?: string };
-            console.warn('[xProvider] failed to fetch following list:', e?.response?.data || e?.message || error);
+            warnOutboundFailure('[xProvider] failed to fetch following list:', error, (error as { response?: { data?: unknown } })?.response?.data);
           }
         }
       }

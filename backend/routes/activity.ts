@@ -262,6 +262,38 @@ router.post('/decisions/:decisionId/choose', auth, async (req: Req, res: Res) =>
   }
 });
 
+// An agent card's acting Buttons (catalogue revision 3). Human-only like the
+// decision route above: the click is ruled through the same chooseDecision.
+router.get('/cards/:messageId/choice', auth, async (req: Req, res: Res) => {
+  try {
+    const result = await DecisionRequestService.cardChoiceState({
+      messageId: String(req.params?.messageId || ''),
+      callerUserId: String(getAuthenticatedUserId(req) || ''),
+    });
+    return res.status(result.status).json(result.body);
+  } catch (error) {
+    console.error('Error reading a card choice:', error);
+    return res.status(500).json({ error: 'Failed to read the card choice' });
+  }
+});
+
+router.post('/cards/:messageId/choose', auth, async (req: Req, res: Res) => {
+  try {
+    const result = await DecisionRequestService.chooseCardButton({
+      messageId: String(req.params?.messageId || ''),
+      callerUserId: String(getAuthenticatedUserId(req) || ''),
+      value: (req.body || {}).value,
+    });
+    return res.status(result.status).json(result.body);
+  } catch (error: any) {
+    if (error instanceof DecisionRequestService.DecisionRequestError) {
+      return res.status(error.status).json({ error: error.message, code: error.code });
+    }
+    console.error('Error choosing on a card:', error);
+    return res.status(500).json({ error: 'Failed to choose on the card' });
+  }
+});
+
 router.get('/approvals', auth, async (req: Req, res: Res) => {
   try {
     const userId = getAuthenticatedUserId(req);

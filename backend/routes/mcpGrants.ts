@@ -2,6 +2,7 @@ import express from 'express';
 import rateLimit from 'express-rate-limit';
 import { SharedRateLimitStore } from '../middleware/sharedRateLimitStore';
 import { createHash } from 'crypto';
+import { logOutboundFailure } from '../utils/safeErrorLog';
 import { callTool, listToolsForGrant } from '../services/toolBrokerService';
 import { agentFacingRefusal } from '../services/agentFacingRefusal';
 import { PENDING_APPROVAL_NOTE, untrustedConnectorMarker } from '../services/brokerResultMarker';
@@ -62,6 +63,32 @@ export const errorPayload = (error: unknown): Record<string, unknown> => {
     message: e.message || 'Tool call refused',
     ...(e.details ? { details: e.details } : {}),
   };
+};
+
+/**
+ * The source a broker failure is attributed to, when the provider's own words
+ * may be in it (`toolBrokerService.callTool` sets it on a failure thrown from
+ * the provider call). A refusal Commonly wrote carries none.
+ */
+const untrustedTitleOf = (error: unknown): string | undefined => {
+  const title = (error as { untrustedSourceTitle?: unknown } | null)?.untrustedSourceTitle;
+  return typeof title === 'string' && title ? title : undefined;
+};
+
+/** A top-level field, first, so an agent reading the printed JSON meets it before the vendor's text. */
+const untrustedField = (title: string | undefined): { untrusted?: string } => (
+  title ? { untrusted: untrustedConnectorMarker(title) } : {}
+);
+
+// A typed refusal (a RoomGrantError carries a statusCode) is written for the
+// agent and keeps its message. An error with no statusCode is a driver's or a
+// transport's: fixed text to the agent, the cause to the server log.
+const replyBrokerFailure = (res: any, error: unknown, statusCode: unknown, label: string) => {
+  if (typeof statusCode === 'number') {
+    return res.status(statusCode).json({ ...untrustedField(untrustedTitleOf(error)), ...errorPayload(error) });
+  }
+  logOutboundFailure(label, error);
+  return res.status(500).json({ error: 'broker_error', message: 'Tool call failed' });
 };
 
 // This host-seat surface is deliberately smaller than the grant's MCP tool
@@ -132,7 +159,7 @@ router.post('/:grantId/push', brokerRateLimit, agentRuntimeAuth, async (
         message: PENDING_APPROVAL_NOTE,
       });
     }
-    return res.status(typeof e.statusCode === 'number' ? e.statusCode : 500).json(errorPayload(error));
+    return replyBrokerFailure(res, error, e.statusCode, 'MCP grant call failed:');
   }
 });
 
@@ -182,7 +209,14 @@ router.post('/:grantId/cli', brokerRateLimit, agentRuntimeAuth, async (req: expr
     // A PR body is untrusted and can be arbitrarily long. Preserve only a
     // bounded preview; the operation receipt is always small.
     const response = { ...data, ...(typeof data.body === 'string' ? { body: data.body.slice(0, 32 * 1024) } : {}) };
-    return res.json({ callId: result.callId, outcome: result.outcome, result: response });
+    // The seat's gh shim prints this body to the agent: a PR body or comment is
+    // outsider-writable, so it is marked as data like every other broker surface.
+    return res.json({
+      ...untrustedField(result.untrustedSourceTitle),
+      callId: result.callId,
+      outcome: result.outcome,
+      result: response,
+    });
   } catch (error) {
     const e = error as { statusCode?: number; code?: string; details?: { approvalId?: string } };
     if (e.code === 'approval_required') {
@@ -190,7 +224,7 @@ router.post('/:grantId/cli', brokerRateLimit, agentRuntimeAuth, async (req: expr
         status: 'pending_approval', approvalId: e.details?.approvalId || null, message: PENDING_APPROVAL_NOTE,
       });
     }
-    return res.status(typeof e.statusCode === 'number' ? e.statusCode : 500).json(errorPayload(error));
+    return replyBrokerFailure(res, error, e.statusCode, 'MCP grant call failed:');
   }
 });
 
@@ -290,9 +324,13 @@ router.post('/:grantId', brokerRateLimit, agentRuntimeAuth, async (req: express.
           }) }],
         };
       }
+      const title = untrustedTitleOf(error);
       return {
         isError: true,
-        content: [{ type: 'text', text: JSON.stringify(errorPayload(error)) }],
+        content: [
+          ...(title ? [{ type: 'text', text: untrustedConnectorMarker(title) }] : []),
+          { type: 'text', text: JSON.stringify(errorPayload(error)) },
+        ],
       };
     }
   });
@@ -305,8 +343,8 @@ router.post('/:grantId', brokerRateLimit, agentRuntimeAuth, async (req: express.
     await server.connect(transport);
     await transport.handleRequest(req, res, req.body);
   } catch (error) {
-    if (!res.headersSent) res.status(500).json({ ...errorPayload(error), error: 'broker_transport_error' });
-    else console.error('[mcp-grants] transport error after response:', error);
+    logOutboundFailure('[mcp-grants] transport error:', error);
+    if (!res.headersSent) res.status(500).json({ error: 'broker_transport_error', message: 'Tool call failed' });
   } finally {
     await server.close().catch(() => {});
   }

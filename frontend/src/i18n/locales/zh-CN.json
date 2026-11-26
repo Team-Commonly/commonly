@@ -238,7 +238,6 @@
     },
     "accountActions": "账号操作",
     "connectorsDetail": "管理已连接的服务",
-    "developerApps": "开发者应用",
     "account": {
       "fallbackName": "你的账号",
       "noChanges": "账号没有更改。",
@@ -829,6 +828,7 @@
       "runRequestRefused": "{{name}} 处理别人的请求前要先问所有者，这条请求没能送到所有者那里，所以不会运行。",
       "runRequestDeclined": "{{name}} 拒绝了 {{requester}} 的请求，{{agent}} 不会运行它。",
       "agentNotConnected": "{{name}} 还没有连接，运行起来才能看到这条消息。它的所有者可以将其接入。",
+      "agentMcpOnly": "{{name}} 收不到这条 @提及。只有有人在它的应用里打开它，或者它的所有者用电脑设置命令把它接入后，它才会读这个 Pod。",
       "agentNotConnectedOwner": "你还没有接入 {{name}}，它运行起来才能看到这条消息。",
       "mentionUnanswered": "{{name}} 没有回复，可能已离线。稍后再问，或者问问 Pod 里的其他人。",
       "taskClaimedVerb": "认领了"
@@ -910,7 +910,8 @@
     },
     "mentions": {
       "agentSubtitle": "智能体 · @{{handle}}",
-      "member": "成员"
+      "member": "成员",
+      "memberSubtitle": "成员 · @{{handle}}"
     },
     "mentionState": {
       "typeaheadNever": "智能体 · @{{handle}} —— 未连接，无法回复",
@@ -922,7 +923,11 @@
       "darkPeer": "@{{handle}} 已有一段时间没有接入，可能不会回复。",
       "typeaheadWebhook": "智能体 · @{{handle}} —— 没收到最近一条消息",
       "webhookOwner": "@{{handle}} 没收到最近一条消息，可能也收不到这条。修复：{{command}}",
-      "webhookPeer": "@{{handle}} 没收到最近一条消息，可能也收不到这条。"
+      "webhookPeer": "@{{handle}} 没收到最近一条消息，可能也收不到这条。",
+      "typeaheadMcpOnly": "智能体 · @{{handle}} —— 在它的应用里打开才可用，收不到 @提及",
+      "mcpOnlyOwner": "@{{handle}} 只有在你从它的应用里打开时才会读这个 Pod，所以收不到这条 @提及。想让它回复 @提及，就在你的电脑上设置它：{{command}}",
+      "mcpOnlyOwnerConnect": "@{{handle}} 只有在你从它的应用里打开时才会读这个 Pod，所以收不到这条 @提及。想让它回复 @提及，就在电脑上接入它：",
+      "mcpOnlyPeer":"@{{handle}} 收不到这条 @提及。只有它的所有者在它的应用里打开它时，它才会读这个 Pod。"
     },
     "mobile": {
       "showPods": "显示 Pod",
@@ -2642,7 +2647,7 @@
     },
     "machines": {
       "title": "已注册的守护进程电脑",
-      "summary": "已注册的电脑共{{total}}台，包括离线的。“已回复”统计的是有智能体报告过回复真人（@提及或私信）的电脑数，只计入电脑开始记录回复之后的回复。在前台运行 commonly agent run 不会注册电脑，所以不计入。",
+      "summary": "已注册的电脑共{{total}}台，包括离线的。“已回复”统计的是智能体发过消息或评论的电脑数，智能体之间的私信不算。在前台运行 commonly agent run 不会注册电脑，所以不计入。",
       "table": {
         "platform": "平台",
         "machines": "电脑数",
@@ -2901,7 +2906,13 @@
     "setUpAgent": "接入智能体",
     "manageAgents": "管理已安装的智能体",
     "keysHeading": "实例密钥",
-    "openGlobal": "打开全局集成"
+    "openGlobal": "打开全局集成",
+    "discordHelp": "卡住了？来 <discord>Discord</discord> 问，我们在那里回复。"
+  },
+  "discordCard": {
+    "message": "Commonly 是开源项目，大家都是业余时间用爱发电，不卖任何东西。哪里好用、哪里不好用，我们都想听你说。来 Discord 聊聊吧。",
+    "join": "加入 Discord",
+    "dismiss": "隐藏 Discord 邀请"
   },
   "connectors": {
     "search": "搜索",

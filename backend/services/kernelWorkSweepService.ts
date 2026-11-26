@@ -1,3 +1,4 @@
+import { Types } from 'mongoose';
 import { TASK_PRIORITY_ORDER } from '../utils/taskPriority';
 /**
  * Kernel work sweep (#1044).
@@ -48,6 +49,8 @@ const { deriveAgentState } = require('./agentStateService');
 const { BOARD_ACTOR } = require('./recordService');
 // eslint-disable-next-line @typescript-eslint/no-require-imports, global-require
 const { recordTaskTransition } = require('./taskRecordService');
+// eslint-disable-next-line @typescript-eslint/no-require-imports, global-require
+const { logOutboundFailure } = require('../utils/safeErrorLog');
 
 const KERNEL_ACTOR = 'kernel-sweep';
 const TASK_CLAIM_LEASE_MS = 30 * 60 * 1000;
@@ -315,6 +318,67 @@ class KernelWorkSweepService {
     // eslint-disable-next-line @typescript-eslint/no-require-imports, global-require
     const { notifyFoundWork } = require('./taskEventService');
 
+    // F632: read the seats that can ever be woken here FIRST, and only the
+    // fields the wake path reads. notifyFoundWork wakes an install only when
+    // config.workDiscovery is { enabled: true, role: 'implementer' }, so no
+    // other install can change the outcome. Before this, every pass aggregated
+    // every due row on the instance (2,224 rows across 727 pods on prod,
+    // 2026-11-25) and read every active install in those pods, whole, to wake
+    // nobody: prod held 0 eligible installs. `config` is a Map of Mixed,
+    // stored as an embedded document, so the dotted paths match it (pinned
+    // against a real mongod in __tests__/service/kernelWorkSweep.eligibleSeats.test.js).
+    // notifyFoundWork's own filter stays the final check (boardWake, and the
+    // exact `=== true` and role comparison).
+    let eligible: Array<Record<string, unknown>> | null;
+    try {
+      eligible = await AgentInstallation.find(
+        {
+          status: 'active',
+          'config.workDiscovery.enabled': true,
+          'config.workDiscovery.role': 'implementer',
+        },
+        // What boardWakeEnabled (config.boardWake, then config.wakeOnMessage)
+        // and the discovery filter read, plus the identity the wake addresses.
+        {
+          agentName: 1,
+          instanceId: 1,
+          podId: 1,
+          status: 1,
+          'config.workDiscovery': 1,
+          'config.boardWake': 1,
+          'config.wakeOnMessage': 1,
+        },
+      ).lean() as Array<Record<string, unknown>>;
+    } catch (error) {
+      // Fail toward over-delivery (review-checklist rule 19): run the pass as
+      // it ran before F632, every pod with due work reading its own installs.
+      // Slower, not wrong.
+      logOutboundFailure('[kernel-sweep] eligible-seat read failed; each pod reads its own installs:', error);
+      eligible = null;
+    }
+    if (eligible && !eligible.length) return { woken: 0, skippedNoWork: 0, scannedPods: 0 };
+
+    // null when the eligible-seat read failed: notifyFoundWork then gets
+    // undefined and reads the pod's installs itself.
+    let installsByPod: Map<string, Array<Record<string, unknown>>> | null = null;
+    let podFilter: Record<string, unknown> = {};
+    if (eligible) {
+      installsByPod = new Map();
+      for (const install of eligible) {
+        const key = String(install.podId);
+        const forPod = installsByPod.get(key);
+        if (forPod) forPod.push(install); else installsByPod.set(key, [install]);
+      }
+      // An aggregate $match is not cast by Mongoose, and Task.podId is an
+      // ObjectId, so cast here: a string id would silently match nothing.
+      const eligiblePods = Array.from(installsByPod.keys())
+        .filter((id) => Types.ObjectId.isValid(id))
+        .map((id) => new Types.ObjectId(id));
+      podFilter = { podId: { $in: eligiblePods } };
+    }
+
+    // Rows in pods with no eligible seat are not read at all. They stay due,
+    // and the first pass after an eligible seat is installed there finds them.
     // offeredAt records whether this exact revision was sent. Do not bound
     // updatedAt to this sweep window: a seat's hourly nudge cap can defer an
     // unassigned revision beyond ten minutes. It must remain due for the next
@@ -322,6 +386,7 @@ class KernelWorkSweepService {
     const actionable = await Task.aggregate([
       {
         $match: {
+          ...podFilter,
           status: 'pending',
           $expr: { $lt: ['$offeredAt', '$updatedAt'] },
           $or: [{ assignee: null }, { assignee: '' }, { assignee: { $exists: false } }],
@@ -361,28 +426,6 @@ class KernelWorkSweepService {
       count: number;
     }>;
 
-    // Every pod's active installs in one read. Read pod by pod, this was one
-    // round trip per pod: 436 pods took 16.9s on production (2026-11-02),
-    // where one $in over the same pods took 212ms.
-    // If that read fails, each pod reads its own, as before: slower, not wrong.
-    let installsByPod: Map<string, Array<Record<string, unknown>>> | null = new Map();
-    if (actionable.length) {
-      try {
-        const installs = await AgentInstallation.find({
-          podId: { $in: actionable.map((pod) => pod._id) },
-          status: 'active',
-        }).lean() as Array<Record<string, unknown>>;
-        for (const install of installs) {
-          const key = String(install.podId);
-          const forPod = installsByPod.get(key);
-          if (forPod) forPod.push(install); else installsByPod.set(key, [install]);
-        }
-      } catch (error) {
-        console.warn('[kernel-sweep] batched install read failed; reading per pod:', (error as Error).message);
-        installsByPod = null;
-      }
-    }
-
     let woken = 0;
     let skippedNoWork = 0;
     for (const pod of actionable) {
@@ -391,6 +434,9 @@ class KernelWorkSweepService {
         pod._id, pod.tasks, pod.count, now, installsByPod ? installsByPod.get(String(pod._id)) || [] : undefined,
       );
       if (result.woken > 0) woken += result.woken; else skippedNoWork += 1;
+      // Let request handlers run between pods.
+      // eslint-disable-next-line no-await-in-loop
+      await new Promise((resolve) => { setImmediate(resolve); });
     }
     return { woken, skippedNoWork, scannedPods: actionable.length };
   }

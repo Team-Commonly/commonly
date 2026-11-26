@@ -36,6 +36,12 @@ const LOGIN_FAILED_WORDINGS = [
   // The wrapper's own refusals of a Claude login (adapters/claude.js).
   /the Claude login on this machine expires in/,
   /refusing a Claude login/,
+  // F661: a Linux seat with no token or key of its own to sign in with. These
+  // two are ^-anchored: they match the adapter's own refusal, thrown before
+  // anything spawns and so reaching here unprefixed (no "claude exited …:"),
+  // and never the same words echoed in a model's or tool's output.
+  /^workspace Claude agents on Linux need your own Claude token or an API key/,
+  /^public Claude agents on Linux need ANTHROPIC_API_KEY/,
 ];
 // F436: what Claude Code prints, and exits 1 on, when it has no login on the
 // computer (2.1.318, walked on windows-latest). No key is wrong and no allowance

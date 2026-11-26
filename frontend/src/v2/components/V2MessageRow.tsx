@@ -21,18 +21,10 @@ import { messageImageUrl } from '../utils/messageImageUrl';
 import { ShellGlyph } from '../icons/glyphs';
 
 import CardRenderBoundary from '../cards/CardRenderBoundary';
+import { renderWithMentions, useMentionLabels } from './V2MentionChip';
 
 const V2UICard = lazy(() => import('../cards/V2UICard'));
 
-// Minimal v2-scoped markdown renderer. Plain HTML elements (no MUI), so
-// styling stays in v2.css under `.v2-msg__content`. The body comes pre-stripped
-// of [[file:...]] / [[reactions:...]] tokens above, so this is purely for
-// agent-authored prose: bold/italic, lists, inline code, fenced code, links.
-
-// Match @username — letters/digits start, then letters/digits/underscore/hyphen.
-// Used to wrap inline mentions in a styled pill. Capturing group keeps the
-// match in `split()` output so we can render text + pill segments in order.
-// An npm scope such as @commonlyai/mcp is a package, not a person.
 const SYSTEM_NOTICE_KEYS: Record<string, string> = {
   'agent-stopped': 'agentStopped',
   'agent-removed': 'agentRemoved',
@@ -45,41 +37,6 @@ const SYSTEM_NOTICE_KEYS: Record<string, string> = {
   'run-request-declined': 'runRequestDeclined',
 };
 
-const MENTION_RE = /(?<![a-zA-Z0-9_.+-])(@[a-zA-Z0-9][a-zA-Z0-9_-]*)(?![a-zA-Z0-9_-]|\/[a-zA-Z0-9])/g;
-
-// Walk a React children tree and replace bare `@name` text segments with a
-// styled `<span>` pill. Recurses into arrays + cloned elements so mentions
-// inside `<strong>`, `<em>`, list items, etc. still render correctly. Code
-// blocks (`<code>`, `<pre>`) are skipped — code is verbatim, mentions in code
-// are intentional and shouldn't be transformed.
-const renderWithMentions = (node: React.ReactNode): React.ReactNode => {
-  if (typeof node === 'string') {
-    if (!node.includes('@')) return node;
-    const parts = node.split(MENTION_RE);
-    return parts.map((part, i) => {
-      if (i % 2 === 1) {
-        return (
-          <span key={i} className="v2-msg__mention">{part}</span>
-        );
-      }
-      return part;
-    });
-  }
-  if (Array.isArray(node)) {
-    return node.map((child, i) => (
-      <React.Fragment key={i}>{renderWithMentions(child)}</React.Fragment>
-    ));
-  }
-  if (React.isValidElement(node)) {
-    const type = node.type;
-    if (type === 'code' || type === 'pre') return node;
-    const props = node.props as { children?: React.ReactNode };
-    const transformed = renderWithMentions(props.children);
-    return React.cloneElement(node, undefined, transformed);
-  }
-  return node;
-};
-
 export const MessageMarkdownImage = ({ src, alt }: React.ImgHTMLAttributes<HTMLImageElement>) => {
   const safeSrc = messageImageUrl(src);
   if (safeSrc) return <SignedImage src={safeSrc} alt={alt || ''} />;
@@ -89,6 +46,11 @@ export const MessageMarkdownImage = ({ src, alt }: React.ImgHTMLAttributes<HTMLI
   }
   return <span>{alt || src}</span>;
 };
+
+// Minimal v2-scoped markdown renderer. Plain HTML elements (no MUI), so
+// styling stays in v2.css under `.v2-msg__content`. The body comes pre-stripped
+// of [[file:...]] / [[reactions:...]] tokens above, so this is purely for
+// agent-authored prose: bold/italic, lists, inline code, fenced code, links.
 
 export const messageMarkdownComponents = {
   img: MessageMarkdownImage,
@@ -654,7 +616,17 @@ const V2MessageRow: React.FC<V2MessageRowProps> = ({ message, introConnectedNow 
   const [lightboxIndex, setLightboxIndex] = useState<number | null>(null);
   const rawUsername = message.user?.username || 'Unknown';
   const overriddenDisplay = agentDisplayNames?.get(rawUsername);
-  const author = overriddenDisplay || rawUsername;
+  // `user.displayName` is only set on a row the client builds (the ruling
+  // stand-in, F645), so `username` stays a handle for the handle-keyed maps.
+  // F645: the pod's label for this author, used after the explicit names
+  // above. Never the runtime name. The author line and a decision card's
+  // asker both read this one `author`; `rawUsername` stays the identity key.
+  const mentionLabels = useMentionLabels();
+  // A label that is only this handle in another case adds nothing; the row's
+  // own spelling stands.
+  const podLabel = mentionLabels.get(rawUsername.toLowerCase());
+  const knownLabel = podLabel && podLabel.toLowerCase() !== rawUsername.toLowerCase() ? podLabel : undefined;
+  const author = overriddenDisplay || message.user?.displayName || knownLabel || rawUsername;
   // Click is gated by agentAuthorKeys — backend may serve either raw username
   // or displayName on `message.user.username`, and the v2 set covers both.
   const isClickable = !!onAuthorClick && !!agentAuthorKeys?.has(rawUsername.toLowerCase());
@@ -733,7 +705,8 @@ const V2MessageRow: React.FC<V2MessageRowProps> = ({ message, introConnectedNow 
               {' '}
               <Link className="v2-system-action-line__link" to={ownerConnectLink}>{t('agentConnection.connect')}</Link>
             </>
-          ) : t(`podChat.systemActions.${noticeKey}`, {
+          ) : t(noticeKey === 'agentNotConnected' && message.payload?.mcpOnly
+            ? 'podChat.systemActions.agentMcpOnly' : `podChat.systemActions.${noticeKey}`, {
             name: actorLabel,
             // F449: the decline line names who asked and the agent too.
             requester: message.payload?.requesterName || '',
@@ -749,7 +722,10 @@ const V2MessageRow: React.FC<V2MessageRowProps> = ({ message, introConnectedNow 
     return (
       <div id={`message-${message.id}`} data-source-message-id={sourceMessageId != null ? String(sourceMessageId) : undefined} tabIndex={-1} className={`v2-message-row v2-message-row--decision${enterClass}`}>
         <V2DecisionCard
-          decision={{ ...decision, actorName: decision.actorName || author }}
+          // The card names its asker exactly as its author line does. The
+          // decision row's actorName is the install's agentName, which can be
+          // the runtime, so it is never used.
+          decision={{ ...decision, actorName: author }}
           onRuled={onDecisionRuled}
         />
       </div>

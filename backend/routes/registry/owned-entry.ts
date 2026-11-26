@@ -7,6 +7,7 @@ const { AgentRegistry } = require('../../models/AgentRegistry');
 const User = require('../../models/User');
 const AuditLog = require('../../models/AuditLog');
 const { getUserId } = require('./helpers');
+const { refreshBridgeRow } = require('../../services/installable/registryReconciler');
 // eslint-disable-next-line @typescript-eslint/no-require-imports, global-require
 const { rateLimit } = require('express-rate-limit');
 // eslint-disable-next-line @typescript-eslint/no-require-imports, global-require
@@ -61,6 +62,9 @@ router.patch('/agents/:name/owned-entry', ownedEntryRateLimit, auth, async (req:
     const nameChanged = previousName !== entry.displayName;
     const statusChanged = previousStatus !== entry.status;
     if (nameChanged || statusChanged) {
+      // The backfilled Installable copies displayName; the read path would
+      // otherwise serve the old name. Status stays a registry-only gate.
+      await refreshBridgeRow(entry, 'registry.owned-entry');
       // Retire/restore names the action; a rename-only write is 'renamed'.
       const action = !statusChanged
         ? 'registry.entry.renamed'

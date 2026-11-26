@@ -723,6 +723,45 @@ describe('V2ActivityPage', () => {
     expect(await screen.findByText('You ruled: Ship now')).toBeInTheDocument();
   });
 
+  // F645: the ruling line names the ruler as chat does ("Alex"), not by handle.
+  test('a ruling line names the ruler by display name, not handle', async () => {
+    let queueReads = 0;
+    mockGet.mockImplementation((url: string) => {
+      if (url === '/api/activity/decision-queue') {
+        queueReads += 1;
+        return queueReads === 1
+          ? Promise.resolve({ data: decisionQueue })
+          : Promise.resolve({ data: { items: [], count: 0, composePodId: 'pod-1' } });
+      }
+      if (url === '/api/activity/decision-history') return Promise.resolve({ data: { items: [] } });
+      return Promise.resolve({ data: recap });
+    });
+    mockPost.mockResolvedValue({
+      data: { ok: true, decision: { ruling: { value: 'Ship now', by: 'growth-t002-10160904a', byName: 'Alex' } } },
+    });
+    renderPage();
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Rule: Ship now (Recommended)' }));
+    expect(await screen.findByText('Alex ruled: Ship now')).toBeInTheDocument();
+    expect(screen.queryByText(/growth-t002-10160904a/)).not.toBeInTheDocument();
+  });
+
+  test('a settled ruling from history names the ruler by display name', async () => {
+    const settled = {
+      id: 'decision-024', kind: 'decision', title: 'Choose the eslint scope', detail: 'What should the agent do?',
+      podId: 'pod-1', podName: 'Launch pod', messageId: '700', threadRootId: '695',
+      options: [{ label: 'Ship now' }, { label: 'Hold for review' }], status: 'ruled',
+      ruling: { value: 'Ship now', by: 'growth-t002-10160904a', byName: 'Alex' },
+    };
+    mockGet.mockImplementation((url: string) => {
+      if (url === '/api/activity/decision-queue') return Promise.resolve({ data: { items: [], count: 0, countsByPod: {} } });
+      if (url === '/api/activity/decision-history') return Promise.resolve({ data: { items: [settled] } });
+      return Promise.resolve({ data: recap });
+    });
+    renderPage();
+    expect(await screen.findByText('Alex ruled: Ship now')).toBeInTheDocument();
+  });
+
   test('restores a settled Activity card from durable history after leave and return', async () => {
     const settled = {
       id: 'decision-024', kind: 'decision', title: 'Choose the eslint scope', detail: 'What should the agent do?',

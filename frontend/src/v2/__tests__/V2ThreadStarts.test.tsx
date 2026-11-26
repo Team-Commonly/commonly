@@ -599,6 +599,55 @@ describe('Scout starts and the composer after a hosted agent goes live', () => {
     const composer = await screen.findByPlaceholderText(/tell scout: i'm working on/i);
     await waitFor(() => expect(composer).toHaveValue('@maya-agent '));
   });
+
+  // F607: "Go to your pod" drafts the default install's bare name. Beside a
+  // sibling of the same agent the bare name routes to whichever install the
+  // backend's loose display-slug key gave it last, so the thread addresses the
+  // draft to `<agentName>-default`. The agents can arrive after the pod.
+  const SiblingHarness = ({ podAgents, lateAgents = false }) => {
+    const [ready, setReady] = useState(!lateAgents);
+    React.useEffect(() => { const id = setTimeout(() => setReady(true), 0); return () => clearTimeout(id); }, []);
+    const detail = {
+      pod: OWN_POD,
+      members: [{ _id: 'u1', username: 'maya', isBot: false }],
+      messages: [welcome],
+      agents: ready ? podAgents : [],
+      sendMessage: jest.fn(),
+      loading: false,
+      error: null,
+      refresh: jest.fn(),
+    };
+    return <V2Thread detail={detail} />;
+  };
+  const renderDraft = (podAgents, lateAgents = false) => render(
+    <AuthContext.Provider value={authValue}>
+      <MemoryRouter initialEntries={[{ pathname: '/v2/pods/pod-1', state: { composeDraft: '@maya-agent ' } }]}>
+        <SiblingHarness podAgents={podAgents} lateAgents={lateAgents} />
+      </MemoryRouter>
+    </AuthContext.Provider>,
+  );
+  const dflt = { agentName: 'maya-agent', instanceId: 'default', status: 'active' };
+  const ops = { agentName: 'maya-agent', instanceId: 'ops', status: 'active' };
+
+  test('beside a sibling install, the draft names the default install explicitly', async () => {
+    renderDraft([dflt, ops]);
+    const composer = await screen.findByRole('textbox');
+    await waitFor(() => expect(composer).toHaveValue('@maya-agent-default '));
+  });
+
+  test('beside a sibling that loads after the pod, the draft is still re-addressed', async () => {
+    renderDraft([dflt, ops], true);
+    const composer = await screen.findByRole('textbox');
+    await waitFor(() => expect(composer).toHaveValue('@maya-agent-default '));
+  });
+
+  test('a lone default keeps the bare handle', async () => {
+    renderDraft([dflt]);
+    const composer = await screen.findByRole('textbox');
+    await waitFor(() => expect(composer).toHaveValue('@maya-agent '));
+    await new Promise((resolve) => { setTimeout(resolve, 10); });
+    expect(composer).toHaveValue('@maya-agent ');
+  });
 });
 
 // TASK-290: on the person's own welcome, "Run an agent here" starts a hosted

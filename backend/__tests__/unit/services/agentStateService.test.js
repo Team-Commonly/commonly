@@ -120,6 +120,36 @@ describe('deriveAgentState', () => {
     expect(row.fixCommand).toBe('npx -y @commonlyai/cli@latest agent run sam-agent');
   });
 
+  test('a key seen over MCP that never listened marks the never-connected row mcpOnly, from either token store', () => {
+    const viaUser = deriveAgentState(byoInstall(), [{ lastUsedAt: new Date(NOW - 10_000), lastMcpSeenAt: new Date(NOW - 10_000) }], 'owner-1', NOW);
+    expect(viaUser.state).toBe('never-connected');
+    expect(viaUser.mcpOnly).toBe(true);
+    const viaInstall = deriveAgentState(byoInstall({ runtimeTokens: [{ lastMcpSeenAt: new Date(NOW - 10_000) }] }), [], 'peer', NOW);
+    expect(viaInstall.mcpOnly).toBe(true);
+  });
+
+  test('mcpOnly is never set for a key never used, or once any key has listened', () => {
+    expect(deriveAgentState(byoInstall(), [], 'owner-1', NOW).mcpOnly).toBeUndefined();
+    expect(deriveAgentState(byoInstall(), [{ lastUsedAt: new Date(NOW - 10_000) }], 'owner-1', NOW).mcpOnly).toBeUndefined();
+    const listened = deriveAgentState(
+      byoInstall(),
+      [{ lastMcpSeenAt: new Date(NOW - 10_000) }, { lastListenedAt: new Date(NOW - 20_000) }],
+      'owner-1',
+      NOW,
+    );
+    expect(listened.state).toBe('listening');
+    expect(listened.mcpOnly).toBeUndefined();
+    // Gone dark after listening once is not MCP-only either: it has a listener to restart.
+    const dark = deriveAgentState(
+      byoInstall(),
+      [{ lastMcpSeenAt: new Date(NOW - 10_000), lastListenedAt: new Date(NOW - AGENT_LISTENING_STALE_MS - 60_000) }],
+      'owner-1',
+      NOW,
+    );
+    expect(dark.state).toBe('gone-dark');
+    expect(dark.mcpOnly).toBeUndefined();
+  });
+
   test('a check-in still decides over a later MCP call: listening, and lastUsedAt reports the check-in', () => {
     const checkIn = new Date(NOW - 20_000);
     const row = deriveAgentState(

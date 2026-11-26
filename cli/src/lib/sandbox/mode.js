@@ -26,7 +26,8 @@
  *
  * NOT used by the codex adapter. Codex's `mode` is read-vs-write access, not a
  * host mechanism — its permission profiles run on both platforms — so its
- * derived default is 'workspace' everywhere.
+ * derived default is 'workspace' everywhere, except the Windows microVM opt-in
+ * (resolveCodexSandboxMode below).
  *
  * Native Windows, opt-in: with COMMONLY_SANDBOX_MICROVM=1 in the host process,
  * an undeclared mode on win32 resolves to 'microvm' (a microsandbox microVM,
@@ -56,4 +57,25 @@ export const resolvePublicSandboxMode = (sandbox, platform = process.platform, e
   return 'bwrap';
 };
 
-export default { PUBLIC_SANDBOX_MODES, resolvePublicSandboxMode };
+/**
+ * The codex adapter's mode. Codex's `workspace` and `read-only` are read vs
+ * write access inside its own permission profile, not host mechanisms, so a
+ * public seat keeps whichever it declared (`workspace` when it declared none)
+ * on every host but one: native Windows with COMMONLY_SANDBOX_MICROVM=1. There
+ * a public Codex seat resolves to 'microvm' whatever it declared, because the
+ * only other confinement on that host is Codex's own Windows sandbox, which
+ * cannot enforce a public profile's read denies (host-check.js). Reading a
+ * declared mode as "use Codex's own sandbox" would hand the seat to a sandbox
+ * that refuses it, or worse; reading it as microvm only ever narrows it: the
+ * VM mounts the workspace read-only, so `workspace` runs as `read-only`.
+ *
+ * Any other trust returns null (no public profile). Codex refuses `workspace`
+ * trust itself (environment.js refuseWorkspaceTrust). Flag off, nothing moves.
+ */
+export const resolveCodexSandboxMode = (sandbox, platform = process.platform, env = process.env) => {
+  if (effectiveSandboxTrust(sandbox?.trust) !== 'public') return null;
+  if (platform === 'win32' && microvmFlagOn(env)) return 'microvm';
+  return sandbox?.mode ?? 'workspace';
+};
+
+export default { PUBLIC_SANDBOX_MODES, resolveCodexSandboxMode, resolvePublicSandboxMode };

@@ -8,6 +8,7 @@ const Pod = require('../models/Pod');
 const PodAssetService = require('./podAssetService');
 // eslint-disable-next-line global-require
 const { generateText } = require('./llmService');
+const { logOutboundFailure } = require('../utils/safeErrorLog');
 
 interface MessageRow {
   content?: string;
@@ -27,7 +28,7 @@ class ChatSummarizerService {
       const prompt = ChatSummarizerService.createPrompt(content, podName);
       return await generateText(prompt, { temperature: 0.4 }) as string;
     } catch (error) {
-      console.error('Error generating chat summary with LLM:', error);
+      logOutboundFailure('Error generating chat summary with LLM:', error);
       throw error;
     }
   }
@@ -54,7 +55,7 @@ class ChatSummarizerService {
         analytics: analyticsData,
       };
     } catch (error) {
-      console.error('Error generating enhanced chat summary with Gemini:', error);
+      logOutboundFailure('Error generating enhanced chat summary with Gemini:', error);
       throw error;
     }
   }
@@ -151,7 +152,7 @@ Focus on extracting meaningful insights, notable quotes, discussion pivots, and 
       const result = await pool.query(query, [startTime, endTime]) as { rows: Array<{ pod_id: string }> };
       return result.rows.map((row) => row.pod_id);
     } catch (error) {
-      console.error('Error getting active pods:', error);
+      console.error('Error getting active pods:', error); // safe-log: no outbound call
       return [];
     }
   }
@@ -239,7 +240,7 @@ Focus on extracting meaningful insights, notable quotes, discussion pivots, and 
 
       return summary;
     } catch (error) {
-      console.error('Error summarizing pod %s:', String(podId), error);
+      logOutboundFailure(`Error summarizing pod ${String(podId)}:`, error);
       throw error;
     }
   }
@@ -322,7 +323,7 @@ Focus on extracting meaningful insights, notable quotes, discussion pivots, and 
         // eslint-disable-next-line no-await-in-loop
         const batchResults = await Promise.all(
           batch.map((podId) => this.summarizePodMessages(podId).catch((error) => {
-            console.error('Failed to summarize pod %s:', String(podId), error);
+            logOutboundFailure(`Failed to summarize pod ${String(podId)}:`, error);
             return null;
           })),
         );
@@ -333,7 +334,7 @@ Focus on extracting meaningful insights, notable quotes, discussion pivots, and 
       console.log(`Successfully created ${successfulSummaries.length} chat summaries`);
       return successfulSummaries;
     } catch (error) {
-      console.error('Error summarizing all active chats:', error);
+      logOutboundFailure('Error summarizing all active chats:', error);
       throw error;
     }
   }
@@ -350,7 +351,7 @@ Focus on extracting meaningful insights, notable quotes, discussion pivots, and 
 
       return summaries;
     } catch (error) {
-      console.error('Error fetching recent chat summaries:', error);
+      console.error('Error fetching recent chat summaries:', error); // safe-log: no outbound call
       throw error;
     }
   }
@@ -392,7 +393,7 @@ Focus on extracting meaningful insights, notable quotes, discussion pivots, and 
       const summaries = await Summary.aggregate(pipeline) as unknown[];
       return summaries;
     } catch (error) {
-      console.error('Error fetching %s room summaries:', String(podType), error);
+      console.error('Error fetching %s room summaries:', String(podType), error); // safe-log: no outbound call
       throw error;
     }
   }
@@ -408,7 +409,7 @@ Focus on extracting meaningful insights, notable quotes, discussion pivots, and 
 
       return summary;
     } catch (error) {
-      console.error('Error fetching latest chat summary:', error);
+      console.error('Error fetching latest chat summary:', error); // safe-log: no outbound call
       throw error;
     }
   }
@@ -421,7 +422,7 @@ Focus on extracting meaningful insights, notable quotes, discussion pivots, and 
 
       return summary;
     } catch (error) {
-      console.error('Error fetching latest summary for pod %s:', String(podId), error);
+      console.error('Error fetching latest summary for pod %s:', String(podId), error); // safe-log: no outbound call
       throw error;
     }
   }
@@ -446,7 +447,7 @@ Focus on extracting meaningful insights, notable quotes, discussion pivots, and 
 
       return latestSummaries;
     } catch (error) {
-      console.error('Error fetching multiple pod summaries:', error);
+      console.error('Error fetching multiple pod summaries:', error); // safe-log: no outbound call
       throw error;
     }
   }

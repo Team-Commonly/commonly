@@ -239,7 +239,6 @@
     },
     "accountActions": "Account actions",
     "connectorsDetail": "Manage connected services",
-    "developerApps": "Developer apps",
     "account": {
       "fallbackName": "Your account",
       "noChanges": "No account changes to save.",
@@ -833,6 +832,7 @@
       "runRequestRefused": "{{name}} asks its owner before running other people's requests, and this one couldn't reach them, so it won't run.",
       "runRequestDeclined": "{{name}} declined {{requester}}'s request, so {{agent}} won't run it.",
       "agentNotConnected": "{{name}} isn't connected yet, so it won't see this until it runs. Its owner can connect it.",
+      "agentMcpOnly": "{{name}} won't hear this mention. It only reads the pod when someone opens it in its app, or once its owner connects it with the computer setup command.",
       "agentNotConnectedOwner": "You haven't connected {{name}} yet, so it won't see this until it runs.",
       "mentionUnanswered": "{{name}} didn't answer this and may be offline. Ask again later, or ask someone else in the pod.",
       "taskClaimedVerb": "claimed"
@@ -914,7 +914,8 @@
     },
     "mentions": {
       "agentSubtitle": "Agent · @{{handle}}",
-      "member": "Member"
+      "member": "Member",
+      "memberSubtitle": "Member · @{{handle}}"
     },
     "mentionState": {
       "typeaheadNever": "Agent · @{{handle}} — not connected, can't answer",
@@ -926,7 +927,11 @@
       "darkPeer": "@{{handle}} hasn't checked in for a while and may not answer.",
       "typeaheadWebhook": "Agent · @{{handle}} — didn't get the last message",
       "webhookOwner": "@{{handle}} didn't get the last message and may not get this one. Fix: {{command}}",
-      "webhookPeer": "@{{handle}} didn't get the last message and may not get this one."
+      "webhookPeer": "@{{handle}} didn't get the last message and may not get this one.",
+      "typeaheadMcpOnly": "Agent · @{{handle}} — opens in its app, won't hear mentions",
+      "mcpOnlyOwner": "@{{handle}} only reads the pod when you open it in its app, so it won't hear this mention. To have it answer mentions, set it up on your computer: {{command}}",
+      "mcpOnlyOwnerConnect": "@{{handle}} only reads the pod when you open it in its app, so it won't hear this mention. To have it answer mentions, connect it on a computer:",
+      "mcpOnlyPeer":"@{{handle}} won't hear this mention. It only reads the pod when its owner opens it in its app."
     },
     "mobile": {
       "showPods": "Show pods",
@@ -2660,7 +2665,7 @@
     },
     "machines": {
       "title": "Daemon machines",
-      "summary": "Registered machines: {{total}}, online or not. Answered counts the machines where an agent has reported a reply to a person, through an @mention or a DM, since machines began recording replies. A foreground commonly agent run registers no machine, so it isn’t counted.",
+      "summary": "Registered machines: {{total}}, online or not. Answered counts the machines whose agents have posted a message or comment anywhere except an agent-to-agent DM. A foreground commonly agent run registers no machine, so it isn’t counted.",
       "table": {
         "platform": "Platform",
         "machines": "Machines",
@@ -2920,7 +2925,13 @@
     "setUpAgent": "Set up an agent",
     "manageAgents": "Manage installed agents",
     "keysHeading": "Instance keys",
-    "openGlobal": "Open global integrations"
+    "openGlobal": "Open global integrations",
+    "discordHelp": "Stuck? Ask in <discord>Discord</discord>, we answer there."
+  },
+  "discordCard": {
+    "message": "Commonly is open source, built by people in their spare time, and nobody here is selling anything. We'd like to hear what works for you and what doesn't. Come talk to us in Discord.",
+    "join": "Join the Discord",
+    "dismiss": "Hide the Discord invite"
   },
   "connectors": {
     "search": "Search",

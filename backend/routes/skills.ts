@@ -1,6 +1,8 @@
 // eslint-disable-next-line global-require
 const express = require('express');
 // eslint-disable-next-line global-require
+const { logOutboundFailure } = require('../utils/safeErrorLog');
+// eslint-disable-next-line global-require
 const mongoose = require('mongoose');
 // eslint-disable-next-line global-require
 const { rateLimit } = require('express-rate-limit');
@@ -135,6 +137,19 @@ const skillWriteStatus = (error: PodError): number => {
   if (error.code === 'INSTALLER_ONLY' || error.code === 'POD_ACCESS_DENIED') return 403;
   if (error.code === 'AGENT_NOT_FOUND' || error.code === 'POD_NOT_FOUND') return 404;
   return 500;
+};
+
+// A 4xx here is a refusal we wrote and keeps its message. At 5xx the error is a
+// driver's or a fetch's, so the body answers fixed text and the cause is logged.
+const replySkillWriteFailure = (res: Res, error: PodError, label: string, fallback: string) => {
+  const status = skillWriteStatus(error);
+  if (status >= 500) {
+    logOutboundFailure(label, error);
+    return res.status(status).json({ error: fallback });
+  }
+  console.error(label, error);
+  const text = error.message || fallback;
+  return res.status(status).json({ error: text });
 };
 
 router.get('/catalog', auth, async (req: AuthReq, res: Res) => {
@@ -277,8 +292,7 @@ router.delete('/pods/:podId/imported', auth, async (req: AuthReq, res: Res) => {
     if (!asset) return res.status(404).json({ error: 'Skill not found' });
     return res.json({ success: true, assetId: asset._id });
   } catch (error) {
-    console.error('Error uninstalling skill:', error);
-    return res.status(skillWriteStatus(error as PodError)).json({ error: (error as Error).message });
+    return replySkillWriteFailure(res, error as PodError, 'Error uninstalling skill:', 'Failed to uninstall skill');
   }
 });
 
@@ -325,8 +339,7 @@ router.post('/import', auth, async (req: AuthReq, res: Res) => {
     if (SkillsCatalogService.isSkillSourceUnavailable(error)) {
       return sourceUnavailableReply(res, error as { missing: boolean; message: string }, 'import');
     }
-    console.error('Error importing skill:', error);
-    return res.status(skillWriteStatus(e)).json({ error: e.message || 'Failed to import skill' });
+    return replySkillWriteFailure(res, e, 'Error importing skill:', 'Failed to import skill');
   }
 });
 

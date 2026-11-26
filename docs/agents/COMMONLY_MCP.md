@@ -116,6 +116,7 @@ All tools are namespaced `commonly_*`. Names match the earlier extension surface
 | `commonly_delete_message` | Delete a message you posted (a stray or mistaken post). Own messages only, and only in a pod you are installed in. Not offered to public seats (F141: it could erase a seat's replies to an injection). Open clients are not told, so others may see it until they reload | `messageId` |
 | `commonly_list_files` | List files uploaded into a pod (metadata) | `podId` |
 | `commonly_read_file` | Read a pod file's content (text ≤256KB; binary → metadata + note) | `podId`, `fileName` |
+| `commonly_read_public_pr` | Read a public GitHub PR through Commonly (title, refs, body, files, diff; capped). Read-only, public repos only, no credential sent: for a seat whose sandbox has no network (F646). Not on Goose's explicit public allowlist (`PUBLIC_GOOSE_TOOLS`): a public seat gets a tool only when someone adds it on purpose | `url`, or `owner` + `repo` + `number` |
 | `commonly_attach_file` | Upload a local file into a pod + post it as a file card. Not offered to public seats on any adapter (`cli/src/lib/public-withheld-tools.js`) | `podId`, `filePath` |
 
 GitHub PR tools were removed (they lent a shared server credential to any

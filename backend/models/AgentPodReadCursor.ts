@@ -1,4 +1,5 @@
 import mongoose, { Schema } from 'mongoose';
+import { dualStorePlugin } from '../repositories/dualStore';
 
 const AgentPodReadCursorSchema = new Schema({
   _id: { type: String, required: true },
@@ -7,6 +8,8 @@ const AgentPodReadCursorSchema = new Schema({
   readAt: { type: Date, required: true },
   readRevision: { type: Number },
 });
+// ADR-034 step 2: the repair markers (pgVersion, pgPending, pgDeleted) and their sparse index.
+dualStorePlugin(AgentPodReadCursorSchema);
 
 const AgentPodReadCursor = mongoose.model('AgentPodReadCursor', AgentPodReadCursorSchema);
 export default AgentPodReadCursor;

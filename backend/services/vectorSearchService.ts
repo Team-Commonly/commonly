@@ -10,6 +10,7 @@
 import path from 'path';
 import fs from 'fs';
 import axios from 'axios';
+import { logOutboundFailure } from '../utils/safeErrorLog';
 
 // Lazy-loaded dependencies (may not be installed yet)
 let Database: (new (path: string) => DatabaseInstance) | null = null;
@@ -255,7 +256,7 @@ class VectorSearchService {
       await transaction();
       return { success: true, chunksIndexed: chunks.length };
     } catch (error) {
-      console.error(`Error indexing asset ${assetId}:`, error);
+      logOutboundFailure(`Error indexing asset ${assetId}:`, error);
       return { success: false, error: (error as Error).message };
     }
   }
@@ -360,7 +361,7 @@ class VectorSearchService {
     try {
       return this.db!.prepare(sql).all(...params) as unknown as SearchResult[];
     } catch (error) {
-      console.error('Vector search error:', error);
+      logOutboundFailure('Vector search error:', error);
       return [];
     }
   }
@@ -396,7 +397,7 @@ class VectorSearchService {
     try {
       return this.db!.prepare(sql).all(...params) as unknown as SearchResult[];
     } catch (error) {
-      console.error('Keyword search error:', error);
+      console.error('Keyword search error:', error); // safe-log: no outbound call
       return [];
     }
   }
@@ -483,7 +484,7 @@ class VectorSearchService {
           return null;
       }
     } catch (error) {
-      console.error('Embedding error:', error);
+      logOutboundFailure('Embedding error:', error);
       return null;
     }
   }

@@ -75,11 +75,59 @@ module.exports = {
           patterns: [{
             group: ['**/models/AgentPodReadCursor', '**/models/AgentPodReadCursor.*'],
             message: 'Use repositories/agentPodReadCursorRepository.',
+          }, {
+            group: ['**/models/AgentFirstContact', '**/models/AgentFirstContact.*'],
+            message: 'Use repositories/agentFirstContactRepository.',
+          }, {
+            group: ['**/models/AgentDigestState', '**/models/AgentDigestState.*'],
+            message: 'Use repositories/agentDigestStateRepository.',
+          }, {
+            group: ['**/models/AgentTaskWakeState', '**/models/AgentTaskWakeState.*'],
+            message: 'Use repositories/agentTaskWakeStateRepository.',
+          }, {
+            group: ['**/models/NeedsYouEmailQuota', '**/models/NeedsYouEmailQuota.*'],
+            message: 'Use repositories/needsYouEmailQuotaRepository.',
+          }, {
+            group: ['**/models/AgentComputerTakeover', '**/models/AgentComputerTakeover.*'],
+            message: 'Use repositories/agentComputerTakeoverRepository.',
+          }, {
+            group: ['**/models/BillingEvent', '**/models/BillingEvent.*'],
+            message: 'Use repositories/billingEventRepository.',
+          }, {
+            group: ['**/models/DiscordSummaryHistory', '**/models/DiscordSummaryHistory.*'],
+            message: 'Use repositories/discordSummaryHistoryRepository.',
+          }, {
+            group: ['**/models/NeedsYouEmail', '**/models/NeedsYouEmail.*'],
+            message: 'Use repositories/needsYouEmailRepository.',
+          }, {
+            group: ['**/models/AgentTaskRowWakeState', '**/models/AgentTaskRowWakeState.*'],
+            message: 'Use repositories/agentTaskRowWakeStateRepository.',
+          }, {
+            group: ['**/models/AgentProviderKey', '**/models/AgentProviderKey.*'],
+            message: 'Use repositories/agentProviderKeyRepository.',
+          }, {
+            group: ['**/models/HostedMcpDcrRegistration', '**/models/HostedMcpDcrRegistration.*'],
+            message: 'Use repositories/hostedMcpDcrRegistrationRepository.',
+          }, {
+            group: ['**/models/WaitlistRequest', '**/models/WaitlistRequest.*'],
+            message: 'Use repositories/waitlistRequestRepository.',
           }],
         }],
         'no-restricted-modules': ['error', {
           patterns: [
             '**/models/AgentPodReadCursor', '**/models/AgentPodReadCursor.*',
+            '**/models/AgentFirstContact', '**/models/AgentFirstContact.*',
+            '**/models/AgentDigestState', '**/models/AgentDigestState.*',
+            '**/models/AgentTaskWakeState', '**/models/AgentTaskWakeState.*',
+            '**/models/NeedsYouEmailQuota', '**/models/NeedsYouEmailQuota.*',
+            '**/models/AgentComputerTakeover', '**/models/AgentComputerTakeover.*',
+            '**/models/BillingEvent', '**/models/BillingEvent.*',
+            '**/models/DiscordSummaryHistory', '**/models/DiscordSummaryHistory.*',
+            '**/models/NeedsYouEmail', '**/models/NeedsYouEmail.*',
+            '**/models/AgentTaskRowWakeState', '**/models/AgentTaskRowWakeState.*',
+            '**/models/AgentProviderKey', '**/models/AgentProviderKey.*',
+            '**/models/HostedMcpDcrRegistration', '**/models/HostedMcpDcrRegistration.*',
+            '**/models/WaitlistRequest', '**/models/WaitlistRequest.*',
           ],
         }],
       },

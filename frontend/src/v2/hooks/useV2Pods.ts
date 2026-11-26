@@ -4,6 +4,9 @@ import { useV2Api } from './useV2Api';
 export interface V2PodMember {
   _id?: string;
   username?: string;
+  // People only: the name they chose, which others read (F645). The username
+  // stays the mention handle.
+  displayName?: string;
   profilePicture?: string | null;
   isBot?: boolean;
   // Bot members only: the curated label and identity, projected by the pod list.

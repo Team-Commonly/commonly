@@ -80,6 +80,17 @@ it('posts one not-connected line when a person mentions a BYO agent that never p
   });
 });
 
+it('marks the line mcpOnly for an agent whose key was used over MCP and never listened, and only then', async () => {
+  mockFindBot.mockReturnValue(chain(botRow([{ lastUsedAt: NOW, lastMcpSeenAt: NOW }])));
+  expect(await noteNeverConnectedMention(args)).toBe(true);
+  expect(mockEmitNotConnected.mock.calls[0][0]).toMatchObject({ agentKey: 'nova:default', mcpOnly: true });
+
+  mockEmitNotConnected.mockClear();
+  mockFindBot.mockReturnValue(chain(botRow([])));
+  expect(await noteNeverConnectedMention(args)).toBe(true);
+  expect(mockEmitNotConnected.mock.calls[0][0].mcpOnly).toBeUndefined();
+});
+
 it('says nothing with no message to hang it on, since the line is a reply to the mention', async () => {
   const posted = await noteNeverConnectedMention({ ...args, messageId: null });
 

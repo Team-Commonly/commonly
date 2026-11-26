@@ -196,6 +196,60 @@ describe('V2Composer mention-state honesty (#891 surface 1)', () => {
     expect(warning.textContent).toBe("@sam-agent didn't get the last message and may not get this one. Fix: Run the program behind your webhook URL.");
   });
 
+  test('an agent used only over MCP is marked in the picker, and the warning says how it can hear', async () => {
+    mockStates([{
+      agentName: 'sam-agent', instanceId: 'default', state: 'never-connected', isOwner: true,
+      fixCommand: 'commonly agent run sam-agent', mcpOnly: true,
+    }]);
+    renderChat(makeDetail());
+    await waitFor(() => expect(axios.get).toHaveBeenCalledWith(expect.stringContaining('/agent-states'), expect.anything()));
+
+    fireEvent.change(screen.getByPlaceholderText(/message my workspace/i), {
+      target: { value: '@sam' },
+    });
+    const option = await screen.findByRole('option');
+    expect(option.textContent).toContain("opens in its app, won't hear mentions");
+
+    fireEvent.change(screen.getByPlaceholderText(/message my workspace/i), {
+      target: { value: '@sam-agent can you look' },
+    });
+    const warning = await screen.findByTestId('mention-state-warning');
+    expect(warning.textContent).toContain('only reads the pod when you open it in its app');
+    expect(warning.textContent).toContain('commonly agent run sam-agent');
+    expect(warning.textContent).not.toContain("isn't connected");
+  });
+
+  test('an MCP-only key made on the page offers Connect, not a run command that can\'t find the key', async () => {
+    mockStates([{
+      agentName: 'sam-agent', instanceId: 'default', state: 'never-connected', isOwner: true,
+      fixCommand: 'commonly agent run sam-agent', mcpOnly: true, noSavedKey: true, connectPodId: 'pod-1',
+    }]);
+    renderChat(makeDetail());
+    await waitFor(() => expect(axios.get).toHaveBeenCalledWith(expect.stringContaining('/agent-states'), expect.anything()));
+
+    fireEvent.change(screen.getByPlaceholderText(/message my workspace/i), {
+      target: { value: '@sam-agent can you look' },
+    });
+    const warning = await screen.findByTestId('mention-state-warning');
+    expect(warning.textContent).toContain('only reads the pod when you open it in its app');
+    expect(warning.textContent).not.toContain('commonly agent run');
+    expect(warning.querySelector('a')).not.toBeNull();
+  });
+
+  test('a non-owner of an MCP-only agent hears why, with no command', async () => {
+    mockStates([{
+      agentName: 'sam-agent', instanceId: 'default', state: 'never-connected', isOwner: false, mcpOnly: true,
+    }]);
+    renderChat(makeDetail());
+    await waitFor(() => expect(axios.get).toHaveBeenCalledWith(expect.stringContaining('/agent-states'), expect.anything()));
+
+    fireEvent.change(screen.getByPlaceholderText(/message my workspace/i), {
+      target: { value: '@sam-agent ping' },
+    });
+    const warning = await screen.findByTestId('mention-state-warning');
+    expect(warning.textContent).toBe("@sam-agent won't hear this mention. It only reads the pod when its owner opens it in its app.");
+  });
+
   test('a listening agent draws no warning at all', async () => {
     mockStates([{
       agentName: 'sam-agent', instanceId: 'default', state: 'listening', isOwner: true,
@@ -223,5 +277,56 @@ describe('V2Composer mention-state honesty (#891 surface 1)', () => {
 
     const option = await screen.findByRole('option');
     expect(option.textContent).toContain("not connected");
+  });
+});
+
+// F607: beside a sibling install the composer inserts the default's explicit
+// `<agentName>-default` handle, so that handle has to carry the warning too.
+describe('the default install\'s explicit handle carries its state (F607)', () => {
+  test('@<agentName>-default of a disconnected default shows the warning', async () => {
+    mockStates([{
+      agentName: 'sam-agent', instanceId: 'default', state: 'never-connected', isOwner: true, fixCommand: 'commonly agent run sam-agent',
+    }]);
+    renderChat(makeDetail({
+      agents: [
+        { agentName: 'sam-agent', instanceId: 'default', displayName: 'Sam Agent' },
+        { agentName: 'sam-agent', instanceId: 'ops', displayName: 'Ops' },
+      ],
+    }));
+    await waitFor(() => expect(axios.get).toHaveBeenCalledWith(expect.stringContaining('/agent-states'), expect.anything()));
+
+    fireEvent.change(screen.getByPlaceholderText(/message my workspace/i), {
+      target: { value: 'hey @sam-agent-default can you look' },
+    });
+
+    const warning = await screen.findByTestId('mention-state-warning');
+    expect(warning.textContent).toContain("isn't connected");
+  });
+});
+
+// F645: a picker row reads as the name people know, beside the handle it inserts.
+describe('the @ picker reads display names (F645)', () => {
+  test('rows show the display name and the handle, never the runtime name', async () => {
+    mockStates([]);
+    renderChat(makeDetail({
+      members: [
+        { _id: 'u1', username: 'solo-user', isBot: false },
+        { _id: 'b1', username: 'claude-code-gw3-claude', isBot: true, displayLabel: 'gw3-claude' },
+        { _id: 'h2', username: 'growth-t002-10160904a', displayName: 'Alex', isBot: false },
+      ],
+      agents: [{ agentName: 'claude-code', instanceId: 'gw3-claude', displayName: 'Claude Code' }],
+    }));
+    const input = screen.getByPlaceholderText(/message my workspace/i);
+    fireEvent.change(input, { target: { value: '@gw3' } });
+
+    const option = await screen.findByRole('option');
+    expect(option.querySelector('.v2-mention-item__label').textContent).toBe('Claude Code');
+    expect(option.textContent).toContain('@gw3-claude');
+    expect(option.textContent).not.toMatch(/claude-code(?!-)/);
+
+    fireEvent.change(input, { target: { value: '@ale' } });
+    const person = await screen.findByRole('option');
+    expect(person.querySelector('.v2-mention-item__label').textContent).toBe('Alex');
+    expect(person.textContent).toContain('@growth-t002-10160904a');
   });
 });

@@ -1,6 +1,7 @@
 import crypto from 'crypto';
 import type { DecisionCardOption, DecisionRelayCard } from './decisionCardRelay';
 import { escapeRegExp } from '../utils/escape';
+import { rulerNameOf, rulerNamesFor } from './decisionRulerName';
 
 // eslint-disable-next-line global-require
 const DecisionRequest = require('../models/DecisionRequest');
@@ -301,7 +302,7 @@ export const requestDecision = async (input: RequestDecisionOptions): Promise<Re
   };
 };
 
-const decisionPayload = (row: any): Record<string, unknown> => ({
+const decisionPayload = (row: any, byName?: string): Record<string, unknown> => ({
   id: String(row._id),
   status: row.status,
   title: row.title,
@@ -313,10 +314,17 @@ const decisionPayload = (row: any): Record<string, unknown> => ({
   ruling: row.ruling ? {
     value: row.ruling.value,
     by: row.ruling.byUsername,
+    ...(byName || row.ruling.byUsername ? { byName: byName || row.ruling.byUsername } : {}),
     at: row.ruling.at,
     messageId: row.ruling.messageId,
   } : null,
 });
+
+// A standing ruling read back for a caller who did not make it: name its ruler
+// the way people know them (F645).
+const standingPayload = async (row: any): Promise<Record<string, unknown>> => (
+  decisionPayload(row, rulerNameOf(row, await rulerNamesFor([row])))
+);
 
 // The ruled wake names what was asked, so an agent whose session was recycled,
 // or that raised several cards, knows what the pick answers (F588). The caps
@@ -460,16 +468,18 @@ export const chooseDecision = async (
 
   const row = await DecisionRequest.findById(decisionId);
   if (!row) return { status: 404, body: { error: 'Decision request not found' } };
-  if (row.status === 'ruled') {
-    return { status: 409, body: { error: 'Decision already ruled', decision: decisionPayload(row) } };
-  }
 
-  const caller = await User.findById(callerUserId).select('username isBot').lean();
+  const caller = await User.findById(callerUserId).select('username displayName isBot').lean();
   if (!caller || caller.isBot) return { status: 403, body: { error: 'Only a human can rule on this decision' } };
   const pod = await Pod.findById(String(row.podId)).select('members type').lean();
   if (!pod) return { status: 404, body: { error: 'Pod not found' } };
   if (!isListedPodMember(pod, callerUserId)) {
     return { status: 403, body: { error: 'Only human pod members can rule on this decision' } };
+  }
+  // The standing ruling (and its ruler's name) is for members only, so this
+  // answer comes after the caller, bot and membership checks (F645).
+  if (row.status === 'ruled') {
+    return { status: 409, body: { error: 'Decision already ruled', decision: await standingPayload(row) } };
   }
   // A card that names its deciders is theirs to rule; anyone else can read it.
   // Once none of them is still in the pod, any human member may rule, so the
@@ -480,7 +490,7 @@ export const chooseDecision = async (
     && !presentDeciders.some((decider: any) => String(decider.userId) === String(callerUserId))) {
     return {
       status: 403,
-      body: { error: 'This decision is for someone else to rule', code: 'not_a_decider', decision: decisionPayload(row) },
+      body: { error: 'This decision is for someone else to rule', code: 'not_a_decider', decision: await standingPayload(row) },
     };
   }
 
@@ -501,7 +511,7 @@ export const chooseDecision = async (
   if (!claimed) {
     const current = await DecisionRequest.findById(decisionId);
     if (current?.status === 'ruled') {
-      return { status: 409, body: { error: 'Decision already ruled', decision: decisionPayload(current) } };
+      return { status: 409, body: { error: 'Decision already ruled', decision: await standingPayload(current) } };
     }
     return { status: 409, body: { error: 'Decision is being ruled; retry shortly' } };
   }
@@ -517,6 +527,7 @@ export const chooseDecision = async (
     throw new DecisionRequestError('Ruling could not be posted; the decision remains open', 503, 'ruling_not_posted');
   }
 
+  const callerName = caller.displayName?.trim() || caller.username || undefined;
   const ruledAt = new Date();
   const ruled = await DecisionRequest.findOneAndUpdate(
     { _id: claimed._id, status: 'pending', 'rulingLock.token': lockToken },
@@ -594,7 +605,7 @@ export const chooseDecision = async (
       userId: callerUserId,
       replyToMessageId: String(ruled.messageId),
     });
-    return { status: 200, body: { ok: true, decision: decisionPayload(ruled) } };
+    return { status: 200, body: { ok: true, decision: decisionPayload(ruled, callerName) } };
   }
   // The typed event is the asking agent's one return turn. Still run the
   // normal message-delivery seam so explicit mentions in the human ruling
@@ -618,13 +629,108 @@ export const chooseDecision = async (
   } catch (error) {
     console.warn('[decision-request] supplementary ruling delivery failed:', (error as Error).message);
   }
-  return { status: 200, body: { ok: true, decision: decisionPayload(ruled) } };
+  return { status: 200, body: { ok: true, decision: decisionPayload(ruled, callerName) } };
+};
+
+/**
+ * The decision behind an agent card's acting Buttons: opened on the first
+ * click, keyed to the card's message, and ruled through chooseDecision so the
+ * person's choice reaches the agent as the same `decision.ruled` turn a
+ * decision card sends. It is never queued as an attention item: the card in
+ * the thread is the ask.
+ */
+const CARD_DECISION_TITLE_MAX = 160;
+const CARD_DECISION_QUESTION_MAX = 1000;
+
+const loadActingCard = async (
+  messageId: string,
+  callerUserId: string,
+): Promise<{ status: number; body: Record<string, unknown> } | {
+  message: any; pod: any; choices: Array<{ label: string; value: string }>;
+}> => {
+  if (!/^\d{1,18}$/.test(messageId)) return { status: 404, body: { error: 'Card not found' } };
+  const message = await PGMessage.findById(messageId);
+  if (!message) return { status: 404, body: { error: 'Card not found' } };
+  // Who may choose is settled before anything about the message is revealed.
+  const caller = await User.findById(callerUserId).select('username isBot').lean();
+  if (!caller || caller.isBot) return { status: 403, body: { error: 'Only a person can choose on this card' } };
+  const pod = await Pod.findById(String(message.pod_id)).select('members type').lean();
+  if (!pod || !isListedPodMember(pod, callerUserId)) {
+    return { status: 403, body: { error: 'Only pod members can choose on this card' } };
+  }
+  // eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
+  const { cardChoices } = require('./uiCardValidation');
+  const choices = message.message_type === 'card' && message.payload?.kind === 'ui'
+    ? cardChoices(message.payload, message.content) as Array<{ label: string; value: string }> : [];
+  if (!choices.length) return { status: 404, body: { error: 'Card has no choices' } };
+  return { message, pod, choices };
+};
+
+/** Whether a card's choice is made, and what it was. */
+export const cardChoiceState = async (
+  input: { messageId: unknown; callerUserId: unknown },
+): Promise<{ status: number; body: Record<string, unknown> }> => {
+  const loaded = await loadActingCard(String(input.messageId || ''), String(input.callerUserId || ''));
+  if ('status' in loaded) return loaded;
+  const row = await DecisionRequest.findOne({ cardMessageId: String(loaded.message.id) }).lean();
+  return { status: 200, body: { decision: row?.status === 'ruled' ? decisionPayload(row) : null } };
+};
+
+export const chooseCardButton = async (
+  input: { messageId: unknown; callerUserId: unknown; value: unknown },
+): Promise<{ status: number; body: Record<string, unknown> }> => {
+  const messageId = String(input.messageId || '');
+  const callerUserId = String(input.callerUserId || '');
+  const loaded = await loadActingCard(messageId, callerUserId);
+  if ('status' in loaded) return loaded;
+  const { message, choices } = loaded;
+  // Only a value the stored card offers: the browser sends it, the card decides it.
+  const value = typeof input.value === 'string' ? input.value : '';
+  if (!choices.some((choice) => choice.value === value)) {
+    return { status: 400, body: { error: 'Not one of this card\'s choices', code: 'not_a_card_choice' } };
+  }
+  const agent = await User.findById(String(message.user_id)).select('isBot botMetadata').lean();
+  const agentName = String(agent?.botMetadata?.agentName || '').toLowerCase();
+  if (!agent?.isBot || !agentName) return { status: 404, body: { error: 'Card has no agent to answer' } };
+
+  const content = String(message.content || '').trim();
+  const firstLine = content.split('\n')[0] || 'Card';
+  // Two first clicks can both reach here. The unique cardMessageId index keeps
+  // them on one row, and chooseDecision's compare-and-set lets one of them win.
+  const cardKey = { cardMessageId: String(message.id) };
+  await DecisionRequest.findOneAndUpdate(
+    cardKey,
+    {
+      $setOnInsert: {
+        podId: String(message.pod_id),
+        agentUserId: String(message.user_id),
+        agentName,
+        instanceId: String(agent.botMetadata?.instanceId || 'default').toLowerCase(),
+        decisionClass: 'implementation',
+        title: firstLine.slice(0, CARD_DECISION_TITLE_MAX),
+        question: content.slice(0, CARD_DECISION_QUESTION_MAX),
+        options: choices.map((choice) => ({ label: choice.value })),
+        status: 'pending',
+        messageId: String(message.id),
+        ...(message.thread_root_id ? { threadRootId: String(message.thread_root_id) } : {}),
+      },
+    },
+    { upsert: true, new: true },
+  ).catch((error: { code?: number }) => {
+    // The other first click inserted the row between our read and our insert.
+    if (error?.code !== 11000) throw error;
+  });
+  const row = await DecisionRequest.findOne(cardKey).lean();
+  if (!row) return { status: 409, body: { error: 'Try again', code: 'card_choice_conflict' } };
+  return chooseDecision({
+    decisionId: String(row._id), callerUserId, value, origin: { via: 'workspace' },
+  });
 };
 
 export default {
-  requestDecision, chooseDecision, normalizeOptions, normalizeDecisionClass, DecisionRequestError,
+  requestDecision, chooseDecision, chooseCardButton, cardChoiceState, normalizeOptions, normalizeDecisionClass, DecisionRequestError,
 };
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 module.exports = {
-  requestDecision, chooseDecision, normalizeOptions, normalizeDecisionClass, DecisionRequestError,
+  requestDecision, chooseDecision, chooseCardButton, cardChoiceState, normalizeOptions, normalizeDecisionClass, DecisionRequestError,
 };

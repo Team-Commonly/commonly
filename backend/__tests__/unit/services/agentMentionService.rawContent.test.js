@@ -342,7 +342,10 @@ describe('payload.rawContent is the author\'s text without frames (F109)', () =>
     test('an active row that lost its membership gets it back, keeping its config', async () => {
       expect(await mention('active', [OWNER])).toBeDefined();
       expect(AgentInstallation.upsert).not.toHaveBeenCalled();
-      expect(Pod.updateOne).toHaveBeenCalledWith({ _id: 'pod-1' }, { $addToSet: { members: HELPER_BOT } });
+      expect(Pod.updateOne).toHaveBeenCalledWith(
+        { _id: 'pod-1' },
+        { $addToSet: { members: HELPER_BOT }, $inc: { __v: 1 } },
+      );
     });
 
     test('a protected pod still refuses that membership', async () => {

@@ -4,7 +4,7 @@ import dualAuth from '../middleware/dualAuth';
 import { validateAgentCardPayload } from '../services/uiCardValidation';
 import { describeSkippedPost } from '../services/skippedPostGuidance';
 import { memoryWriteOwnerOnly } from '../services/spawnCredentialService';
-import { noteMachineAnswered } from '../services/machineService';
+import { noteMachineAnswered, noteMachinePosted } from '../services/machineService';
 import { harnessCatalogEntry } from '../config/harnessCatalog';
 export {};
 
@@ -24,6 +24,8 @@ const MAX_UPSTREAM_STATUS = 599;
 import rateLimit from 'express-rate-limit';
 import { SharedRateLimitStore } from '../middleware/sharedRateLimitStore';
 import { platformIpRateLimit } from '../middleware/platformRateLimit';
+import { logOutboundFailure } from '../utils/safeErrorLog';
+import { parsePublicPrRef, PublicPrError, readPublicPullRequest } from '../services/githubPublicPr';
 
 const express = require('express');
 const agentHooksRoutes = require('./agentHooks');
@@ -730,8 +732,82 @@ router.get('/grant-brokers', phase4RateLimit, agentRuntimeAuth, async (req: any,
     if (!agentUserId) return res.json({ servers: [], refusal: null });
     return res.json(await grantBrokersForRuntimeSeat({ agentUserId, adapter }));
   } catch (error) {
-    console.error('Error projecting grant brokers:', (error as Error).message || error);
+    logOutboundFailure('Error projecting grant brokers:', error);
     return res.status(500).json({ message: 'Failed to read grant brokers' });
+  }
+});
+
+// F646: a public GitHub PR read for an agent whose sandbox has no network.
+// Every agent on this server shares GitHub's unauthenticated budget (60 an
+// hour per address), so one seat gets 10 reads a minute and 15 an hour on top
+// of its general runtime budget. Inline and ahead of auth, like
+// phase4RateLimit above.
+const publicPrMinuteLimit = rateLimit({
+  store: new SharedRateLimitStore({ name: 'agents-runtime-public-pr' }),
+  windowMs: 60_000,
+  max: 10,
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: agentRateLimitKeyGenerator,
+  handler: (_req: any, res: any) => res.status(429).json({
+    message: 'rate limit exceeded: 10 public PR reads per 60s',
+    code: 'rate_limited',
+  }),
+});
+// A read that sent GitHub nothing (a cache hit, a read held at the headroom
+// floor, or a 400/401/403 refusal) is given back after it answers: `skipFailedRequests`
+// decrements every response `requestWasSuccessful` calls unsuccessful. The
+// count is taken before the handler runs, so a 16th read in the hour is
+// refused even when the cache would have answered it.
+const publicPrHourLimit = rateLimit({
+  store: new SharedRateLimitStore({ name: 'agents-runtime-public-pr-hour' }),
+  windowMs: 60 * 60_000,
+  max: 15,
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: agentRateLimitKeyGenerator,
+  skipFailedRequests: true,
+  requestWasSuccessful: (_req: any, res: any) => res.locals?.publicPrSentGithubNothing !== true
+    && ![400, 401, 403].includes(res.statusCode),
+  handler: (_req: any, res: any) => res.status(429).json({
+    message: 'rate limit exceeded: 15 public PR reads per hour',
+    code: 'rate_limited',
+  }),
+});
+const publicPrLimits = [publicPrMinuteLimit, publicPrHourLimit];
+
+/**
+ * GET /github/public-pr?owner=&repo=&number= — read-only, public repos only.
+ * The route takes names, never a URL: githubPublicPr.ts validates them, builds
+ * the api.github.com request itself and sends no credential of anyone's, so a
+ * private repo answers 404 `pr_not_found_or_private`.
+ */
+router.get('/github/public-pr', phase4RateLimit, publicPrLimits, agentRuntimeAuth, async (req: any, res: any) => {
+  // agentRuntimeAuth refuses a token with no active installation; this holds
+  // the route to that even if a future auth path admits one without.
+  if (!req.agentUser?._id || !(req.agentInstallations || []).length) {
+    return res.status(403).json({
+      code: 'agent_installation_required',
+      message: 'Only an agent installed in a pod can read a pull request through Commonly',
+    });
+  }
+  try {
+    const ref = parsePublicPrRef(req.query);
+    const { pr, fromCache } = await readPublicPullRequest(ref);
+    if (fromCache) res.locals.publicPrSentGithubNothing = true;
+    return res.json(pr);
+  } catch (error) {
+    if (error instanceof PublicPrError) {
+      if (error.sentGithubNothing) res.locals.publicPrSentGithubNothing = true;
+      if (error.retryAfterSeconds !== undefined) res.set('Retry-After', String(error.retryAfterSeconds));
+      return res.status(error.status).json({
+        code: error.code,
+        message: error.message,
+        ...(error.retryAfterSeconds !== undefined ? { retryAfterSeconds: error.retryAfterSeconds } : {}),
+      });
+    }
+    logOutboundFailure('Error reading a public pull request:', error);
+    return res.status(500).json({ message: 'Failed to read the pull request' });
   }
 });
 
@@ -823,7 +899,7 @@ router.get('/installations', phase4RateLimit, agentRuntimeAuth, async (req: any,
     try {
       narrowedPods = new Set([...await podsWithOutsiderWritableGrants(censusPodIds)].map(String));
     } catch (error: any) {
-      console.error('Outsider grant census for /installations failed:', error?.message || error);
+      logOutboundFailure('Outsider grant census for /installations failed:', error);
       narrowedPods = new Set(censusPodIds);
     }
 
@@ -879,7 +955,7 @@ router.get('/installations', phase4RateLimit, agentRuntimeAuth, async (req: any,
       installations: [...installationList, ...dmList],
     });
   } catch (error: any) {
-    console.error('Error fetching agent installations:', (error as Error).message || error);
+    logOutboundFailure('Error fetching agent installations:', error);
     return res.status(500).json({ message: 'Failed to fetch installations' });
   }
 });
@@ -1084,7 +1160,7 @@ router.get('/events', longPollIpLimit, agentRuntimeAuth, async (req: any, res: a
   } catch (error: any) {
     // The release is idempotent; this covers a throw anywhere in the hold.
     untrackHeldPoll?.();
-    console.error('Error listing agent events:', error);
+    logOutboundFailure('Error listing agent events:', error);
     return res.status(500).json({ message: 'Failed to list agent events' });
   }
 });
@@ -1139,7 +1215,7 @@ router.get('/bot/events', longPollIpLimit, auth, requireApiTokenScopes(['agent:e
 
     return res.json({ events });
   } catch (error: any) {
-    console.error('Error listing bot events:', error);
+    logOutboundFailure('Error listing bot events:', error);
     return res.status(500).json({ message: 'Failed to list bot events' });
   }
 });
@@ -1263,7 +1339,7 @@ router.post('/dm', phase4RateLimit, auth, async (req: any, res: any) => {
 
     return res.json({ dmPod });
   } catch (error: any) {
-    console.error('Error creating/fetching agent DM:', error);
+    logOutboundFailure('Error creating/fetching agent DM:', error);
     return res.status(500).json({ message: 'Failed to create/fetch agent DM' });
   }
 });
@@ -1486,7 +1562,7 @@ router.post('/room', phase4RateLimit, dualAuth, async (req: any, res: any) => {
     if (isHostedRoomRefusal(error)) {
       return res.status(error.status).json({ message: error.message, code: error.code });
     }
-    console.error('Error creating/fetching agent room:', error);
+    logOutboundFailure('Error creating/fetching agent room:', error);
     return res.status(500).json({ message: 'Failed to create/fetch agent room' });
   }
 });
@@ -1696,7 +1772,7 @@ router.post('/agent-dm', phase4RateLimit, agentRuntimeAuth, async (req: any, res
 
     return res.json({ room, autoJoined: false });
   } catch (error: any) {
-    console.error('Error creating/fetching agent-dm:', error);
+    logOutboundFailure('Error creating/fetching agent-dm:', error);
     return res.status(500).json({ message: 'Failed to create/fetch agent-dm' });
   }
 });
@@ -1756,7 +1832,7 @@ router.post('/bot/events/:id/ack', phase4RateLimit, auth, requireApiTokenScopes(
 
     return res.json({ success: true });
   } catch (error: any) {
-    console.error('Error acknowledging bot event:', error);
+    logOutboundFailure('Error acknowledging bot event:', error);
     return res.status(500).json({ message: 'Failed to acknowledge bot event' });
   }
 });
@@ -1892,7 +1968,7 @@ router.post('/events/:id/ack', phase4RateLimit, agentRuntimeAuth, async (req: an
     }
     return res.json({ success: true });
   } catch (error: any) {
-    console.error('Error acknowledging agent event:', error);
+    logOutboundFailure('Error acknowledging agent event:', error);
     return res.status(500).json({ message: 'Failed to acknowledge agent event' });
   }
 });
@@ -1959,7 +2035,7 @@ router.get(
       }
       return res.json(publicContext);
     } catch (error: any) {
-      console.error('Error fetching bot pod context:', error);
+      logOutboundFailure('Error fetching bot pod context:', error);
       return res.status(500).json({ message: 'Failed to fetch pod context' });
     }
   },
@@ -2006,7 +2082,7 @@ router.get(
       }
       return res.json({ messages });
     } catch (error: any) {
-      console.error('Error fetching bot messages:', error);
+      logOutboundFailure('Error fetching bot messages:', error);
       return res.status(500).json({ message: 'Failed to fetch messages' });
     }
   },
@@ -2062,6 +2138,9 @@ router.post(
         ...(payload !== undefined ? { payload } : {}),
         installationConfig: installation.config || null,
       });
+      // F639: same as the runtime message route. requireBotUser loads the
+      // whole bot row, so botMetadata.machineId is there.
+      if (result.success && !result.skipped && result.message) noteMachinePosted(user, { podId });
 
       return res.json({ ...describeSkippedPost(result), ...result });
     } catch (error: any) {
@@ -2075,8 +2154,8 @@ router.post(
           ...(err.code ? { code: err.code } : {}),
         });
       }
-      console.error('Error posting bot message:', error);
-      return res.status(500).json({ message: err.message || 'Failed to post message' });
+      logOutboundFailure('Error posting bot message:', error);
+      return res.status(500).json({ message: 'Failed to post message' });
     }
   },
 );
@@ -2135,11 +2214,17 @@ router.post(
         threadId,
         content,
       });
+      // F639: a bot user can be bound to a machine too (requireBotUser loads
+      // the whole row, botMetadata included). Same conditions as the runtime
+      // comment route, and the comment's target pod for the DM exclusion.
+      if (result.success && !result.skipped && !result.duplicate && result.comment) {
+        noteMachinePosted(user, { podId: targetPodId });
+      }
 
       return res.json(result);
     } catch (error: any) {
-      console.error('Error posting bot thread comment:', error);
-      return res.status(500).json({ message: (error as Error).message || 'Failed to post comment' });
+      logOutboundFailure('Error posting bot thread comment:', error);
+      return res.status(500).json({ message: 'Failed to post comment' });
     }
   },
 );
@@ -2168,7 +2253,7 @@ router.get('/pods/:podId/skills', phase4RateLimit, agentRuntimeAuth, async (req:
     })).filter((item: { name: string; content: string }) => item.name && item.content);
     return res.json({ items });
   } catch (error) {
-    console.error('Error loading agent skills:', error);
+    logOutboundFailure('Error loading agent skills:', error);
     return res.status(500).json({ message: 'Failed to load agent skills' });
   }
 });
@@ -2196,7 +2281,7 @@ router.post('/pods/:podId/skill-load', phase4RateLimit, agentRuntimeAuth, async 
     );
     return res.json({ success: true });
   } catch (error) {
-    console.error('Error recording skill load:', error);
+    logOutboundFailure('Error recording skill load:', error);
     return res.status(500).json({ message: 'Failed to record skill load' });
   }
 });
@@ -2301,10 +2386,13 @@ router.get('/pods/:podId/context', phase4RateLimit, agentRuntimeAuth, async (req
     if (error.status) statusCode = error.status;
     else if ((error as any).code === 'POD_NOT_FOUND') statusCode = 404;
     else if ((error as any).code === 'NOT_A_MEMBER') statusCode = 403;
-    console.error(`Error fetching agent pod context [${statusCode}]:`, (error as Error).message || error);
+    logOutboundFailure(`Error fetching agent pod context [${statusCode}]:`, error);
     return res.status(statusCode).json({
-      message: (error as Error).message || 'Failed to fetch pod context',
-      code: (error as any).code || 'INTERNAL_ERROR',
+      // A 5xx is unexpected: fixed text. A refusal carrying its own status or
+      // POD_NOT_FOUND / NOT_A_MEMBER is ours to say.
+      message: statusCode >= 500 ? 'Failed to fetch pod context' : ((error as Error).message || 'Failed to fetch pod context'),
+      // A driver's code (Mongo's numeric 11000) is not a reason to hand an agent.
+      code: statusCode >= 500 ? 'INTERNAL_ERROR' : ((error as any).code || 'INTERNAL_ERROR'),
     });
   }
 });
@@ -2339,7 +2427,7 @@ router.post('/pods/:podId/catch-up', phase4RateLimit, agentRuntimeAuth, async (r
     res.set('Cache-Control', 'no-store');
     return res.json({ messages, catchUp: { ...catchUp, through: start } });
   } catch (error) {
-    console.error('Error catching up agent pod history:', error);
+    logOutboundFailure('Error catching up agent pod history:', error);
     return res.status(503).json({ message: 'Catch-up unavailable; retry before generating a reply' });
   }
 });
@@ -2469,7 +2557,7 @@ router.get('/pods/:podId/messages', phase4RateLimit, agentRuntimeAuth, async (re
       : {};
     return res.json({ messages: withMention, hasMore, ...attendance });
   } catch (error: any) {
-    console.error('Error fetching pod messages:', error);
+    logOutboundFailure('Error fetching pod messages:', error);
     return res.status(500).json({ message: 'Failed to fetch messages' });
   }
 });
@@ -2501,7 +2589,7 @@ router.get('/pods/:podId/files', phase4RateLimit, agentRuntimeAuth, async (req: 
       })),
     });
   } catch (error: any) {
-    console.error('Error listing pod files:', error);
+    logOutboundFailure('Error listing pod files:', error);
     return res.status(500).json({ message: 'Failed to list files' });
   }
 });
@@ -2612,7 +2700,7 @@ router.get('/pods/:podId/files/:fileName/content', phase4RateLimit, agentRuntime
         : 'Binary file — content is not returned as text.',
     });
   } catch (error: any) {
-    console.error('Error reading pod file:', error);
+    logOutboundFailure('Error reading pod file:', error);
     return res.status(500).json({ message: 'Failed to read file' });
   }
 });
@@ -2688,7 +2776,7 @@ router.get('/pods/:podId/posts', phase4RateLimit, agentRuntimeAuth, async (req: 
 
     return res.json({ posts: result });
   } catch (error: any) {
-    console.error('Error fetching pod posts:', error);
+    logOutboundFailure('Error fetching pod posts:', error);
     return res.status(500).json({ message: 'Failed to fetch posts' });
   }
 });
@@ -2758,7 +2846,7 @@ router.post('/pods/:podId/typing', phase4RateLimit, agentRuntimeAuth, async (req
     typing.emitAgentTypingStart({ podId, agentName, instanceId, displayName, avatar });
     return res.json({ ok: true, action: 'start', displayName });
   } catch (error: any) {
-    console.error('agent typing route error:', error?.message || error);
+    logOutboundFailure('agent typing route error:', error);
     return res.status(500).json({ message: 'typing-indicator emit failed' });
   }
 });
@@ -2857,6 +2945,9 @@ router.post('/pods/:podId/messages', phase4RateLimit, agentRuntimeAuth, async (r
     // direction (human-side enqueueDmEvent for all three DM types) lives in
     // backend/controllers/messageController.ts.
     if (result.success && !result.skipped && result.message) {
+      // F639: the agent's machine has answered, unless this pod is an
+      // agent-to-agent DM. Fire and forget.
+      noteMachinePosted(req.agentUser, { podId });
       AgentMentionService.enqueueAgentPost({
         podId, message: result.message, userId: req.agentUser?._id, username: req.agentUser?.username,
       }).catch((err: any) => console.warn('agent post-message DM/mention enqueue failed:', err.message));
@@ -2905,8 +2996,8 @@ router.post('/pods/:podId/messages', phase4RateLimit, agentRuntimeAuth, async (r
         ...(err.code ? { code: err.code } : {}),
       });
     }
-    console.error('Error posting agent message:', error);
-    return res.status(500).json({ message: err.message || 'Failed to post message' });
+    logOutboundFailure('Error posting agent message:', error);
+    return res.status(500).json({ message: 'Failed to post message' });
   }
 });
 
@@ -2959,8 +3050,8 @@ router.post('/pods/:podId/propose-action', phase4RateLimit, agentRuntimeAuth, as
         ...(err.code ? { code: err.code } : {}),
       });
     }
-    console.error('Error proposing agent action:', error);
-    return res.status(500).json({ message: err.message || 'Failed to propose action' });
+    logOutboundFailure('Error proposing agent action:', error);
+    return res.status(500).json({ message: 'Failed to propose action' });
   }
 });
 
@@ -3032,8 +3123,8 @@ router.post('/pods/:podId/summaries', phase4RateLimit, agentRuntimeAuth, async (
         : null,
     });
   } catch (error: any) {
-    console.error('Error persisting agent summary:', error);
-    return res.status(500).json({ message: (error as Error).message || 'Failed to persist summary' });
+    logOutboundFailure('Error persisting agent summary:', error);
+    return res.status(500).json({ message: 'Failed to persist summary' });
   }
 });
 
@@ -3079,11 +3170,17 @@ router.post('/threads/:threadId/comments', phase4RateLimit, agentRuntimeAuth, as
       replyToCommentId: replyToCommentId || null,
       onlyIfUnanswered: onlyIfUnanswered === true,
     });
+    // F639: a new comment is the agent's machine answering. A duplicate is
+    // one it already posted, which stamped then. The thread's pod was read
+    // above, so it rides along at no cost.
+    if (result.success && !result.skipped && !result.duplicate && result.comment) {
+      noteMachinePosted(req.agentUser, { podId: post.podId });
+    }
 
     return res.json(result);
   } catch (error: any) {
-    console.error('Error posting agent thread comment:', error);
-    return res.status(500).json({ message: (error as Error).message || 'Failed to post comment' });
+    logOutboundFailure('Error posting agent thread comment:', error);
+    return res.status(500).json({ message: 'Failed to post comment' });
   }
 });
 
@@ -3338,7 +3435,7 @@ router.get('/memory', phase4RateLimit, agentRuntimeAuth, async (req: any, res: a
       schemaVersion: record?.schemaVersion,
     });
   } catch (err: any) {
-    console.error('GET /memory error:', err);
+    logOutboundFailure('GET /memory error:', err);
     return res.status(500).json({ message: 'Failed to read agent memory' });
   }
 });
@@ -3465,7 +3562,7 @@ router.put('/memory', phase4RateLimit, agentRuntimeAuth, ownerOnlyMemoryWrite, a
     // or an evicted one — is indistinguishable from a stored one without this.
     return res.json({ ok: true, ...describeCycleMutation(cycleResult) });
   } catch (err: any) {
-    console.error('PUT /memory error:', err);
+    logOutboundFailure('PUT /memory error:', err);
     return res.status(500).json({ message: 'Failed to write agent memory' });
   }
 });
@@ -3633,7 +3730,7 @@ router.post('/memory/sync', phase4RateLimit, agentRuntimeAuth, ownerOnlyMemoryWr
 
     return res.json({ ok: true, schemaVersion: 2, ...cycleMutation });
   } catch (err: any) {
-    console.error('POST /memory/sync error:', err);
+    logOutboundFailure('POST /memory/sync error:', err);
     return res.status(500).json({ message: 'Failed to sync agent memory' });
   }
 });
@@ -3699,8 +3796,8 @@ router.post('/posts', phase4RateLimit, agentRuntimeAuth, async (req: any, res: a
 
     return res.status(201).json(post);
   } catch (error: any) {
-    console.error('Error creating agent post:', error);
-    return res.status(500).json({ message: (error as Error).message || 'Failed to create post' });
+    logOutboundFailure('Error creating agent post:', error);
+    return res.status(500).json({ message: 'Failed to create post' });
   }
 });
 
@@ -3812,7 +3909,7 @@ router.get('/pods', phase4RateLimit, agentRuntimeAuth, async (req: any, res: any
 
     return res.json({ pods: result });
   } catch (error: any) {
-    console.error('Error listing pods:', error);
+    logOutboundFailure('Error listing pods:', error);
     return res.status(500).json({ message: 'Failed to list pods' });
   }
 });
@@ -3945,11 +4042,37 @@ router.post('/pods', phase4RateLimit, agentRuntimeAuth, async (req: any, res: an
       }
 
       if (!isMember) {
+        // F619: one conditional write, as in ensureAgentInPod (F605). The
+        // filter holds the two rules read above at the write itself: a join
+        // landing during the policy check must not leave the agent in
+        // `members` twice, and a pod that became a 1:1 DM is refused. The
+        // `__v` bump makes a stale whole-array save (removeAgentFromPod) fail
+        // with VersionError instead of silently dropping this add.
+        const added = await Pod.updateOne(
+          {
+            _id: existingPod._id,
+            members: { $ne: agentUser._id },
+            type: { $nin: Array.from(DM_POD_TYPES_GUARD) },
+          },
+          { $addToSet: { members: agentUser._id }, $inc: { __v: 1 } },
+        );
+        if (!added.modifiedCount) {
+          // Lost the race, or the pod changed under us. Re-read to say which.
+          const current = await Pod.findById(existingPod._id).select('type members').lean();
+          if (!current) return res.status(404).json({ message: 'Pod not found' });
+          const nowMember = (current.members || []).some((m: any) => String(m) === String(agentUser._id));
+          if (!nowMember) {
+            return refusePodNameCollision(`became type=${current.type} (1:1 DM) before the join (ADR-001 §3.10)`);
+          }
+          // Someone else added the agent meanwhile and mirrored their own add.
+        }
+        // The response reads the pod as joined, so it includes the agent.
         existingPod.members.push(agentUser._id);
-        await existingPod.save();
-        // F183: best-effort PG mirror write; never fails the join.
-        // eslint-disable-next-line @typescript-eslint/no-require-imports, global-require
-        await require('../services/pgMirrorWrite').mirrorMemberAdded(String(existingPod._id), String(agentUser._id));
+        if (added.modifiedCount) {
+          // F183: best-effort PG mirror write; never fails the join.
+          // eslint-disable-next-line @typescript-eslint/no-require-imports, global-require
+          await require('../services/pgMirrorWrite').mirrorMemberAdded(String(existingPod._id), String(agentUser._id));
+        }
         await existingPod.populate(podMemberPopulate('username profilePicture'));
       }
       // Ensure an AgentInstallation exists so the agent appears in the Agents section
@@ -4050,8 +4173,8 @@ router.post('/pods', phase4RateLimit, agentRuntimeAuth, async (req: any, res: an
 
     return res.status(201).json(pod);
   } catch (error: any) {
-    console.error('Error creating agent pod:', error);
-    return res.status(500).json({ message: (error as Error).message || 'Failed to create pod' });
+    logOutboundFailure('Error creating agent pod:', error);
+    return res.status(500).json({ message: 'Failed to create pod' });
   }
 });
 
@@ -4155,8 +4278,8 @@ router.post('/pods/:podId/self-install', phase4RateLimit, agentRuntimeAuth, asyn
 
     return res.status(201).json({ message: 'Self-installed successfully', podId, installationId: installation._id });
   } catch (error: any) {
-    console.error('Error in agent self-install:', error);
-    return res.status(500).json({ message: (error as Error).message || 'Failed to self-install' });
+    logOutboundFailure('Error in agent self-install:', error);
+    return res.status(500).json({ message: 'Failed to self-install' });
   }
 });
 
@@ -4219,7 +4342,7 @@ router.get('/pods/:podId/integrations', phase4RateLimit, agentRuntimeAuth, async
       }),
     });
   } catch (error: any) {
-    console.error('Error fetching integrations for agent:', error);
+    logOutboundFailure('Error fetching integrations for agent:', error);
     return res.status(500).json({ message: 'Failed to fetch integrations' });
   }
 });
@@ -4317,10 +4440,10 @@ router.get('/pods/:podId/integrations/:integrationId/messages', phase4RateLimit,
 
     return res.json({ messages });
   } catch (error: any) {
-    // The message only: a provider's HTTP error object carries its request
-    // config, which holds the credential (a query param or an auth header).
-    console.error('Error fetching messages for agent:', (error as Error)?.message);
-    return res.status(500).json({ message: (error as Error).message || 'Failed to fetch messages' });
+    // logOutboundFailure keeps the message only: a provider's HTTP error object
+    // carries its request config, which holds the credential.
+    logOutboundFailure('Error fetching messages for agent:', error);
+    return res.status(500).json({ message: 'Failed to fetch messages' });
   }
 });
 
@@ -4342,7 +4465,7 @@ router.get('/pods/:podId/social-policy', phase4RateLimit, agentRuntimeAuth, asyn
     const policy = await SocialPolicyService.getPolicy();
     return res.json({ policy });
   } catch (error: any) {
-    console.error('Error fetching social policy for agent:', error);
+    logOutboundFailure('Error fetching social policy for agent:', error);
     return res.status(500).json({ message: 'Failed to fetch social policy' });
   }
 });
@@ -4496,8 +4619,8 @@ router.post('/pods/:podId/integrations/:integrationId/publish', phase4RateLimit,
 
     return res.json({ success: true, result });
   } catch (error: any) {
-    console.error('Error publishing via integration for agent:', error);
-    return res.status(500).json({ message: (error as Error).message || 'Failed to publish via integration' });
+    logOutboundFailure('Error publishing via integration for agent:', error);
+    return res.status(500).json({ message: 'Failed to publish via integration' });
   }
 });
 
@@ -4588,7 +4711,7 @@ router.get(
         },
       });
     } catch (err: any) {
-      console.error('GET /memory/shared error:', err);
+      logOutboundFailure('GET /memory/shared error:', err);
       return res.status(500).json({ message: 'Failed to read shared memory' });
     }
   },
@@ -4662,7 +4785,7 @@ router.post('/pods/:podId/ask', phase4RateLimit, agentRuntimeAuth, async (req: a
       throw askErr;
     }
   } catch (err: any) {
-    console.error('POST /pods/:podId/ask error:', err);
+    logOutboundFailure('POST /pods/:podId/ask error:', err);
     return res.status(500).json({ message: 'Failed to ask agent' });
   }
 });
@@ -4737,7 +4860,7 @@ router.post('/decisions', phase4RateLimit, agentRuntimeAuth, async (req: any, re
     if (error instanceof DecisionRequestService.DecisionRequestError) {
       return res.status(error.status).json({ message: error.message, code: error.code });
     }
-    console.error('POST /decisions error:', error);
+    logOutboundFailure('POST /decisions error:', error);
     return res.status(500).json({ message: 'Failed to request a decision' });
   }
 });
@@ -4779,7 +4902,7 @@ router.post('/asks/:requestId/respond', phase4RateLimit, agentRuntimeAuth, async
       throw respondErr;
     }
   } catch (err: any) {
-    console.error('POST /asks/:requestId/respond error:', err);
+    logOutboundFailure('POST /asks/:requestId/respond error:', err);
     return res.status(500).json({ message: 'Failed to respond to ask' });
   }
 });
@@ -4808,7 +4931,7 @@ router.get('/pods/:podId/send-freshness', phase4RateLimit, agentRuntimeAuth, asy
     const hold = await AgentSendFreshness.unseenMessages(agentUser._id, podId);
     return hold ? res.status(409).json(hold) : res.json({ ok: true });
   } catch (error: any) {
-    console.error('Agent freshness check error:', error);
+    logOutboundFailure('Agent freshness check error:', error);
     return res.status(500).json({ message: 'Failed to check send freshness' });
   }
 });
@@ -4845,7 +4968,7 @@ router.post('/pods/:podId/uploads', phase4RateLimit, agentRuntimeAuth, uploadSin
     req.body = { ...(req.body || {}), podId };
     return await handleUpload(req, res, req.agentUser._id.toString());
   } catch (error: any) {
-    console.error('Agent upload error:', error);
+    logOutboundFailure('Agent upload error:', error);
     return res.status(500).json({ message: 'Failed to upload file' });
   }
 });

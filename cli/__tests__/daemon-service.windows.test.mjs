@@ -5,6 +5,7 @@
 import { mkdtempSync, readFileSync, rmSync } from 'fs';
 import { tmpdir } from 'os';
 import { join } from 'path';
+import { EventEmitter } from 'events';
 import { jest } from '@jest/globals';
 
 import {
@@ -25,6 +26,7 @@ import {
   psQuote,
   windowsLauncherScript,
   LAUNCHER_PID_ENV,
+  launcherPidAlive,
   watchWindowsLauncher,
   windowsTaskXml,
   windowsUserId,
@@ -338,5 +340,81 @@ describe('the daemon follows its launcher (schtasks /End kills the launcher only
     expect(onGone).toHaveBeenCalledTimes(1);
     expect(onGone).toHaveBeenCalledWith(4242);
     expect(ticks).toHaveLength(0);
+  });
+});
+
+// F637: a Windows install piled up ~140 daemons on one key. The pieces of the
+// launcher and the watch that let an orphan keep running, and their fixes.
+describe('F637: one daemon per machine under the launcher', () => {
+  const script = windowsLauncherScript({
+    nodePath, cliPath, logPath: 'C:\\l.log', envFile: 'C:\\e.json',
+  });
+
+  test('exit 79 (another daemon holds the lock) waits 30 s and loops, without disabling the task or exiting', () => {
+    const branch = script.match(/if \(\$code -eq 79\) \{([^}]*)\}/);
+    expect(branch).not.toBeNull();
+    expect(branch[1]).toContain('Start-Sleep -Seconds 30');
+    expect(branch[1]).toContain('continue');
+    expect(branch[1]).not.toMatch(/DISABLE|exit/);
+    // Checked before the 5 s restart sleep, so 79 never takes the fast path.
+    expect(script.indexOf('$code -eq 79')).toBeLessThan(script.indexOf('Start-Sleep -Seconds 5'));
+    // 77 and 78 still disable and stop, and nothing else exits.
+    expect(script).toMatch(/if \(\$code -eq 77 -or \$code -eq 78\) \{\s*& schtasks\.exe \/Change \/TN \$task \/DISABLE/);
+    expect(script.match(/\bexit \$code\b/g)).toHaveLength(1);
+  });
+
+  test('pidAlive: EPERM means the pid was reused by another process, so the launcher is gone', () => {
+    const throwing = (code) => () => { throw Object.assign(new Error(code), { code }); };
+    expect(launcherPidAlive(4242, throwing('EPERM'))).toBe(false);
+    expect(launcherPidAlive(4242, throwing('ESRCH'))).toBe(false);
+    expect(launcherPidAlive(4242, () => true)).toBe(true);
+  });
+
+  const armed = (isAlive = () => true) => {
+    const out = new EventEmitter();
+    const err = new EventEmitter();
+    const onGone = jest.fn();
+    const clearIntervalFn = jest.fn();
+    const ticks = [];
+    watchWindowsLauncher({
+      env: { [LAUNCHER_PID_ENV]: '4242' }, platform: 'win32', onGone, isAlive,
+      setIntervalFn: (fn) => { ticks.push(fn); return 7; }, clearIntervalFn,
+      streams: [out, err],
+    });
+    return { out, err, onGone, clearIntervalFn, ticks };
+  };
+
+  test('an EPIPE on stdout or stderr under the launcher counts as the launcher gone, once', () => {
+    const h = armed();
+    h.out.emit('error', Object.assign(new Error('write EPIPE'), { code: 'EPIPE' }));
+    expect(h.onGone).toHaveBeenCalledTimes(1);
+    expect(h.onGone).toHaveBeenCalledWith(4242);
+    expect(h.clearIntervalFn).toHaveBeenCalledWith(7);
+    h.err.emit('error', Object.assign(new Error('write EPIPE'), { code: 'EPIPE' }));
+    h.out.emit('error', Object.assign(new Error('destroyed'), { code: 'ERR_STREAM_DESTROYED' }));
+    // A later poll that also sees the pid gone does not call it again.
+    h.ticks[0]?.();
+    expect(h.onGone).toHaveBeenCalledTimes(1);
+  });
+
+  test('a write after the stream is destroyed counts too', () => {
+    const h = armed();
+    h.err.emit('error', Object.assign(new Error('Cannot call write after a stream was destroyed'), { code: 'ERR_STREAM_DESTROYED' }));
+    expect(h.onGone).toHaveBeenCalledTimes(1);
+  });
+
+  test('another stream error is still swallowed and does not stop the daemon', () => {
+    const h = armed();
+    expect(() => h.out.emit('error', Object.assign(new Error('odd'), { code: 'EIO' }))).not.toThrow();
+    expect(h.onGone).not.toHaveBeenCalled();
+  });
+
+  test('the poll and the pipe agree on one onGone', () => {
+    let alive = true;
+    const h = armed(() => alive);
+    alive = false;
+    h.ticks[0]();
+    h.out.emit('error', Object.assign(new Error('write EPIPE'), { code: 'EPIPE' }));
+    expect(h.onGone).toHaveBeenCalledTimes(1);
   });
 });

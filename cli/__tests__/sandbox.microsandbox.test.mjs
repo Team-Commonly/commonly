@@ -8,7 +8,7 @@
 import { jest } from '@jest/globals';
 import { createHash } from 'crypto';
 import {
-  existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, utimesSync, writeFileSync,
+  existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, utimesSync, writeFileSync,
 } from 'fs';
 import { tmpdir } from 'os';
 import { join } from 'path';
@@ -25,9 +25,20 @@ import {
   buildMicrovmFence,
   buildMicrovmRunArgs,
   checkMicrovmAttach,
+  GUEST_CLAUDE_VERSION,
+  GUEST_CODEX_VERSION,
+  ensureGuestAgent,
   ensureMsb,
+  ensureNoSeatVm,
+  withSeatLock,
+  removeIfJudged,
+  seatLockAbandoned,
+  reportsVersion,
+  stopOrphanSeatMsb,
+  refuseMicrovmMcpDeclarations,
   microvmFlagOn,
   microvmSeatHome,
+  microvmSeatLabel,
   msbAsset,
   parseWhpProbe,
   probeWhp,
@@ -132,7 +143,12 @@ describe('checkMicrovmAttach', () => {
       adapterName: 'claude', platform: 'win32', env: {}, probe: ok,
     })).toThrow(new RegExp(MICROVM_FLAG_ENV));
   });
-  test.each(['codex', 'opencode', 'qwen', 'goose', 'pi', 'dsh'])('refuses the %s adapter', (adapterName) => {
+  test('passes for the codex adapter too', () => {
+    expect(() => checkMicrovmAttach({
+      adapterName: 'codex', platform: 'win32', env, probe: ok,
+    })).not.toThrow();
+  });
+  test.each(['opencode', 'qwen', 'goose', 'pi', 'dsh'])('refuses the %s adapter', (adapterName) => {
     expect(() => checkMicrovmAttach({
       adapterName, platform: 'win32', env, probe: ok,
     })).toThrow(/only the claude adapter/);
@@ -267,6 +283,13 @@ describe('buildMicrovmRunArgs', () => {
     expect(GUEST_IMAGE).toMatch(/@sha256:[0-9a-f]{64}$/);
   });
 
+  test('no label unless one is passed (the Claude turn passes none), each before the image', () => {
+    expect(buildMicrovmRunArgs(base)).not.toContain('--label');
+    const args = buildMicrovmRunArgs({ ...base, labels: ['commonly-seat=abc-public'] });
+    expect(args.slice(args.indexOf('--label'), args.indexOf('--label') + 2)).toEqual(['--label', 'commonly-seat=abc-public']);
+    expect(args.indexOf('--label')).toBeLessThan(args.indexOf(GUEST_IMAGE));
+  });
+
   test('a turn mounts the agents volume read-only; only the install mounts it writable', () => {
     expect(GUEST_VOLUME_TURN_SPEC).toBe(`${GUEST_VOLUME_SPEC},ro`);
     const args = buildMicrovmRunArgs(base);
@@ -358,6 +381,33 @@ describe('withInstallLock', () => {
     expect(existsSync(lock())).toBe(false);
   });
 
+  // Windows refuses to move a file another handle holds (an antivirus scan,
+  // say): removeIfJudged answers 'busy', and the waiter waits within waitMs.
+  test.each([
+    ['an abandoned lock Windows will not move', (path) => path.endsWith('.install.lock')],
+    ['a stale guard Windows will not move', (path) => path.endsWith('.guard')],
+  ])('%s: the waiter polls and gives up at its deadline, without spinning', async (label, isTarget) => {
+    writeFileSync(lock(), '4242 crashed\n');
+    // A guard left by a dead holder whose own deadline has long passed.
+    writeFileSync(join(root, '.install.lock.guard'), `4243 tok ${Date.now() - 60 * 1000}\n`);
+    let busyAnswers = 0;
+    const remove = jest.fn(async (path, isJudged) => {
+      if (isTarget(path)) {
+        busyAnswers += 1;
+        if (busyAnswers > 500) throw new Error('spinning on a busy file');
+        return 'busy';
+      }
+      return removeIfJudged(path, isJudged);
+    });
+    const fn = jest.fn(async () => 'ran');
+    await expect(withInstallLock(root, fn, {
+      waitMs: 120, pollMs: 20, pidAlive: (pid) => pid !== 4242 && pid !== 4243, _remove: remove,
+    })).rejects.toThrow(/still installing/);
+    expect(fn).not.toHaveBeenCalled();
+    expect(busyAnswers).toBeGreaterThan(0);
+    expect(busyAnswers).toBeLessThan(50);
+  });
+
   test('a lock naming no process is judged by its age', async () => {
     writeFileSync(lock(), 'not a pid\n');
     await expect(withInstallLock(root, async () => {}, { waitMs: 50, pollMs: 10 })).rejects.toThrow(/still installing/);
@@ -424,6 +474,63 @@ describe('withInstallLock', () => {
   });
 });
 
+describe('ensureGuestAgent', () => {
+  let root;
+  beforeEach(() => { root = mkdtempSync(join(tmpdir(), 'mvguest-')); });
+  afterEach(() => { rmSync(root, { recursive: true, force: true }); });
+
+  // A pretend msb: the probe finds nothing, the install prints the version.
+  const fakeRun = (version) => {
+    const calls = [];
+    const run = (cmd, args) => {
+      calls.push(args);
+      const command = args[args.length - 1];
+      return { status: 0, stdout: command.startsWith('npm ') ? `${version}\n` : '' };
+    };
+    return { calls, run };
+  };
+
+  test('installs Claude Code exactly as before: same package, command and marker', () => {
+    const { calls, run } = fakeRun(GUEST_CLAUDE_VERSION);
+    expect(ensureGuestAgent({ msb: 'msb.exe', root, run })).toEqual({ installed: true });
+    expect(calls).toHaveLength(2);
+    expect(calls[0]).toEqual(['run', '--mount-named', GUEST_VOLUME_SPEC, GUEST_IMAGE, '--', 'sh', '-c',
+      '/opt/agents/bin/claude --version 2>/dev/null || true']);
+    expect(calls[1][calls[1].length - 1]).toBe(
+      `npm --prefix /opt/agents i -g --no-fund --no-audit @anthropic-ai/claude-code@${GUEST_CLAUDE_VERSION} >/tmp/npm.log 2>&1`
+        + ' && /opt/agents/bin/claude --version || (tail -20 /tmp/npm.log; exit 1)',
+    );
+    expect(existsSync(join(root, `.guest-claude-${GUEST_CLAUDE_VERSION}`))).toBe(true);
+    // The marker skips every later probe.
+    expect(ensureGuestAgent({ msb: 'msb.exe', root, run })).toEqual({ installed: false });
+    expect(calls).toHaveLength(2);
+  });
+
+  test('installs the pinned Codex onto the same volume, under its own marker', () => {
+    const { calls, run } = fakeRun(GUEST_CODEX_VERSION);
+    expect(ensureGuestAgent({
+      agent: 'codex', msb: 'msb.exe', root, run,
+    })).toEqual({ installed: true });
+    expect(calls[1]).toContain(GUEST_VOLUME_SPEC);
+    expect(calls[1][calls[1].length - 1]).toContain(`@openai/codex@${GUEST_CODEX_VERSION} `);
+    expect(calls[1][calls[1].length - 1]).toContain('/opt/agents/bin/codex --version');
+    expect(existsSync(join(root, `.guest-codex-${GUEST_CODEX_VERSION}`))).toBe(true);
+    expect(existsSync(join(root, `.guest-claude-${GUEST_CLAUDE_VERSION}`))).toBe(false);
+  });
+
+  test('a failed install refuses, naming the agent, and leaves no marker', () => {
+    const run = () => ({ status: 1, stdout: 'npm ERR! network' });
+    expect(() => ensureGuestAgent({
+      agent: 'codex', msb: 'msb.exe', root, run,
+    })).toThrow(/installing Codex into the microVM volume failed: npm ERR! network/);
+    expect(existsSync(join(root, `.guest-codex-${GUEST_CODEX_VERSION}`))).toBe(false);
+  });
+
+  test('an unknown agent is refused', () => {
+    expect(() => ensureGuestAgent({ agent: 'opencode', msb: 'msb.exe', root })).toThrow(/no guest install for opencode/);
+  });
+});
+
 describe('writeMicrovmTurn', () => {
   let dir;
   beforeEach(() => { dir = mkdtempSync(join(tmpdir(), 'mvturn-')); });
@@ -444,5 +551,512 @@ describe('writeMicrovmTurn', () => {
     expect(entry).toContain(`${GUEST_TURN_DIR}/turn.json`);
     expect(JSON.parse(readFileSync(join(dir, 'mcp.json'), 'utf8'))).toEqual({ mcpServers: {} });
     expect(existsSync(join(dir, 'mcp-shim.js'))).toBe(true);
+  });
+});
+
+describe('withSeatLock', () => {
+  let seats;
+  let home;
+  let lock;
+  beforeEach(() => {
+    seats = mkdtempSync(join(tmpdir(), 'cli-seat-lock-'));
+    home = join(seats, 'abc123-public');
+    mkdirSync(home);
+    lock = join(seats, '.abc123-public.lock');
+  });
+  afterEach(() => { rmSync(seats, { recursive: true, force: true }); });
+
+  test('the lock sits beside the HOME, never inside it, and goes when the turn ends', async () => {
+    let during = null;
+    const result = await withSeatLock(home, async () => {
+      during = readFileSync(lock, 'utf8');
+      return 'ran';
+    });
+    expect(result).toBe('ran');
+    expect(during).toMatch(new RegExp(`^${process.pid} [0-9a-f]{16} \\d+\\n$`));
+    expect(existsSync(lock)).toBe(false);
+    expect(existsSync(join(home, '.abc123-public.lock'))).toBe(false);
+  });
+
+  test('a second turn waits for the first, and runs only once it is released', async () => {
+    const order = [];
+    let release;
+    const first = withSeatLock(home, async () => {
+      order.push('first in');
+      await new Promise((resolve) => { release = resolve; });
+      order.push('first out');
+    });
+    await new Promise((resolve) => { setTimeout(resolve, 20); });
+    const second = withSeatLock(home, async () => { order.push('second in'); }, { pollMs: 10, waitMs: 5000 });
+    await new Promise((resolve) => { setTimeout(resolve, 60); });
+    expect(order).toEqual(['first in']);
+    release();
+    await Promise.all([first, second]);
+    expect(order).toEqual(['first in', 'first out', 'second in']);
+  });
+
+  test('a second turn past its wait refuses with microvm_seat_busy and never runs', async () => {
+    let release;
+    const first = withSeatLock(home, () => new Promise((resolve) => { release = resolve; }));
+    await new Promise((resolve) => { setTimeout(resolve, 20); });
+    const ran = jest.fn();
+    await expect(withSeatLock(home, ran, { pollMs: 10, waitMs: 50 }))
+      .rejects.toMatchObject({ code: 'microvm_seat_busy' });
+    expect(ran).not.toHaveBeenCalled();
+    release();
+    await first;
+  });
+
+  test('a lock whose holder is gone is reclaimed', async () => {
+    writeFileSync(lock, '999999 deadbeefdeadbeef\n');
+    const ran = jest.fn(async () => readFileSync(lock, 'utf8'));
+    const held = await withSeatLock(home, ran, { pidAlive: () => false, pollMs: 10, waitMs: 1000 });
+    expect(held).toMatch(new RegExp(`^${process.pid} `));
+    expect(existsSync(lock)).toBe(false);
+  });
+
+  test('a live holder\'s lock is not reclaimed, and is left exactly as it was', async () => {
+    writeFileSync(lock, '4242 cafecafecafecafe\n');
+    const ran = jest.fn();
+    await expect(withSeatLock(home, ran, { pidAlive: () => true, pollMs: 10, waitMs: 50 }))
+      .rejects.toMatchObject({ code: 'microvm_seat_busy' });
+    expect(ran).not.toHaveBeenCalled();
+    expect(readFileSync(lock, 'utf8')).toBe('4242 cafecafecafecafe\n');
+  });
+
+  test('a live pid\'s lock is never taken on age, however old, without a passed deadline', async () => {
+    writeFileSync(lock, '4242 cafecafecafecafe\n');
+    const old = new Date(Date.now() - 24 * 60 * 60 * 1000);
+    utimesSync(lock, old, old);
+    const ran = jest.fn();
+    await expect(withSeatLock(home, ran, { pidAlive: () => true, pollMs: 10, waitMs: 50 }))
+      .rejects.toMatchObject({ code: 'microvm_seat_busy' });
+    expect(ran).not.toHaveBeenCalled();
+  });
+
+  test('a live pid whose own written deadline has passed is taken over (a reused pid)', async () => {
+    writeFileSync(lock, `4242 cafecafecafecafe ${Date.now() - 1000}\n`);
+    const ran = jest.fn();
+    await withSeatLock(home, ran, { pidAlive: () => true, pollMs: 10, waitMs: 1000 });
+    expect(ran).toHaveBeenCalledTimes(1);
+  });
+
+  test('a live pid before its written deadline is not, and a pid check that throws counts as alive', async () => {
+    writeFileSync(lock, `4242 cafecafecafecafe ${Date.now() + 60 * 60 * 1000}\n`);
+    for (const pidAlive of [() => true, () => { throw new Error('EPERM'); }]) {
+      // eslint-disable-next-line no-await-in-loop
+      await expect(withSeatLock(home, jest.fn(), { pidAlive, pollMs: 10, waitMs: 40 }))
+        .rejects.toMatchObject({ code: 'microvm_seat_busy' });
+    }
+    expect(readFileSync(lock, 'utf8')).toMatch(/^4242 cafecafecafecafe /);
+  });
+
+  test('the holder writes its deadline and is told when it has passed', async () => {
+    let clock = 1_000_000;
+    let content = null;
+    let past = null;
+    await withSeatLock(home, async ({ pastDeadline }) => {
+      content = readFileSync(lock, 'utf8');
+      past = [pastDeadline()];
+      clock += 5001;
+      past.push(pastDeadline());
+    }, { now: () => clock, holdMs: 5000 });
+    expect(content).toBe(`${process.pid} ${content.split(' ')[1]} 1005000\n`);
+    expect(past).toEqual([false, true]);
+  });
+
+  test('an empty lock (its holder still writing) is left alone inside the grace period', async () => {
+    writeFileSync(lock, '');
+    const ran = jest.fn();
+    await expect(withSeatLock(home, ran, { pollMs: 10, waitMs: 50 }))
+      .rejects.toMatchObject({ code: 'microvm_seat_busy' });
+    expect(ran).not.toHaveBeenCalled();
+    expect(existsSync(lock)).toBe(true);
+  });
+
+  test('a lock replaced between the judgement and the guarded re-check is not deleted', async () => {
+    // An empty lock left long ago is judged abandoned. While that judgement
+    // runs, a new holder replaces it with its own, still-empty, file: same
+    // content, new file. The guarded re-check sees a fresh file and keeps it.
+    writeFileSync(lock, '');
+    const old = new Date(Date.now() - 10 * 60 * 1000);
+    utimesSync(lock, old, old);
+    // now(): 1 the wait deadline, 2 the holder deadline, 3 the unguarded judgement.
+    let calls = 0;
+    const now = () => {
+      calls += 1;
+      if (calls === 3) {
+        rmSync(lock);
+        writeFileSync(lock, '');
+      }
+      return Date.now();
+    };
+    await expect(withSeatLock(home, jest.fn(), { now, pollMs: 10, waitMs: 60 }))
+      .rejects.toMatchObject({ code: 'microvm_seat_busy' });
+    expect(calls).toBeGreaterThan(3);
+    expect(existsSync(lock)).toBe(true);
+  });
+
+  test('an empty lock past the grace period is taken over', async () => {
+    writeFileSync(lock, '');
+    const old = new Date(Date.now() - 10 * 60 * 1000);
+    utimesSync(lock, old, old);
+    const ran = jest.fn();
+    await withSeatLock(home, ran, { pollMs: 10, waitMs: 1000 });
+    expect(ran).toHaveBeenCalledTimes(1);
+  });
+
+  test('seatLockAbandoned: dead pid yes; empty past the grace yes; live pid without a deadline never', () => {
+    const now = () => 10_000_000;
+    expect(seatLockAbandoned('12 t', 0, { now, pidAlive: () => false })).toBe(true);
+    expect(seatLockAbandoned('12 t', 0, { now, pidAlive: () => true })).toBe(false);
+    expect(seatLockAbandoned('', now() - 30_000, { now })).toBe(false);
+    expect(seatLockAbandoned('', now() - 120_000, { now })).toBe(true);
+  });
+});
+
+describe('the lock guard', () => {
+  let seats;
+  let home;
+  let lock;
+  let guard;
+  beforeEach(() => {
+    seats = mkdtempSync(join(tmpdir(), 'cli-seat-guard-'));
+    home = join(seats, 'abc123-public');
+    mkdirSync(home);
+    lock = join(seats, '.abc123-public.lock');
+    guard = `${lock}.guard`;
+  });
+  afterEach(() => { rmSync(seats, { recursive: true, force: true }); });
+
+  test('an old guard whose holder is alive and inside its deadline is never taken on age', async () => {
+    // An abandoned lock (dead pid), but its guard is held by a live process
+    // that is still inside its own deadline, though the file is old.
+    writeFileSync(lock, '999999 deadbeefdeadbeef 1\n');
+    writeFileSync(guard, `4242 cafecafecafecafe ${Date.now() + 10 * 60 * 1000}\n`);
+    const old = new Date(Date.now() - 10 * 60 * 1000);
+    utimesSync(guard, old, old);
+    const ran = jest.fn();
+    await expect(withSeatLock(home, ran, { pidAlive: (pid) => pid === 4242, pollMs: 10, waitMs: 150 }))
+      .rejects.toMatchObject({ code: 'microvm_seat_busy' });
+    expect(ran).not.toHaveBeenCalled();
+    expect(readFileSync(guard, 'utf8')).toMatch(/^4242 cafecafecafecafe /);
+    expect(readFileSync(lock, 'utf8')).toBe('999999 deadbeefdeadbeef 1\n');
+  });
+
+  test('a guard whose holder is gone, or past its own deadline, is taken over', async () => {
+    for (const content of ['999999 deadbeefdeadbeef 9999999999999\n', `4242 cafecafecafecafe ${Date.now() - 1000}\n`]) {
+      writeFileSync(lock, '999999 deadbeefdeadbeef 1\n');
+      writeFileSync(guard, content);
+      const ran = jest.fn();
+      // eslint-disable-next-line no-await-in-loop
+      await withSeatLock(home, ran, { pidAlive: (pid) => pid === 4242, pollMs: 10, waitMs: 1000 });
+      expect(ran).toHaveBeenCalledTimes(1);
+      expect(existsSync(guard)).toBe(false);
+      expect(existsSync(lock)).toBe(false);
+    }
+  });
+
+  test('removeIfJudged removes only the file it judged, and puts back any other', async () => {
+    writeFileSync(lock, 'B\n');
+    expect(await removeIfJudged(lock, (content) => content === 'A\n')).toBe('kept');
+    expect(readFileSync(lock, 'utf8')).toBe('B\n');
+    expect(await removeIfJudged(lock, (content) => content === 'B\n')).toBe('removed');
+    expect(existsSync(lock)).toBe(false);
+    expect(await removeIfJudged(lock, () => true)).toBe('gone');
+    expect(readdirSync(seats)).toEqual(['abc123-public']);
+  });
+
+  test('a lock swapped in after the judgement is the one put back, never removed', async () => {
+    // The judged file is replaced at the path between the check and the move:
+    // what is moved aside is the new one, so it fails the judgement and returns.
+    writeFileSync(lock, 'judged\n');
+    const realRename = (await import('fs/promises')).rename;
+    let swapped = false;
+    const io = {
+      rename: async (from, to) => {
+        if (!swapped && from === lock) {
+          swapped = true;
+          rmSync(lock);
+          writeFileSync(lock, 'new holder\n');
+        }
+        return realRename(from, to);
+      },
+      stat: (await import('fs/promises')).stat,
+      readFile: (await import('fs/promises')).readFile,
+      link: (await import('fs/promises')).link,
+      rm: (await import('fs/promises')).rm,
+    };
+    expect(await removeIfJudged(lock, (content) => content === 'judged\n', { io })).toBe('kept');
+    expect(readFileSync(lock, 'utf8')).toBe('new holder\n');
+    expect(readdirSync(seats).sort()).toEqual(['.abc123-public.lock', 'abc123-public']);
+  });
+
+  test('a release finds a successor\'s lock and never moves it, so no third turn can slip in', async () => {
+    const successor = `4242 cafecafecafecafe ${Date.now() + 60 * 60 * 1000}\n`;
+    const remove = jest.fn((path, isJudged) => removeIfJudged(path, isJudged));
+    let before = null;
+    await withSeatLock(home, async () => {
+      // A took over from us while we ran: our lock is gone and B's is there.
+      rmSync(lock);
+      writeFileSync(lock, successor);
+      before = statSync(lock).ino;
+    }, { _remove: remove, pidAlive: (pid) => pid === 4242 || pid === process.pid });
+    expect(remove.mock.calls.filter(([path]) => path === lock)).toHaveLength(0);
+    expect(statSync(lock).ino).toBe(before);
+    expect(readFileSync(lock, 'utf8')).toBe(successor);
+    const third = jest.fn();
+    await expect(withSeatLock(home, third, { pidAlive: (pid) => pid === 4242, pollMs: 10, waitMs: 60 }))
+      .rejects.toMatchObject({ code: 'microvm_seat_busy' });
+    expect(third).not.toHaveBeenCalled();
+  });
+
+  test.each([
+    ['the lock', (path) => !path.endsWith('.guard')],
+    ['the guard', (path) => path.endsWith('.guard')],
+  ])('a release Windows refuses at first (busy) is tried again until %s goes', async (label, isTarget) => {
+    let refusals = 0;
+    const remove = jest.fn(async (path, isJudged) => {
+      if (isTarget(path) && refusals < 3) {
+        refusals += 1;
+        return 'busy';
+      }
+      return removeIfJudged(path, isJudged);
+    });
+    await withSeatLock(home, async () => {}, { _remove: remove, pollMs: 10 });
+    expect(refusals).toBe(3);
+    expect(existsSync(lock)).toBe(false);
+    expect(existsSync(guard)).toBe(false);
+  });
+
+  test('a release that stays busy gives up after its cleanup period instead of hanging', async () => {
+    let clock = 1_000_000;
+    const now = () => clock;
+    const remove = jest.fn(async (path) => {
+      clock += 1000;
+      return path.endsWith('.guard') ? removeIfJudged(path, (c) => true) : 'busy';
+    });
+    await withSeatLock(home, async () => {}, { _remove: remove, now, pollMs: 1 });
+    const lockTries = remove.mock.calls.filter(([path]) => path === lock).length;
+    expect(lockTries).toBeGreaterThan(1);
+    expect(lockTries).toBeLessThan(10);
+    expect(existsSync(lock)).toBe(true);
+  });
+
+  test('a release whose lock was taken over leaves the new holder\'s lock', async () => {
+    let releaseLock = null;
+    await withSeatLock(home, async () => {
+      releaseLock = readFileSync(lock, 'utf8');
+      writeFileSync(lock, '4242 cafecafecafecafe 9999999999999\n');
+    });
+    expect(releaseLock).toMatch(new RegExp(`^${process.pid} `));
+    expect(readFileSync(lock, 'utf8')).toBe('4242 cafecafecafecafe 9999999999999\n');
+    expect(existsSync(guard)).toBe(false);
+  });
+});
+
+describe('the install lock', () => {
+  test('a live holder\'s lock under its hour is left alone (unchanged behaviour)', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'cli-install-lock-'));
+    try {
+      writeFileSync(join(root, '.install.lock'), '4242 cafecafecafecafe\n');
+      await expect(withInstallLock(root, jest.fn(), { pidAlive: () => true, pollMs: 10, waitMs: 40 }))
+        .rejects.toThrow(/still installing/);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+});
+
+describe('refuseMicrovmMcpDeclarations', () => {
+  test('only the Commonly server over stdio passes: the shipped spec, or a build whose package.json names it', () => {
+    expect(() => refuseMicrovmMcpDeclarations([{ name: 'commonly', command: ['npx', '-y', '@commonlyai/mcp'] }])).not.toThrow();
+    const describe = (command) => (command[1] === '/b/node_modules/@commonlyai/mcp/src/index.js' ? { isCommonly: true } : null);
+    expect(() => refuseMicrovmMcpDeclarations(
+      [{ name: 'commonly', command: ['node', '/b/node_modules/@commonlyai/mcp/src/index.js'] }],
+      { describe },
+    )).not.toThrow();
+    expect(() => refuseMicrovmMcpDeclarations([{ name: 'other', command: ['node', '/x/server.js'] }], { describe }))
+      .toThrow(/only the Commonly MCP server, on this computer, and other is another server/);
+    expect(() => refuseMicrovmMcpDeclarations([{ name: 'fs', command: ['npx', '-y', '@modelcontextprotocol/server-filesystem'] }]))
+      .toThrow(/fs is another server/);
+  });
+
+  test('http, sse and a missing command refuse', () => {
+    expect(() => refuseMicrovmMcpDeclarations(undefined)).not.toThrow();
+    expect(() => refuseMicrovmMcpDeclarations([{ name: 'broker', transport: 'http', url: 'https://x' }]))
+      .toThrow(/over stdio, and broker is a http server/);
+    expect(() => refuseMicrovmMcpDeclarations([{ name: 'ev', transport: 'SSE' }])).toThrow(/ev is a sse server/);
+    expect(() => refuseMicrovmMcpDeclarations([{ name: 'bare' }])).toThrow(/bare is declared without a command/);
+  });
+});
+
+describe('reportsVersion', () => {
+  test.each([
+    ['codex-cli 0.172.0', '0.172.0', true],
+    ['2.1.331 (Claude Code)', '2.1.331', true],
+    ['codex-cli 10.172.0', '0.172.0', false],
+    ['codex-cli 0.172.01', '0.172.0', false],
+    ['codex-cli 0.172.0-alpha.1', '0.172.0', false],
+    ['npm warn something\ncodex-cli 0.172.0\n', '0.172.0', true],
+    ['', '0.172.0', false],
+  ])('%j reports %s: %s', (stdout, version, expected) => {
+    expect(reportsVersion(stdout, version)).toBe(expected);
+  });
+});
+
+describe('stopOrphanSeatMsb', () => {
+  const label = 'commonly-seat=abc123-public';
+  const home = 'C:\\Users\\a\\AppData\\Local\\commonly\\microsandbox\\seats\\abc123-public';
+  const ps = (rounds) => {
+    const calls = [];
+    const run = (cmd, args) => {
+      calls.push({ cmd, args });
+      const next = rounds.length > 1 ? rounds.shift() : rounds[0];
+      return typeof next === 'function' ? next() : { status: 0, stdout: JSON.stringify(next) };
+    };
+    return { calls, run };
+  };
+  const ours = { ProcessId: 501, CommandLine: `"C:\\msb\\msb.exe" run --label ${label} --mount-dir ${home}:/home/seat x` };
+  const byHome = { ProcessId: 502, CommandLine: `msb.exe run --mount-dir ${home}:/home/seat x` };
+  const other = { ProcessId: 503, CommandLine: `msb.exe run --label ${label}2 --mount-dir ${home}2:/home/seat x` };
+
+  test('off Windows it does nothing', () => {
+    const fake = ps([[ours]]);
+    expect(stopOrphanSeatMsb({ label, home, platform: 'darwin', run: fake.run })).toEqual({ stopped: [] });
+    expect(fake.calls).toHaveLength(0);
+  });
+
+  test('kills every msb.exe naming this seat (label or HOME), never another seat\'s, and confirms them gone', () => {
+    const fake = ps([[ours, byHome, other], [other]]);
+    const kill = jest.fn();
+    expect(stopOrphanSeatMsb({ label, home, platform: 'win32', run: fake.run, kill, pollMs: 1 })).toEqual({ stopped: [501, 502] });
+    expect(kill.mock.calls.map(([pid]) => pid)).toEqual([501, 502]);
+    expect(fake.calls[0].cmd).toMatch(/powershell\.exe$/);
+    expect(fake.calls[0].args.at(-1)).toContain("Get-CimInstance Win32_Process -Filter \"Name='msb.exe'\"");
+  });
+
+  test('none of the seat: no kill', () => {
+    const fake = ps([[other]]);
+    const kill = jest.fn();
+    expect(stopOrphanSeatMsb({ label, home, platform: 'win32', run: fake.run, kill })).toEqual({ stopped: [] });
+    expect(kill).not.toHaveBeenCalled();
+  });
+
+  test('one still alive after the kill refuses', () => {
+    const fake = ps([[ours]]);
+    expect(() => stopOrphanSeatMsb({
+      label, home, platform: 'win32', run: fake.run, kill: () => {}, attempts: 3, pollMs: 1,
+    })).toThrow(expect.objectContaining({ code: 'microvm_seat_busy', message: expect.stringMatching(/501/) }));
+  });
+
+  test.each([
+    ['the listing fails', () => ({ status: 1, stderr: 'Get-CimInstance: access denied' })],
+    ['the listing cannot start', () => ({ error: new Error('spawn ENOENT') })],
+    ['a blank listing', () => ({ status: 0, stdout: '' })],
+    ['a listing that is not a list', () => ({ status: 0, stdout: '{"ProcessId":1}' })],
+  ])('it refuses when %s', (_, answer) => {
+    const fake = ps([answer]);
+    expect(() => stopOrphanSeatMsb({ label, home, platform: 'win32', run: fake.run }))
+      .toThrow(expect.objectContaining({ code: 'microvm_seat_busy' }));
+  });
+});
+
+describe('ensureNoSeatVm', () => {
+  const MSB = 'C:\\msb\\msb.exe';
+  const label = microvmSeatLabel(join('seats', 'abc123-public'));
+  const OTHER = 'commonly-seat=def456-public';
+
+  // A pretend msb holding `vms`; `list` filters by label as msb does.
+  const msb = (vms, { stops = true, list = null } = {}) => {
+    const calls = [];
+    const run = (cmd, args, options) => {
+      calls.push({ cmd, args, options });
+      if (args[0] === 'list') {
+        if (list) return list();
+        const wanted = args[args.indexOf('--label') + 1];
+        return {
+          status: 0,
+          stdout: JSON.stringify(vms.filter((vm) => vm.label === wanted).map(({ name, status }) => ({ name, status }))),
+        };
+      }
+      if (args[0] === 'stop' && stops) {
+        const vm = vms.find((entry) => entry.name === args[args.length - 1]);
+        if (vm) vm.status = 'Stopped';
+      }
+      return { status: 0, stdout: '' };
+    };
+    return { calls, run };
+  };
+
+  test('the label is the seat HOME\'s folder name', () => {
+    expect(label).toBe('commonly-seat=abc123-public');
+  });
+
+  test('no VM of the seat: one list, no stop', () => {
+    const fake = msb([{ name: 'msb-1', status: 'Running', label: OTHER }]);
+    expect(ensureNoSeatVm({ msb: MSB, label, run: fake.run })).toEqual({ stopped: [] });
+    expect(fake.calls.map((call) => call.args)).toEqual([['list', '--label', label, '--format', 'json']]);
+  });
+
+  test('a stopped or crashed VM of the seat is no VM', () => {
+    const fake = msb([
+      { name: 'msb-1', status: 'Stopped', label },
+      { name: 'msb-2', status: 'Crashed', label },
+    ]);
+    expect(ensureNoSeatVm({ msb: MSB, label, run: fake.run })).toEqual({ stopped: [] });
+  });
+
+  test('a live VM of the seat is force-stopped by name and confirmed gone; another seat\'s is left', () => {
+    const vms = [
+      { name: 'msb-1', status: 'Running', label },
+      { name: 'msb-2', status: 'Draining', label },
+      { name: 'msb-3', status: 'Running', label: OTHER },
+    ];
+    const fake = msb(vms);
+    expect(ensureNoSeatVm({ msb: MSB, label, run: fake.run })).toEqual({ stopped: ['msb-1', 'msb-2'] });
+    expect(fake.calls.filter((call) => call.args[0] === 'stop').map((call) => call.args)).toEqual([
+      ['stop', '--force', '--quiet', '--', 'msb-1'],
+      ['stop', '--force', '--quiet', '--', 'msb-2'],
+    ]);
+    expect(fake.calls.at(-1).args[0]).toBe('list');
+    expect(vms[2].status).toBe('Running');
+  });
+
+  test('a VM still alive after the stop refuses', () => {
+    const fake = msb([{ name: 'msb-1', status: 'Running', label }], { stops: false });
+    expect(() => ensureNoSeatVm({ msb: MSB, label, run: fake.run }))
+      .toThrow(expect.objectContaining({ code: 'microvm_seat_busy', message: expect.stringMatching(/msb-1 \(Running\)/) }));
+  });
+
+  test.each([
+    ['msb fails', () => ({ status: 1, stderr: 'database is locked' }), /database is locked/],
+    ['msb cannot start', () => ({ error: new Error('spawn EACCES') }), /EACCES/],
+    ['an answer that is not JSON', () => ({ status: 0, stdout: 'NAME IMAGE' }), /could not be read/],
+    ['a blank answer (msb prints [] when nothing matches)', () => ({ status: 0, stdout: '  \n' }), /could not be read/],
+    ['an answer that is not a list', () => ({ status: 0, stdout: '{"name":"msb-1"}' }), /could not be read/],
+    ['a live VM with no name', () => ({ status: 0, stdout: '[{"status":"Running"}]' }), /no name/],
+  ])('it refuses when it cannot confirm: %s', (_, list, message) => {
+    const fake = msb([], { list });
+    expect(() => ensureNoSeatVm({ msb: MSB, label, run: fake.run }))
+      .toThrow(expect.objectContaining({ code: 'microvm_seat_busy', message: expect.stringMatching(message) }));
+  });
+
+  test('no msb or no seat label refuses before asking msb anything', () => {
+    const fake = msb([]);
+    for (const options of [
+      { msb: '', label }, { msb: MSB, label: '' }, { msb: MSB, label: 'commonly-seat=' }, { msb: MSB, label: 'other=x' },
+    ]) {
+      expect(() => ensureNoSeatVm({ ...options, run: fake.run })).toThrow(expect.objectContaining({ code: 'microvm_seat_busy' }));
+    }
+    expect(fake.calls).toHaveLength(0);
+  });
+
+  test('msb gets the env it is given and a timeout', () => {
+    const fake = msb([]);
+    ensureNoSeatVm({ msb: MSB, label, run: fake.run, env: { LOCALAPPDATA: 'C:\\x' } });
+    expect(fake.calls[0].options).toEqual(expect.objectContaining({
+      env: { LOCALAPPDATA: 'C:\\x' }, timeout: expect.any(Number), windowsHide: true,
+    }));
   });
 });

@@ -208,7 +208,6 @@ The application uses Material-UI with a custom theme:
 
 ## Developer Utilities
 
-- `/dev/api`: API Development Tools for ad-hoc backend requests.
 - `/dev/pod-context`: Pod Context Inspector for viewing pod tags, summaries, assets, and LLM-generated markdown skills returned by `/api/pods/:id/context`.
 - `/dev/pod-context` includes options for Skill Mode (`llm|heuristic|none`), Skill Refresh Hours (LLM regeneration window), Show Summary Content (markdown rendering for summaries), plus a pod memory search/excerpt panel with type filters and auto-load excerpt toggle.
 - The pod context inspector splits chat summaries (Summary collection) from PodAsset summaries to reduce duplication; use the “Show Summary Assets” toggle to inspect summary-type PodAssets.

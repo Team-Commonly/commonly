@@ -5,7 +5,15 @@ import { MemoryRouter, useLocation } from 'react-router-dom';
 import V2NavRail from '../components/V2NavRail';
 import { FIRST_RUN_REOPEN_EVENT, FIRST_RUN_STARTED_KEY } from '../firstRunGuide';
 
+import { DISCORD_INVITE_URL } from '../utils/feedbackLinks';
+
 const mockLogout = jest.fn();
+const mockTrackUsage = jest.fn();
+
+jest.mock('../utils/usageEvents', () => ({
+  ...jest.requireActual('../utils/usageEvents'),
+  trackUsage: (...args) => mockTrackUsage(...args),
+}));
 
 jest.mock('../../context/AuthContext', () => ({
   useAuth: () => ({
@@ -139,5 +147,20 @@ describe('V2FeedbackMenu', () => {
       expect(link).toHaveAttribute('target', '_blank');
       expect(link).toHaveAttribute('rel', 'noopener noreferrer');
     });
+  });
+
+  test('the Discord link opens the invite and counts the click as the menu\'s', () => {
+    render(
+      <MemoryRouter initialEntries={['/v2/activity']}>
+        <div className="v2-root">
+          <V2NavRail />
+        </div>
+      </MemoryRouter>,
+    );
+    fireEvent.click(screen.getByRole('button', { name: 'Feedback' }));
+    const discord = screen.getByRole('link', { name: 'Join our Discord', hidden: true });
+    expect(discord).toHaveAttribute('href', DISCORD_INVITE_URL);
+    fireEvent.click(discord);
+    expect(mockTrackUsage).toHaveBeenCalledWith('discord-click', { props: { where: 'feedback-menu' } });
   });
 });

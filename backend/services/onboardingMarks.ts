@@ -40,6 +40,10 @@
  * last one is the render podOpenedAt can't prove: podOpenedAt is written when
  * the request arrives, before the messages are read. "Shown" is the card or
  * start mounting in the transcript, not proof it was scrolled into view.
+ *
+ * discordCardShownAt and discordCardDismissedAt come the same way, from
+ * discord-card-shown and discord-card-dismissed. The dismissal is also what
+ * keeps the shell's Discord card from showing again on any device.
  */
 import User from '../models/User';
 import { SCOUT_STARTS } from '../config/native-agents/scout';
@@ -54,9 +58,11 @@ const byoConnectionAttemptMarked = new Set<string>();
 const welcomeHostedClickMarked = new Set<string>();
 const surfaceMarked = new Map<SurfaceMark, Set<string>>();
 
-type SurfaceMark = 'inviteCardShownAt' | 'inviteCardDismissedAt' | 'byoOfferShownAt' | 'welcomeShownAt';
+type SurfaceMark = 'inviteCardShownAt' | 'inviteCardDismissedAt' | 'byoOfferShownAt' | 'welcomeShownAt'
+  | 'discordCardShownAt' | 'discordCardDismissedAt';
 const SURFACE_MARKS: readonly SurfaceMark[] = [
   'inviteCardShownAt', 'inviteCardDismissedAt', 'byoOfferShownAt', 'welcomeShownAt',
+  'discordCardShownAt', 'discordCardDismissedAt',
 ];
 
 export function markPodOpened(userId: unknown, pod: { createdBy?: unknown } | null | undefined): void {

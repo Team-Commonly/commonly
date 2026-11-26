@@ -410,6 +410,7 @@ describe('podController', () => {
       {
         $addToSet: { members: 'new-user-id' },
         $set: { updatedAt: expect.any(Date) },
+        $inc: { __v: 1 },
       },
     );
     expect(res.status).not.toHaveBeenCalledWith(403);

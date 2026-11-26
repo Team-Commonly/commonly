@@ -18,6 +18,8 @@ import {
 import { ownsRuntimeIdentity, OwnershipFailure, describeRuntimeIdentityBlockers } from '../services/runtimeIdentityOwnership';
 import { logAgentInstallRefusal } from '../middleware/logAgentInstallRefusal';
 import { machineHasLiveAuthorization } from '../services/machineService';
+import { createRateLimitRejectionLog, RateLimitedRequest } from '../utils/rateLimitLog';
+import { DUPLICATE_DAEMON_429_ERROR } from '../utils/daemonDuplicates';
 
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const auth = require('../middleware/auth');
@@ -36,6 +38,9 @@ const {
 
 const router = express.Router();
 
+// F631: a rejection names its client in the log, once per key per minute.
+const logBindingRejection = createRateLimitRejectionLog('binding');
+
 const bindingRateLimit = rateLimit({
   windowMs: 60_000,
   max: 120,
@@ -48,8 +53,14 @@ const bindingRateLimit = rateLimit({
     }
     return cloudflareIpRateLimitKeyGenerator(req as never);
   },
-  handler: (_req: unknown, res: { status: (n: number) => { json: (b: unknown) => void } }) => {
-    res.status(429).json({ msg: 'rate limit exceeded: 120 binding ops per 60s' });
+  handler: (req: RateLimitedRequest, res: { status: (n: number) => { json: (b: unknown) => void } }) => {
+    logBindingRejection(req);
+    // F637: GET /assigned is what a daemon polls; old CLIs print `error` first.
+    const assigned = req.method === 'GET' && req.route?.path === '/assigned';
+    res.status(429).json({
+      msg: 'rate limit exceeded: 120 binding ops per 60s',
+      ...(assigned ? { error: DUPLICATE_DAEMON_429_ERROR } : {}),
+    });
   },
 });
 

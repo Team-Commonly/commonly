@@ -11,6 +11,8 @@ import {
   removeMachine,
 } from '../services/machineService';
 import daemonAuth, { DaemonAuthedRequest } from '../middleware/daemonAuth';
+import { createRateLimitRejectionLog } from '../utils/rateLimitLog';
+import { DUPLICATE_DAEMON_429_ERROR, win32RegistrationRefusal } from '../utils/daemonDuplicates';
 
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const auth = require('../middleware/auth');
@@ -27,6 +29,9 @@ const router = express.Router();
 
 // Keep every machine lifecycle endpoint bounded. Importing rateLimit directly
 // makes this route family visible to CodeQL's missing-rate-limit check.
+// F631: a rejection names its client in the log, once per key per minute.
+const logMachineRejection = createRateLimitRejectionLog('machine');
+
 const machineRateLimit = rateLimit({
   windowMs: 60_000,
   max: 60,
@@ -39,8 +44,14 @@ const machineRateLimit = rateLimit({
     }
     return cloudflareIpRateLimitKeyGenerator(req as never);
   },
-  handler: (_req: unknown, res: express.Response) => {
-    res.status(429).json({ message: 'rate limit exceeded: 60 machine requests per 60s' });
+  handler: (req: express.Request, res: express.Response) => {
+    logMachineRejection(req);
+    // F637: the heartbeat is what a daemon polls; old CLIs print `error` first.
+    const heartbeat = req.method === 'POST' && req.route?.path === '/:id/heartbeat';
+    res.status(429).json({
+      message: 'rate limit exceeded: 60 machine requests per 60s',
+      ...(heartbeat ? { error: DUPLICATE_DAEMON_429_ERROR } : {}),
+    });
   },
 });
 
@@ -50,6 +61,11 @@ router.post('/', machineRateLimit, auth, async (req: AuthReq, res: express.Respo
   try {
     const ownerUserId = req.user?.id;
     if (!ownerUserId) return res.status(401).json({ message: 'Unauthorized' });
+    // F637: a Windows CLI old enough to pile up daemons is refused here, once
+    // DAEMON_MIN_CLI_VERSION_WIN32 is set. This is the path an old daemon
+    // takes to come back after its key is revoked.
+    const tooOld = win32RegistrationRefusal(req.body?.host);
+    if (tooOld) return res.status(400).json({ message: tooOld });
     const { machine, token } = await registerMachine({
       ownerUserId,
       name: req.body?.name,
@@ -96,11 +112,12 @@ router.post(
         ownerUserId: req.machine?.ownerUserId,
       });
       if (!machine) return res.status(403).json({ message: 'Access denied' });
-      return res.json({
-        machine: await recordMachineHeartbeat(
-          machine, req.body?.agents, req.body?.runtimeInventory, req.body?.sandbox, req.body?.host,
-        ),
-      });
+      const recorded = await recordMachineHeartbeat(
+        machine, req.body?.agents, req.body?.runtimeInventory, req.body?.sandbox, req.body?.host,
+      );
+      // Removed between the read above and the write: same answer as a missing machine.
+      if (!recorded) return res.status(403).json({ message: 'Access denied' });
+      return res.json({ machine: recorded });
     } catch (error) {
       console.error('Error recording machine heartbeat:', error);
       return res.status(500).json({ message: 'Server error' });

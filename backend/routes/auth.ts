@@ -8,6 +8,7 @@ const { SharedRateLimitStore } = require('../middleware/sharedRateLimitStore');
 const { secondsUntilReset } = require('../middleware/rateLimitObserver');
 const { platformIpRateLimit } = require('../middleware/platformRateLimit');
 const { refuseDollarKeys } = require('../middleware/refuseDollarKeys');
+const { logOutboundFailure } = require('../utils/safeErrorLog');
 const { loginEmailOf } = require('../utils/loginEmail');
 const { publicAppUrl } = require('../utils/publicAppUrl');
 // eslint-disable-next-line global-require
@@ -383,7 +384,7 @@ router.post('/sessions/revoke', sessionLimiter, auth, async (req: AuthReq, res: 
     disconnectUserSessionSockets(String(req.userId));
     return res.json({ message: 'Signed out everywhere' });
   } catch (error) {
-    console.error('Failed to revoke sessions:', error);
+    logOutboundFailure('Failed to revoke sessions:', error);
     return res.status(500).json({ error: 'Failed to revoke sessions' });
   }
 });
@@ -412,7 +413,7 @@ router.post('/api-token/generate', deviceManageLimiter, auth, async (req: AuthRe
       message: 'API token generated successfully',
     });
   } catch (error) {
-    console.error('Error generating API token:', error);
+    console.error('Error generating API token:', error); // safe-log: no outbound call
     return res.status(500).json({ message: 'Server error' });
   }
 });
@@ -429,7 +430,7 @@ router.delete('/api-token', deviceManageLimiter, auth, async (req: AuthReq, res:
     await user.save();
     return res.json({ message: 'API token revoked successfully' });
   } catch (error) {
-    console.error('Error revoking API token:', error);
+    console.error('Error revoking API token:', error); // safe-log: no outbound call
     return res.status(500).json({ message: 'Server error' });
   }
 });
@@ -454,7 +455,7 @@ router.get('/api-token', deviceManageLimiter, auth, async (req: AuthReq, res: Re
       last4: user.apiTokenLast4 || null,
     });
   } catch (error) {
-    console.error('Error fetching API token:', error);
+    console.error('Error fetching API token:', error); // safe-log: no outbound call
     return res.status(500).json({ message: 'Server error' });
   }
 });

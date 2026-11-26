@@ -451,6 +451,9 @@ class ActivityService {
         .lean(),
     ]);
     const podNames = new Map(allowedPods.map((pod) => [String(pod._id), pod.name]));
+    // eslint-disable-next-line global-require
+    const { rulerNamesFor, rulerNameOf } = require('./decisionRulerName');
+    const rulerNames = await rulerNamesFor(rows);
     const items = rows.map((row: any) => ({
       id: String(row._id),
       kind: 'decision',
@@ -466,6 +469,8 @@ class ActivityService {
       ruling: row.ruling ? {
         value: row.ruling.value,
         by: row.ruling.byUsername,
+        // F645: the name people read; `by` stays the handle.
+        byName: rulerNameOf(row, rulerNames),
         at: row.ruling.at,
         messageId: row.ruling.messageId,
       } : null,

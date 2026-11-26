@@ -1,5 +1,6 @@
 import { escapeHtml } from '../utils/escape';
 import { isReservedEmailDomain } from '../utils/reservedEmailDomain';
+import { listUndigestedOverflow, markIncludedInDigest } from '../repositories/needsYouEmailRepository';
 // eslint-disable-next-line global-require
 const Summary = require('../models/Summary');
 // eslint-disable-next-line global-require
@@ -8,8 +9,6 @@ const User = require('../models/User');
 const { sendEmail } = require('./emailService');
 // eslint-disable-next-line global-require
 const SystemSetting = require('../models/SystemSetting');
-// eslint-disable-next-line global-require
-const NeedsYouEmail = require('../models/NeedsYouEmail');
 // eslint-disable-next-line global-require
 const AttentionItem = require('../models/AttentionItem');
 // eslint-disable-next-line global-require
@@ -227,9 +226,7 @@ class DigestEmailService {
           continue;
         }
 
-        const overflow = user.emailPreferences?.needsYou === false ? [] : await NeedsYouEmail.find({
-          recipientUserId: user._id, status: 'overflow', includedInDigestAt: { $exists: false },
-        }).select('_id attentionItemId').lean();
+        const overflow = user.emailPreferences?.needsYou === false ? [] : await listUndigestedOverflow(user._id);
         const asks = overflow.length ? await AttentionItem.find({
           _id: { $in: overflow.map((row: any) => row.attentionItemId) },
           recipientUserId: user._id, status: 'open',
@@ -310,10 +307,7 @@ class DigestEmailService {
         }
         if (includedOverflow.length) {
           try {
-            await NeedsYouEmail.updateMany(
-              { _id: { $in: includedOverflow.map((row: any) => row._id) }, includedInDigestAt: { $exists: false } },
-              { $set: { includedInDigestAt: emailedAt } },
-            );
+            await markIncludedInDigest(includedOverflow.map((row: any) => row._id), emailedAt);
           } catch (markError) {
             console.warn('Digest sent but held asks could not be marked included:', (markError as Error).message);
           }

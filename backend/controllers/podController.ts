@@ -1,6 +1,7 @@
 import { podMemberPopulate } from '../services/podMemberPopulate';
 import { resolveAgentDisplayLabel } from '../utils/agentDisplayLabel';
 import { leaveUnviewablePodRooms } from '../services/sessionSocketService';
+import { mirrorRegistryRow } from '../services/installable/registryReconciler';
 const mongoose = require('mongoose');
 const Pod = require('../models/Pod');
 const Message = require('../models/Message');
@@ -19,6 +20,7 @@ const {
 const User = require('../models/User');
 const { validatePodParent } = require('../services/podParentService');
 const { mirrorMemberAdded, mirrorMemberRemoved } = require('../services/pgMirrorWrite');
+const roomGrantService = require('../services/roomGrantService');
 // Add PGPod at the top level if it's available
 let PGPod: any;
 let PGMessage: any;
@@ -85,6 +87,7 @@ const ensureDefaultAgentRegistryEntry = async (agentName: any) => {
     versions: [{ version: '1.0.0', publishedAt: new Date() }],
     stats: { installs: 0, rating: 0, ratingCount: 0 },
   });
+  await mirrorRegistryRow(agent, 'pod.commonly-bot');
 
   return agent;
 };
@@ -722,6 +725,9 @@ exports.joinPod = async (req: any, res: any) => {
         {
           $addToSet: { members: userId },
           $set: { updatedAt: new Date() },
+          // F619: bump the version so a stale whole-array save (leavePod,
+          // removeAgentFromPod) gets VersionError instead of undoing this add.
+          $inc: { __v: 1 },
         },
       );
       // F183: mirror into PG `pod_members` after the Mongo write. Best-effort;
@@ -783,6 +789,8 @@ exports.leavePod = async (req: any, res: any) => {
     await pod.save();
     // F183: drop the PG `pod_members` mirror row too. Best-effort; never fails the leave.
     await mirrorMemberRemoved(String(pod._id), String(req.userId));
+    // F660: their pod grants end with the membership. Never throws.
+    await roomGrantService.endMemberPodGrants({ podId: String(pod._id), userId: String(req.userId) });
     await leaveUnviewablePodRooms(String(req.userId));
 
     // Populate the user data
@@ -828,10 +836,11 @@ exports.removeMember = async (req: any, res: any) => {
       return res.status(400).json({ msg: 'Cannot remove pod creator' });
     }
 
-    const isMember = pod.members.some(
+    // The stored id, not the path's: it is what the grant revoke below queries by.
+    const removedMember = pod.members.find(
       (member: any) => member.toString() === memberId.toString(),
     );
-    if (!isMember) {
+    if (!removedMember) {
       return res.status(400).json({ msg: 'User is not a member of this pod' });
     }
 
@@ -853,6 +862,8 @@ exports.removeMember = async (req: any, res: any) => {
         );
       }
     }
+    // F660: their pod grants end with the membership. Never throws.
+    await roomGrantService.endMemberPodGrants({ podId: String(pod._id), userId: String(removedMember) });
     await leaveUnviewablePodRooms(memberId.toString());
 
     await pod.populate('createdBy', 'username profilePicture');

@@ -137,7 +137,8 @@ export const hirePersona = async ({ agentName, userId, podId }: HireArgs): Promi
     const Pod = require('../models/Pod');
     await Pod.updateOne(
       { _id: podId, members: { $ne: botUser._id } },
-      { $push: { members: botUser._id } },
+      // F621: bump the version so a stale whole-array save can't undo this add.
+      { $push: { members: botUser._id }, $inc: { __v: 1 } },
     );
     // F183: best-effort PG mirror write; never fails the hire.
     // eslint-disable-next-line @typescript-eslint/no-require-imports, global-require

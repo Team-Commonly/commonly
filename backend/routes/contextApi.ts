@@ -12,6 +12,8 @@ const Pod = require('../models/Pod');
 const VectorSearchService = require('../services/vectorSearchService');
 // eslint-disable-next-line global-require
 const User = require('../models/User');
+// eslint-disable-next-line global-require
+const { acquirePod, acquireUserAll, IN_PROGRESS_CODE } = require('../services/indexRebuildGuard');
 
 interface AuthReq {
   userId?: string;
@@ -31,6 +33,7 @@ const router: ReturnType<typeof express.Router> = express.Router();
 // casts it, instead of a CastError the catch-all turns into a 500 (F568).
 // eslint-disable-next-line @typescript-eslint/no-require-imports, global-require
 const { requireObjectIdParam, INVALID_POD_ID } = require('../middleware/objectIdParam');
+const { logOutboundFailure } = require('../utils/safeErrorLog');
 
 router.param('podId', requireObjectIdParam('podId', INVALID_POD_ID));
 
@@ -64,7 +67,7 @@ router.get('/pods', auth, async (req: AuthReq, res: Res) => {
     });
     res.json({ pods: result });
   } catch (error) {
-    console.error('Error listing pods:', error);
+    logOutboundFailure('Error listing pods:', error);
     res.status(500).json({ error: 'Failed to list pods' });
   }
 });
@@ -79,7 +82,7 @@ router.get('/pods/:podId', auth, async (req: AuthReq, res: Res) => {
     if (!membership) return res.status(403).json({ error: 'Access denied' });
     res.json({ id: pod._id.toString(), name: pod.name, description: pod.description, type: pod.type, role: membership.role || (pod.createdBy?.toString() === (userId as { toString: () => string })?.toString() ? 'admin' : 'member') });
   } catch (error) {
-    console.error('Error getting pod:', error);
+    logOutboundFailure('Error getting pod:', error);
     res.status(500).json({ error: 'Failed to get pod' });
   }
 });
@@ -97,7 +100,7 @@ router.get('/context/:podId', auth, async (req: AuthReq, res: Res) => {
     const context = await ContextAssemblerService.assembleContext(podId, { task, includeSkills: includeSkills !== 'false', includeMemory: includeMemory !== 'false', maxTokens: maxTokens ? parseInt(maxTokens, 10) : 8000, userId, agentContext });
     res.json(context);
   } catch (error) {
-    console.error('Error assembling context:', error);
+    logOutboundFailure('Error assembling context:', error);
     res.status(500).json({ error: 'Failed to assemble context' });
   }
 });
@@ -119,7 +122,7 @@ router.get('/search/:podId', auth, async (req: AuthReq, res: Res) => {
     if (since) { const sinceDate = new Date(since); results = assets.filter((a) => new Date(a.createdAt as string) >= sinceDate); }
     res.json({ results: results.map((a) => ({ id: (a._id as { toString: () => string }).toString(), title: a.title, snippet: (a.content as string)?.substring(0, 300), source: { type: a.type, ref: (a.sourceRef as { id?: { toString: () => string } })?.id?.toString() }, relevance: a.relevance || 0, matchType: 'keyword' })), meta: { query: q, totalResults: results.length, searchTime: Date.now() - startTime } });
   } catch (error) {
-    console.error('Error searching:', error);
+    logOutboundFailure('Error searching:', error);
     res.status(500).json({ error: 'Search failed' });
   }
 });
@@ -133,11 +136,18 @@ router.post('/pods/:podId/index/rebuild', auth, async (req: AuthReq, res: Res) =
     if (!pod) return res.status(404).json({ error: 'Pod not found' });
     if (!isMember(pod, userId)) return res.status(403).json({ error: 'Access denied' });
     if (pod.createdBy?.toString() !== (userId as { toString: () => string })?.toString()) return res.status(403).json({ error: 'Admin access required' });
-    if (reset) await VectorSearchService.resetIndex(podId);
-    const result = await VectorSearchService.rebuildIndex(podId);
-    return res.json({ podId, reset: Boolean(reset), ...result });
+    // Auth and creator checks above run first, so only an allowed caller sees 409.
+    const release = acquirePod(podId);
+    if (!release) return res.status(409).json({ error: 'An index rebuild is already running for this pod.', code: IN_PROGRESS_CODE });
+    try {
+      if (reset) await VectorSearchService.resetIndex(podId);
+      const result = await VectorSearchService.rebuildIndex(podId);
+      return res.json({ podId, reset: Boolean(reset), ...result });
+    } finally {
+      release();
+    }
   } catch (error) {
-    console.error('Error rebuilding vector index:', error);
+    logOutboundFailure('Error rebuilding vector index:', error);
     return res.status(500).json({ error: 'Failed to rebuild vector index' });
   }
 });
@@ -147,16 +157,29 @@ router.post('/index/rebuild-all', auth, async (req: AuthReq, res: Res) => {
     const userId = getUid(req);
     const { reset } = req.body || {};
     const pods = await Pod.find({ createdBy: userId }).lean() as Array<{ _id: unknown }>;
-    if (!pods.length) return res.json({ pods: 0, indexed: 0, errors: 0, total: 0, reset: Boolean(reset) });
-    let indexed = 0; let errors = 0; let total = 0;
-    for (const pod of pods) {
-      if (reset) await VectorSearchService.resetIndex(pod._id);
-      const result = await VectorSearchService.rebuildIndex(pod._id) as { indexed?: number; errors?: number; total?: number };
-      indexed += result.indexed || 0; errors += result.errors || 0; total += result.total || 0;
+    if (!pods.length) return res.json({ pods: 0, indexed: 0, errors: 0, total: 0, skipped: 0, reset: Boolean(reset) });
+    const releaseUser = acquireUserAll(userId);
+    if (!releaseUser) return res.status(409).json({ error: 'An index rebuild-all is already running for this user.', code: IN_PROGRESS_CODE });
+    let indexed = 0; let errors = 0; let total = 0; let skipped = 0;
+    try {
+      for (const pod of pods) {
+        // A pod whose single rebuild is already running is skipped, not failed.
+        const release = acquirePod(pod._id);
+        if (!release) { skipped += 1; continue; }
+        try {
+          if (reset) await VectorSearchService.resetIndex(pod._id);
+          const result = await VectorSearchService.rebuildIndex(pod._id) as { indexed?: number; errors?: number; total?: number };
+          indexed += result.indexed || 0; errors += result.errors || 0; total += result.total || 0;
+        } finally {
+          release();
+        }
+      }
+    } finally {
+      releaseUser();
     }
-    return res.json({ pods: pods.length, indexed, errors, total, reset: Boolean(reset) });
+    return res.json({ pods: pods.length, indexed, errors, total, skipped, reset: Boolean(reset) });
   } catch (error) {
-    console.error('Error rebuilding vector indices:', error);
+    logOutboundFailure('Error rebuilding vector indices:', error);
     return res.status(500).json({ error: 'Failed to rebuild vector indices' });
   }
 });
@@ -171,7 +194,7 @@ router.get('/pods/:podId/index/stats', auth, async (req: AuthReq, res: Res) => {
     const stats = await VectorSearchService.getStats(podId);
     return res.json({ podId, stats });
   } catch (error) {
-    console.error('Error fetching vector index stats:', error);
+    logOutboundFailure('Error fetching vector index stats:', error);
     return res.status(500).json({ error: 'Failed to fetch vector index stats' });
   }
 });
@@ -187,7 +210,7 @@ router.get('/pods/:podId/assets/:assetId', auth, async (req: AuthReq, res: Res) 
     if (!asset) return res.status(404).json({ error: 'Asset not found' });
     res.json({ id: asset._id.toString(), title: asset.title, type: asset.type, content: asset.content, tags: asset.tags || [], source: asset.sourceRef, createdAt: asset.createdAt, updatedAt: asset.updatedAt });
   } catch (error) {
-    console.error('Error reading asset:', error);
+    logOutboundFailure('Error reading asset:', error);
     res.status(500).json({ error: 'Failed to read asset' });
   }
 });
@@ -205,7 +228,7 @@ router.get('/pods/:podId/memory/:path(*)', auth, async (req: AuthReq, res: Res) 
     res.json({ content });
   } catch (error) {
     const e = error as Error;
-    console.error('Error reading memory file:', error);
+    logOutboundFailure('Error reading memory file:', error);
     if (e.message?.includes('not found')) return res.status(404).json({ error: e.message });
     res.status(500).json({ error: 'Failed to read memory file' });
   }
@@ -227,7 +250,7 @@ router.post('/memory/:podId', auth, async (req: AuthReq, res: Res) => {
     const result = await ContextAssemblerService.writeMemory(podId, { target, content, tags: tags || [], source: { ...(source as Record<string, unknown>), userId: (userId as { toString: () => string })?.toString() }, scope: scope || (agentContext ? 'agent' : 'pod'), agentContext });
     res.json(result);
   } catch (error) {
-    console.error('Error writing memory:', error);
+    logOutboundFailure('Error writing memory:', error);
     res.status(500).json({ error: 'Failed to write memory' });
   }
 });
@@ -245,7 +268,7 @@ router.get('/pods/:podId/skills', auth, async (req: AuthReq, res: Res) => {
     const skills = await PodAsset.find(query).sort({ updatedAt: -1 }).limit(limit ? parseInt(limit, 10) : 50).lean() as Array<Record<string, unknown> & { _id: { toString: () => string } }>;
     res.json({ skills: skills.map((s) => ({ id: s._id.toString(), name: s.title, description: (s.content as string)?.substring(0, 200), instructions: s.content, tags: s.tags || [], sourceAssetIds: s.sourceRef ? [s.sourceRef.toString()] : [] })) });
   } catch (error) {
-    console.error('Error getting skills:', error);
+    logOutboundFailure('Error getting skills:', error);
     res.status(500).json({ error: 'Failed to get skills' });
   }
 });
@@ -261,7 +284,7 @@ router.get('/pods/:podId/summaries', auth, async (req: AuthReq, res: Res) => {
     const summaries = await ContextAssemblerService.getRecentSummaries(podId, { hours: hours ? parseInt(hours, 10) : 24, types: types ? types.split(',') : null, limit: limit ? parseInt(limit, 10) : 10 }) as Array<Record<string, unknown>>;
     res.json({ summaries: summaries.map((s) => ({ id: (s._id as { toString: () => string }).toString(), type: s.type, content: s.content, period: { start: (s.timeRange as { start?: { toISOString: () => string } })?.start?.toISOString() || (s.createdAt as { toISOString: () => string })?.toISOString(), end: (s.timeRange as { end?: { toISOString: () => string } })?.end?.toISOString() || (s.createdAt as { toISOString: () => string })?.toISOString() }, metadata: s.metadata })) });
   } catch (error) {
-    console.error('Error getting summaries:', error);
+    logOutboundFailure('Error getting summaries:', error);
     res.status(500).json({ error: 'Failed to get summaries' });
   }
 });

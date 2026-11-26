@@ -16,6 +16,9 @@
  * - A one-minute repeating trigger with `IgnoreNew` is the watchdog for the
  *   launcher itself: while the task runs it starts nothing, and if the
  *   launcher is killed the next minute brings it back.
+ * - Exit 79 means another daemon already holds this machine's lock (F637):
+ *   the launcher waits 30 s and tries again, so the task stays running and
+ *   takes over when the holder dies. It never disables the task for it.
  * - On 77/78 the launcher disables the task before it exits, so the watchdog
  *   does not restart a daemon that has been told to stop. That is launchd's
  *   "park on a successful exit" in Task Scheduler's terms; `daemon start` and
@@ -60,7 +63,8 @@ export const psQuote = (value) => `'${String(value).replace(/['‘’‚‛]/g, 
 
 export const windowsLauncherScript = ({ nodePath, cliPath, logPath, envFile, taskName = WINDOWS_TASK_NAME }) => `# Commonly daemon launcher. Written by \`commonly daemon install\`; re-run that command instead of editing this file.
 # It loads the service environment, then keeps \`commonly daemon run\` alive: every exit restarts it after 5 s,
-# except 77 (this computer's key was revoked) and 78 (no valid local registration), which disable the task and stop.
+# except 77 (this computer's key was revoked) and 78 (no valid local registration), which disable the task and stop,
+# and 79 (another daemon already runs for this computer), which waits 30 s and tries again.
 $ErrorActionPreference = 'Continue'
 $node = ${psQuote(nodePath)}
 $cli = ${psQuote(cliPath)}
@@ -80,6 +84,7 @@ $env:COMMONLY_DAEMON_LAUNCHER_PID = "$PID"
 while ($true) {
   & $node $cli daemon run --foreground 2>&1 | ForEach-Object { "$_" } | Add-Content -LiteralPath $log -Encoding UTF8
   $code = $LASTEXITCODE
+  if ($code -eq 79) { Start-Sleep -Seconds 30; continue }
   if ($code -eq 77 -or $code -eq 78) {
     & schtasks.exe /Change /TN $task /DISABLE | Out-Null
     if ($LASTEXITCODE -eq 0) { exit $code }
@@ -187,14 +192,22 @@ export const installWindowsService = async ({
 
 export const LAUNCHER_PID_ENV = 'COMMONLY_DAEMON_LAUNCHER_PID';
 
-const pidAlive = (pid) => {
+// F637: EPERM counts as gone. The real launcher runs as this same user at
+// LeastPrivilege, so this process may always signal it; EPERM means the pid
+// now belongs to another account's (or an elevated) process, i.e. the launcher
+// exited and Windows reused its pid. Read as "alive", that kept an orphaned
+// daemon polling forever.
+export const launcherPidAlive = (pid, kill = process.kill.bind(process)) => {
   try {
-    process.kill(pid, 0);
+    kill(pid, 0);
     return true;
-  } catch (error) {
-    return error.code === 'EPERM';
+  } catch {
+    return false;
   }
 };
+
+// A write into the pipe of a launcher that has exited.
+const PIPE_GONE = new Set(['EPIPE', 'ERR_STREAM_DESTROYED']);
 
 /**
  * `schtasks /End` terminates the launcher only; the node it started would
@@ -207,7 +220,7 @@ const pidAlive = (pid) => {
 export const watchWindowsLauncher = ({
   env = process.env,
   platform = process.platform,
-  isAlive = pidAlive,
+  isAlive = launcherPidAlive,
   onGone,
   everyMs = 2000,
   setIntervalFn = setInterval,
@@ -221,17 +234,31 @@ export const watchWindowsLauncher = ({
   // error would end the daemon before it stops its seats. So the streams
   // swallow errors from the moment the watch is armed, not only after the
   // launcher's exit is noticed up to two seconds later.
-  for (const stream of streams) stream?.on?.('error', () => {});
+  //
+  // F637: a dead pipe is itself proof the launcher is gone (the pid check can
+  // be fooled by a reused pid), so EPIPE, or a write after the stream was
+  // destroyed, stops the daemon through the same onGone, once. Any other
+  // stream error is still swallowed.
+  let timer = null;
+  let gone = false;
+  const fire = () => {
+    if (gone) return;
+    gone = true;
+    if (timer !== null) clearIntervalFn(timer);
+    onGone(pid);
+  };
+  for (const stream of streams) {
+    stream?.on?.('error', (error) => { if (PIPE_GONE.has(error?.code)) fire(); });
+  }
   // Already gone when armed (the daemon is armed before its first tick): say
   // so now, rather than after a poll and a heartbeat logged into a dead pipe.
   if (!isAlive(pid)) {
-    onGone(pid);
+    fire();
     return () => {};
   }
-  const timer = setIntervalFn(() => {
+  timer = setIntervalFn(() => {
     if (isAlive(pid)) return;
-    clearIntervalFn(timer);
-    onGone(pid);
+    fire();
   }, everyMs);
   if (typeof timer?.unref === 'function') timer.unref();
   return () => clearIntervalFn(timer);

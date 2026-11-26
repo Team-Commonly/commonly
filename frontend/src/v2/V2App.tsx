@@ -11,6 +11,7 @@ import { useEmailReturn } from './hooks/useEmailReturn';
 import RegistrationInviteRequired from '../components/RegistrationInviteRequired';
 import VerifyEmail from '../components/VerifyEmail';
 import V2EmailVerificationBanner from './components/V2EmailVerificationBanner';
+import V2DiscordCard from './components/V2DiscordCard';
 import ProtectedRoute from '../components/ProtectedRoute';
 import '@fontsource-variable/bricolage-grotesque/opsz.css';
 import '@fontsource/ibm-plex-sans/400.css';
@@ -65,8 +66,7 @@ const V2RunTrace = React.lazy(() => import('./components/V2RunTrace'));
 const V2TaskRecord = React.lazy(() => import('./components/V2TaskRecord'));
 const V2ActivityPage = React.lazy(() => import('./components/V2ActivityPage'));
 const V2ArtifactsPage = React.lazy(() => import('./components/V2ArtifactsPage'));
-const ApiDevPage = React.lazy(() => import('../components/ApiDevPage'));
-const PodContextDevPage = React.lazy(() => import('../components/PodContextDevPage'));
+const V2PodContextDev = React.lazy(() => import('./components/V2PodContextDev'));
 const V2GlobalIntegrations = React.lazy(() => import('./components/V2GlobalIntegrations'));
 const V2AdminUsers = React.lazy(() => import('./components/V2AdminUsers'));
 const V2AdminAnalytics = React.lazy(() => import('./components/V2AdminAnalytics'));
@@ -127,6 +127,7 @@ const V2Boot: React.FC = () => (
 const V2AuthenticatedShell: React.FC<{ children: React.ReactNode }> = ({ children }) => (
   <div className="v2-authenticated-shell">
     <V2EmailVerificationBanner />
+    <V2DiscordCard />
     <div className="v2-authenticated-shell__content">{children}</div>
   </div>
 );
@@ -448,18 +449,10 @@ const V2App: React.FC = () => {
                   )}
                 />
                 <Route
-                  path="dev/api"
-                  element={feature(
-                    'API Dev',
-                    <ProtectedRoute requireAdmin><ApiDevPage /></ProtectedRoute>,
-                    false,
-                  )}
-                />
-                <Route
                   path="dev/pod-context"
                   element={feature(
                     'Pod Context Dev',
-                    <ProtectedRoute requireAdmin><PodContextDevPage /></ProtectedRoute>,
+                    <ProtectedRoute requireAdmin><V2PodContextDev /></ProtectedRoute>,
                     false,
                   )}
                 />

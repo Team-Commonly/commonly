@@ -24,6 +24,7 @@
     "backfill:attention-items": "node dist/scripts/backfill-attention-items.js",
     "backfill:message-author-kind": "node dist/scripts/backfill-message-author-kind.js",
     "backfill:listener-check-in": "node dist/scripts/backfill-listener-check-in.js",
+    "backfill:machine-first-answer": "node dist/scripts/backfill-machine-first-answer.js",
     "backfill:local-messages": "node dist/scripts/backfill-local-messages-to-pg.js",
     "backfill:task-created-by": "node dist/scripts/backfill-task-created-by.js",
     "backfill:hosted-room-owners": "node dist/scripts/reassign-hosted-room-owners.js",

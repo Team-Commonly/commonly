@@ -16,6 +16,7 @@ const GlobalModelConfigService = require('../../services/globalModelConfigServic
 const { isListedPodMember } = require('../../utils/isPodMember');
 const externalFeedService = require('../../services/externalFeedService');
 const mongoose = require('mongoose');
+const { logOutboundFailure } = require('../../utils/safeErrorLog');
 const {
   storeFeedTokens, readFeedAccessToken, hasFeedAccessToken,
 } = require('../../services/feedCredentials');
@@ -133,7 +134,8 @@ const ensureGlobalSocialFeedPod = async (userId: any) => {
     // the predicate reads and what the pod's own write paths enforce; the PG
     // mirror follows below. `createdBy` is deliberately untouched — it is the
     // row's owner, not a membership record.
-    await Pod.updateOne({ _id: globalPod._id }, { $addToSet: { members: userId } });
+    // F621: bump the version so a stale whole-array save can't undo this add.
+    await Pod.updateOne({ _id: globalPod._id }, { $addToSet: { members: userId }, $inc: { __v: 1 } });
     globalPod = await Pod.findById(globalPod._id);
   }
 
@@ -523,7 +525,7 @@ router.get('/', auth, adminAuth, async (req: any, res: any) => {
       globalPodId: globalPod._id,
     });
   } catch (error) {
-    console.error('Error fetching global integrations:', error);
+    console.error('Error fetching global integrations:', error); // safe-log: no outbound call
     res.status(500).json({ error: 'Failed to fetch global integrations' });
   }
 });
@@ -546,7 +548,7 @@ router.post('/model-policy', auth, adminAuth, async (req: any, res: any) => {
     const modelPolicy = await GlobalModelConfigService.setConfig(req.body || {}, userId);
     return res.json({ success: true, modelPolicy });
   } catch (error) {
-    console.error('Error saving global model policy:', error);
+    console.error('Error saving global model policy:', error); // safe-log: no outbound call
     return res.status(500).json({ error: 'Failed to save model policy' });
   }
 });
@@ -564,7 +566,7 @@ router.post('/policy', auth, adminAuth, async (req: any, res: any) => {
     const policy = await SocialPolicyService.setPolicy(req.body || {}, userId);
     return res.json({ success: true, policy });
   } catch (error) {
-    console.error('Error saving global social policy:', error);
+    console.error('Error saving global social policy:', error); // safe-log: no outbound call
     return res.status(500).json({ error: 'Failed to save social policy' });
   }
 });
@@ -622,7 +624,7 @@ router.post('/x', adminWriteLimiter, auth, adminAuth, async (req: any, res: any)
       integration: xIntegration,
     });
   } catch (error) {
-    console.error('Error saving X integration:', error);
+    console.error('Error saving X integration:', error); // safe-log: no outbound call
     res.status(500).json({ error: 'Failed to save X integration' });
   }
 });
@@ -701,7 +703,7 @@ router.post('/instagram', adminWriteLimiter, auth, adminAuth, async (req: any, r
       integration: instagramIntegration,
     });
   } catch (error) {
-    console.error('Error saving Instagram integration:', error);
+    console.error('Error saving Instagram integration:', error); // safe-log: no outbound call
     res.status(500).json({ error: 'Failed to save Instagram integration' });
   }
 });
@@ -738,8 +740,8 @@ router.post('/x/test', auth, adminAuth, async (req: any, res: any) => {
 
     res.json({ success: true, message: 'X connection successful' });
   } catch (error: unknown) {
-    console.error('X connection test failed:', error);
-    res.status(500).json({ error: (error as Error).message || 'Connection test failed' });
+    logOutboundFailure('X connection test failed:', error);
+    res.status(500).json({ error: 'Connection test failed' });
   }
 });
 
@@ -756,8 +758,8 @@ router.post('/sync', auth, adminAuth, async (req: any, res: any) => {
       results: Array.isArray(results) ? results : [],
     });
   } catch (error: unknown) {
-    console.error('Manual external feed sync failed:', error);
-    return res.status(500).json({ error: (error as Error).message || 'Failed to sync external feeds' });
+    logOutboundFailure('Manual external feed sync failed:', error);
+    return res.status(500).json({ error: 'Failed to sync external feeds' });
   }
 });
 
@@ -810,14 +812,19 @@ router.get('/x/following', auth, adminAuth, async (req: any, res: any) => {
     });
   } catch (error: unknown) {
     const err = error as any;
-    console.error('Failed to fetch X following list:', err?.response?.data || err);
+    logOutboundFailure('Failed to fetch X following list:', err, err?.response?.data);
     const status = err?.response?.status;
+    // The provider's own 4xx detail is shown. At 5xx, or with no response at all
+    // (a network error), the text is a driver's or a host's: fixed text.
+    if (!(typeof status === 'number' && status >= 400 && status < 500)) {
+      return res.status(typeof status === 'number' && status >= 500 ? status : 500)
+        .json({ error: 'Failed to fetch X following list' });
+    }
     const detail = err?.response?.data?.detail
       || err?.response?.data?.title
       || err?.response?.data?.error
-      || err?.message
       || 'Failed to fetch following list from X';
-    return res.status(status && status >= 400 ? status : 500).json({ error: detail });
+    return res.status(status).json({ error: detail });
   }
 });
 
@@ -846,12 +853,13 @@ router.post('/instagram/test', auth, adminAuth, async (req: any, res: any) => {
 
     res.json({ success: true, message: 'Instagram connection successful' });
   } catch (error: unknown) {
-    console.error('Instagram connection test failed:', error);
-    res.status(500).json({ error: (error as Error).message || 'Connection test failed' });
+    logOutboundFailure('Instagram connection test failed:', error);
+    res.status(500).json({ error: 'Connection test failed' });
   }
 });
 
 module.exports = router;
 module.exports.ensureGlobalPodPostgresSync = ensureGlobalPodPostgresSync;
+module.exports.ensureGlobalSocialFeedPod = ensureGlobalSocialFeedPod;
 
 export {};

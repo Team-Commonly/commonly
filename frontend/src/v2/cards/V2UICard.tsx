@@ -1,9 +1,10 @@
 import React, { lazy, Suspense, useEffect, useState } from 'react';
 import type { V2Message } from '../hooks/useV2PodDetail';
-import { cardRevision, parseCard } from './uiCardSource';
+import { cardChoices, cardRevision, parseCard } from './uiCardSource';
 import { CardContext, TraceLink } from './cardViews';
 import './uiCard.css';
 import CardRenderBoundary from './CardRenderBoundary';
+import { CardChoiceProvider } from './cardChoice';
 
 const Runtime = lazy(() => {
   // OpenUI's development entry auto-mounts an inspector by default. Commonly
@@ -18,14 +19,19 @@ function CardBody({ message }: { message: V2Message }) {
   const payload = message.payload;
   const rev = cardRevision(payload);
   const supported = !!rev;
-  const valid = !!rev && payload?.v === 1 && payload?.lang === 'openui@1' && !!parseCard(payload?.source, rev);
+  const root = rev && payload?.v === 1 && payload?.lang === 'openui@1' ? parseCard(payload?.source, rev) : null;
+  const valid = !!root;
   const expired = now >= new Date(message.created_at || message.createdAt || '').getTime() + 30 * 86400_000;
   const fallback = <><div className="ui-tx">{message.content}</div><p className="ui-meta">{supported ? 'This card couldn’t be displayed.' : 'Unsupported card version.'}</p></>;
   if (expired) return <section className="ui gone"><div className="ui-bd"><p className="ui-tx">{message.content}</p><p className="ui-meta">Card expires after 30 days. Trace persists.</p><TraceLink /></div></section>;
   if (!valid || failed) return <div className="ui-fallback">{fallback}</div>;
-  return <CardRenderBoundary fallback={fallback}><Suspense fallback={<div className="ui-tx">{message.content}</div>}>
+  const runtime = <CardRenderBoundary fallback={fallback}><Suspense fallback={<div className="ui-tx">{message.content}</div>}>
     <Runtime source={payload!.source!} rev={rev!} onError={() => setFailed(true)} />
   </Suspense></CardRenderBoundary>;
+  // Only a card with acting Buttons reads or sends a choice.
+  const choices = cardChoices(root);
+  return choices.length
+    ? <CardChoiceProvider messageId={String(message.id ?? '')} choices={choices}>{runtime}</CardChoiceProvider> : runtime;
 }
 export default function V2UICard({ message, authorLabel, time }: { message: V2Message; authorLabel: string; time?: string }) {
   return <div id={`message-${message.id}`} tabIndex={-1} className="v2-msg v2-ui-card" data-testid="ui-card">
