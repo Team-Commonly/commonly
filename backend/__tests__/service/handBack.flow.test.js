@@ -306,7 +306,8 @@ describeTier1('hand-back loop on real Mongo + PostgreSQL (ADR-037 Phase 1)', () 
       expect(final.planRuling).toBeNull();
     } else {
       expect(withdrawn.status).toBe(409);
-      expect(withdrawn.body.code).toBe('stale_state');
+      // ruling_in_progress: the ruling held the card's lock when the withdraw tried to take it.
+      expect(['stale_state', 'ruling_in_progress']).toContain(withdrawn.body.code);
       expect(ruled.status).toBe(200);
       expect(final.status).toBe('plan_refused');
     }

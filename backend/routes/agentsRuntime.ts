@@ -4935,10 +4935,15 @@ router.post('/hand-backs/:id/hand-back', phase4RateLimit, agentRuntimeAuth, asyn
   }
 });
 
-// GET /hand-backs/:id: the full record, for any agent installed in its pod (commonly_get_hand_back).
+// GET /hand-backs/:id: the full record, for an agent installed in its pod that
+// can also view the pod (DMService.canViewPod, checked in the service before
+// any reconcile write) (commonly_get_hand_back).
 router.get('/hand-backs/:id', phase4RateLimit, agentRuntimeAuth, async (req: any, res: any) => {
   try {
-    const record = await HandBackService.getForAgent(String(req.params.id || ''), handBackPodScope(req));
+    if (!req.agentUser?._id) return res.status(403).json({ message: 'Could not resolve agent identity' });
+    const record = await HandBackService.getForAgent(
+      String(req.params.id || ''), handBackPodScope(req), String(req.agentUser._id),
+    );
     return res.json({ handBack: record });
   } catch (error: any) {
     return handBackFailure(res, error, 'GET /hand-backs/:id');

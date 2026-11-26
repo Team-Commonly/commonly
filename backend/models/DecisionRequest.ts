@@ -174,6 +174,14 @@ DecisionRequestSchema.index(
   { unique: true, partialFilterExpression: { cardMessageId: { $type: 'string' } } },
 );
 
+// A subject finds its own card when the card's id never reached the subject's
+// record (handBackService recovery). Partial, so cards without a subject are
+// not indexed.
+DecisionRequestSchema.index(
+  { 'subject.type': 1, 'subject.id': 1, 'subject.stage': 1, createdAt: -1 },
+  { partialFilterExpression: { 'subject.type': { $type: 'string' } } },
+);
+
 const DecisionRequest: Model<IDecisionRequest> = (mongoose.models.DecisionRequest as Model<IDecisionRequest>)
   || mongoose.model<IDecisionRequest>('DecisionRequest', DecisionRequestSchema);
 

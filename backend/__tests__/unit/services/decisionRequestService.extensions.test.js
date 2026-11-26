@@ -30,7 +30,9 @@ jest.mock('../../../services/attentionItemService', () => ({
 jest.mock('../../../config/socket', () => ({ getIO: jest.fn(() => null) }));
 jest.mock('../../../services/threadRootResolver', () => ({ resolveThreadRoot: jest.fn(async () => 612) }));
 
-const { chooseDecision, closeDecision, requestDecision } = require('../../../services/decisionRequestService');
+const {
+  chooseDecision, closeDecision, claimRulingLock, requestDecision,
+} = require('../../../services/decisionRequestService');
 const { registerDecisionSubject, unregisterDecisionSubject } = require('../../../services/decisionSubjectRegistry');
 
 const userChain = (user) => ({ select: () => ({ lean: async () => user }) });
@@ -230,6 +232,36 @@ describe('decision-card extensions (ADR-037 §2)', () => {
       { 'rulingLock.expiresAt': { $lt: expect.any(Date) } },
     ]);
     expect(mockResolveAttention).not.toHaveBeenCalled();
+  });
+
+  test('closeDecision with a lock token closes only under that token', async () => {
+    mockDecision.findOneAndUpdate.mockResolvedValueOnce({ _id: 'decision-1', status: 'closed' });
+    await expect(closeDecision('decision-1', { lockToken: 'withdraw-token' })).resolves.toBe(true);
+    const [filter, update] = mockDecision.findOneAndUpdate.mock.calls[0];
+    expect(filter).toEqual({ _id: 'decision-1', status: 'pending', 'rulingLock.token': 'withdraw-token' });
+    expect(update).toMatchObject({ $set: { status: 'closed' }, $unset: { rulingLock: 1 } });
+    expect(mockResolveAttention).toHaveBeenCalledWith('decision_request', 'decision-1');
+  });
+
+  test('claimRulingLock takes the same claim a ruling takes, and says why when it cannot', async () => {
+    mockDecision.findOneAndUpdate.mockResolvedValueOnce({ _id: 'decision-1' });
+    const claimed = await claimRulingLock('decision-1');
+    expect(claimed.token).toEqual(expect.any(String));
+    const [filter, update] = mockDecision.findOneAndUpdate.mock.calls[0];
+    expect(filter).toMatchObject({ _id: 'decision-1', status: 'pending' });
+    expect(filter.$or).toEqual([
+      { rulingLock: { $exists: false } },
+      { 'rulingLock.expiresAt': { $lt: expect.any(Date) } },
+    ]);
+    expect(update.$set.rulingLock).toMatchObject({ token: claimed.token, expiresAt: expect.any(Date) });
+    const leanChain = (row) => ({ select: () => ({ lean: async () => row }) });
+    for (const [row, state] of [
+      [{ status: 'ruled' }, 'ruled'], [{ status: 'closed' }, 'closed'], [{ status: 'pending' }, 'locked'], [null, 'missing'],
+    ]) {
+      mockDecision.findOneAndUpdate.mockResolvedValueOnce(null);
+      mockDecision.findById.mockReturnValueOnce(leanChain(row));
+      await expect(claimRulingLock('decision-1')).resolves.toEqual({ state });
+    }
   });
 
   test('requestDecision stores the internal extensions and keeps the kernel source label', async () => {

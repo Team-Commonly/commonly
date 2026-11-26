@@ -102,6 +102,21 @@ describe('V2DecisionCard', () => {
     expect(await screen.findByRole('status')).toHaveTextContent('bob ruled: Accept. Green 50 times');
   });
 
+  test('a ruling that lost to another tab shows the standing reason too', async () => {
+    mockPost.mockRejectedValue({
+      response: {
+        status: 409,
+        data: { decision: { ruling: { value: 'Refuse', by: 'bob', reason: 'Fix the race, not the clock' } } },
+      },
+    });
+    render(<V2DecisionCard decision={handBackCard} />);
+    fireEvent.change(screen.getByLabelText('Your reason (required)'), { target: { value: 'looks fine' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Accept' }));
+    const status = await screen.findByRole('status');
+    expect(status).toHaveTextContent('Fix the race, not the clock');
+    expect(status).not.toHaveTextContent('looks fine');
+  });
+
   test('a withdrawn card answers that it was withdrawn instead of a generic failure', async () => {
     mockPost.mockRejectedValue({ response: { status: 409, data: { code: 'decision_closed' } } });
     render(<V2DecisionCard decision={handBackCard} />);

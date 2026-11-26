@@ -175,8 +175,9 @@ export const listForPod = async (podId: string, limit = 50): Promise<HandBackRec
 };
 
 /**
- * What the reconcile sweep reads: records waiting on a card, and records
- * withdrawn recently enough that their card might still be pending.
+ * What the reconcile sweep reads: records waiting on a card (including one
+ * whose card id was never stored, which recovery attaches or undoes), and
+ * records withdrawn recently enough that their card might still be pending.
  */
 export const listForReconcile = async (withdrawnSince: Date, limit = 200): Promise<HandBackRecord[]> => {
   const pool = loadPool();
@@ -277,26 +278,31 @@ export const transition = async (input: {
 };
 
 /**
- * Attach the plan card to a just-sent record, whatever its status: a record
- * withdrawn while its card was being posted still learns the card, so the
- * card can be closed. Null only when a card is already attached.
+ * Attach the plan card to a just-sent record that is still waiting on it, or
+ * was withdrawn while its card was being posted (it still learns the card, so
+ * the card can be closed). Null when a card is already attached, or the record
+ * is gone (recovery removed a card-less record it gave up on).
  */
 export const attachPlanDecision = async (id: string, decisionId: string, now: Date): Promise<HandBackRecord | null> => {
   const { rows } = await requirePool().query(
     `UPDATE hand_backs SET plan_decision_id = $2, updated_at = $3
-      WHERE id = $1 AND plan_decision_id IS NULL RETURNING *`,
+      WHERE id = $1 AND plan_decision_id IS NULL AND status IN ('plan_sent', 'withdrawn') RETURNING *`,
     [id, decisionId, now],
   );
   return rows[0] ? toRecord(rows[0]) : null;
 };
 
-/** Attach the result card to a just-handed-back record; a withdrawn one too (as above). */
+/**
+ * Attach the result card to a just-handed-back record; a withdrawn one too (as
+ * above). Not to a record recovery already put back to plan_accepted: that
+ * card arrived too late and its poster closes it.
+ */
 export const attachHandbackDecision = async (
   id: string, decisionId: string, now: Date,
 ): Promise<HandBackRecord | null> => {
   const { rows } = await requirePool().query(
     `UPDATE hand_backs SET handback_decision_id = $2, updated_at = $3
-      WHERE id = $1 AND handback_decision_id IS NULL RETURNING *`,
+      WHERE id = $1 AND handback_decision_id IS NULL AND status IN ('handed_back', 'withdrawn') RETURNING *`,
     [id, decisionId, now],
   );
   return rows[0] ? toRecord(rows[0]) : null;

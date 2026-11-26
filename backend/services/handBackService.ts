@@ -72,6 +72,13 @@ const WITHDRAWN_RECHECK_MS = 7 * 24 * 60 * 60 * 1000;
 // The sweep retries an unstamped handback.received only after this long, so
 // the ruling's own writer has time to enqueue and stamp it first.
 const RECEIVED_GRACE_MS = 2 * 60 * 1000;
+// How long a record may wait for its card's id before recovery treats the
+// card post as failed. A post is one chat write and one Mongo insert, each
+// bounded by its driver's timeouts (well under a minute together), so five
+// minutes is far past any post still in flight: recovery never undoes a post
+// that could still land. A card that does land later finds its record moved
+// and is closed by its poster (attachPostedCard).
+const CARD_POST_GRACE_MS = 5 * 60 * 1000;
 
 const fail = (message: string, status: number, code: string, detail?: Record<string, unknown>): never => {
   throw new HandBackError(message, status, code, detail);
@@ -373,12 +380,45 @@ export const sendPlan = async (input: {
       },
     });
   } catch (error) {
-    await repo.deleteUnposted(id).catch(() => {});
+    await repo.deleteUnposted(id).catch((undoError: Error) => {
+      console.warn('[hand-back] removing a plan whose card failed did not apply; recovery retries:', undoError.message);
+    });
     throw error;
   }
-  const attached = await repo.attachPlanDecision(id, String(card.decisionId), new Date());
-  if (!attached) fail('The record changed while its card was posted', 409, 'stale_state');
-  return postedCardResult(attached as HandBackRecord, 'plan_sent', card);
+  return postedCardResult(await attachPostedCard(id, 'plan', card), 'plan_sent', card);
+};
+
+const closeOrphanCard = async (decisionId: string, why: string): Promise<void> => {
+  try {
+    // eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
+    if (!(await require('./decisionRequestService').closeDecision(decisionId))) {
+      console.warn(`[hand-back] a card posted after ${why} was not closed (already settled or under a ruling lock)`);
+    }
+  } catch (error) {
+    console.warn(`[hand-back] closing a card posted after ${why} failed:`, (error as Error).message);
+  }
+};
+
+/**
+ * Store a just-posted card's id on its record. Recovery may have attached the
+ * same card first (found by its subject), which counts as attached. If the
+ * record is gone or has moved on, the card arrived too late: it is closed so
+ * it doesn't sit pending with nothing behind it, and the agent hears
+ * stale_state.
+ */
+const attachPostedCard = async (
+  id: string, stage: 'plan' | 'result', card: Record<string, unknown>,
+): Promise<HandBackRecord> => {
+  const decisionId = String(card.decisionId);
+  const attached = stage === 'plan'
+    ? await repo.attachPlanDecision(id, decisionId, new Date())
+    : await repo.attachHandbackDecision(id, decisionId, new Date());
+  if (attached) return attached;
+  const current: HandBackRecord | null = await repo.findById(id);
+  const held = stage === 'plan' ? current?.planDecisionId : current?.handbackDecisionId;
+  if (current && held === decisionId) return current;
+  await closeOrphanCard(decisionId, 'its record moved on');
+  return fail('The record changed while its card was posted', 409, 'stale_state');
 };
 
 /**
@@ -569,29 +609,84 @@ export const registerHandBackSubject = (): void => {
   registered = true;
 };
 
+/** The newest live card a record posted for a stage, found by its subject. */
+const cardBySubject = async (id: string, stage: 'plan' | 'result'): Promise<any> => DecisionRequest.findOne({
+  'subject.type': SUBJECT_TYPE, 'subject.id': id, 'subject.stage': stage, status: { $in: ['pending', 'ruled'] },
+}).sort({ createdAt: -1 }).lean();
+
 /**
- * Read-path reconcile (ADR-037 §3): a record still waiting on a card that is
- * already ruled catches up now. Returns the current record.
+ * A record waiting on a card whose id it never stored: the card post or the
+ * attach failed, and so did its undo. If the card exists (by its subject), it
+ * is attached now and becomes rulable; no second card is posted. If no card
+ * exists once the grace window has passed, the post failed: the plan record is
+ * removed, or the hand-back goes back to plan_accepted so the agent can retry.
+ * Both undos are the same conditional writes the poster uses, so neither can
+ * undo a concurrent withdraw or a card attached meanwhile. Null when the
+ * record is gone.
  */
-export const reconcile = async (record: HandBackRecord, cards?: Map<string, any>): Promise<HandBackRecord> => {
+const recoverUnattached = async (record: HandBackRecord, now: Date): Promise<HandBackRecord | null> => {
+  const stage = record.status === 'plan_sent' ? 'plan' : 'result';
+  const card = await cardBySubject(record.id, stage);
+  if (card) {
+    const attached = stage === 'plan'
+      ? await repo.attachPlanDecision(record.id, String(card._id), new Date())
+      : await repo.attachHandbackDecision(record.id, String(card._id), new Date());
+    return attached || repo.findById(record.id);
+  }
+  const waitingSince = stage === 'plan' ? record.createdAt : (record.handedBackAt || record.updatedAt);
+  if (now.getTime() - new Date(waitingSince).getTime() < CARD_POST_GRACE_MS) return record;
+  if (stage === 'plan') {
+    await repo.deleteUnposted(record.id);
+  } else {
+    await repo.transition({
+      id: record.id, from: 'handed_back', to: 'plan_accepted',
+      set: { changed: null, checked: null, unverified: null, handed_back_at: null },
+      where: { handback_decision_id: null }, now: new Date(),
+    });
+  }
+  return repo.findById(record.id);
+};
+
+/**
+ * Reconcile (ADR-037 §3), on every read and in the sweep: a record still
+ * waiting on a card that is already ruled catches up now, and a record that
+ * never stored its card's id is recovered (recoverUnattached). Returns the
+ * current record, or null when recovery removed it.
+ */
+export const reconcile = async (
+  record: HandBackRecord, cards?: Map<string, any>, now: Date = new Date(),
+): Promise<HandBackRecord | null> => {
+  let current = record;
+  if ((current.status === 'plan_sent' && !current.planDecisionId)
+    || (current.status === 'handed_back' && !current.handbackDecisionId)) {
+    try {
+      const recovered = await recoverUnattached(current, now);
+      if (!recovered) return null;
+      current = recovered;
+    } catch (error) {
+      console.warn('[hand-back] recovering a record without its card failed:', (error as Error).message);
+      return current;
+    }
+  }
   let cardId: string | null = null;
-  if (record.status === 'plan_sent') cardId = record.planDecisionId;
-  else if (record.status === 'handed_back') cardId = record.handbackDecisionId;
-  if (!cardId) return record;
-  const card = cards ? cards.get(cardId) : (await decisionsById([cardId])).get(cardId);
-  if (card?.status !== 'ruled') return record;
+  if (current.status === 'plan_sent') cardId = current.planDecisionId;
+  else if (current.status === 'handed_back') cardId = current.handbackDecisionId;
+  if (!cardId) return current;
+  const card = cards?.has(cardId) ? cards.get(cardId) : (await decisionsById([cardId])).get(cardId);
+  if (card?.status !== 'ruled') return current;
   try {
     await applyRuling(card);
   } catch (error) {
     console.warn('[hand-back] read-path reconcile failed:', (error as Error).message);
-    return record;
+    return current;
   }
-  return (await repo.findById(record.id)) || record;
+  return (await repo.findById(current.id)) || current;
 };
 
 const reconcileMany = async (records: HandBackRecord[]): Promise<HandBackRecord[]> => {
   const cards = await decisionsById(records.flatMap((record) => [record.planDecisionId, record.handbackDecisionId]));
-  return Promise.all(records.map((record) => reconcile(record, cards)));
+  const current = await Promise.all(records.map((record) => reconcile(record, cards)));
+  return current.filter((record): record is HandBackRecord => Boolean(record));
 };
 
 /** Hand-back (ADR-037 §5). Only the author, and only from plan_accepted. */
@@ -606,12 +701,13 @@ export const handBack = async (input: {
   if (body.unverified === undefined) fail('unverified is required (it may be empty)', 400, 'invalid_hand_back');
   const unverified = list(body.unverified, 'unverified', {}, unverifiedItem);
 
-  let record = await repo.findById(input.id);
-  if (!record || !input.authorizedPod(record.podId)) return fail('Hand-back not found', 404, 'hand_back_not_found');
-  if (record.authorAgentUserId !== input.author.agentUserId) {
+  const found = await repo.findById(input.id);
+  if (!found || !input.authorizedPod(found.podId)) return fail('Hand-back not found', 404, 'hand_back_not_found');
+  if (found.authorAgentUserId !== input.author.agentUserId) {
     fail('Only the agent that sent the plan can hand back', 403, 'not_author');
   }
-  record = await reconcile(record);
+  const record = await reconcile(found);
+  if (!record) return fail('Hand-back not found', 404, 'hand_back_not_found');
   if (record.status !== 'plan_accepted') {
     fail(`This record is ${record.status}; a hand-back needs an accepted plan`, 409, 'stale_state', { status: record.status });
   }
@@ -651,24 +747,38 @@ export const handBack = async (input: {
       },
     });
   } catch (error) {
-    // No card was posted: put the record back so the agent can retry.
+    // No card was posted: put the record back so the agent can retry. If this
+    // undo fails too, recovery does it once the grace window has passed.
     await repo.transition({
       id: rec.id, from: 'handed_back', to: 'plan_accepted',
       set: { changed: null, checked: null, unverified: null, handed_back_at: null },
       where: { handback_decision_id: null }, now: new Date(),
-    }).catch(() => null);
+    }).catch((undoError: Error) => {
+      console.warn('[hand-back] undoing a hand-back whose card failed did not apply; recovery retries:', undoError.message);
+      return null;
+    });
     throw error;
   }
-  const attached = await repo.attachHandbackDecision(rec.id, String(card.decisionId), new Date());
-  if (!attached) fail('The record changed while its card was posted', 409, 'stale_state');
-  return postedCardResult(attached as HandBackRecord, 'handed_back', card);
+  return postedCardResult(await attachPostedCard(rec.id, 'result', card), 'handed_back', card);
 };
 
-/** CAP read: any agent installed in the record's pod. */
-export const getForAgent = async (id: string, authorizedPod: (podId: string) => boolean): Promise<HandBackRecord> => {
+/**
+ * CAP read: an agent whose token covers the record's pod and who can view
+ * that pod (DMService.canViewPod). Both checks run before reconcile, so a
+ * refused caller causes no write.
+ */
+export const getForAgent = async (
+  id: string, authorizedPod: (podId: string) => boolean, viewerUserId: string,
+): Promise<HandBackRecord> => {
   const record = await repo.findById(id);
   if (!record || !authorizedPod(record.podId)) return fail('Hand-back not found', 404, 'hand_back_not_found');
-  return reconcile(record);
+  const pod = await Pod.findById(record.podId).select('_id type members').lean();
+  // eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
+  const DMService = require('./dmService');
+  if (!pod || !(await DMService.canViewPod(viewerUserId, pod))) {
+    return fail('Hand-back not found', 404, 'hand_back_not_found');
+  }
+  return (await reconcile(record)) || fail('Hand-back not found', 404, 'hand_back_not_found');
 };
 
 /** Shell read: a pod member (DMService.canViewPod) lists the pod's records. */
@@ -692,9 +802,16 @@ export const listForPod = async (podId: string, viewerUserId: string, ids?: stri
 };
 
 /**
- * Withdraw (ADR-037 §3): the author agent, or a person who owns it. The record
- * moves to withdrawn first, then its open card closes; the sweep re-closes a
- * card if that second step fails.
+ * Withdraw (ADR-037 §3): the author agent, or a person who owns it.
+ *
+ * A record with an open card takes that card's ruling lock first, the same
+ * claim chooseDecision takes, so a withdraw and a ruling never both act. A
+ * ruling already holding the lock wins: the withdraw answers
+ * ruling_in_progress and can be retried. Holding the lock, the record moves to
+ * withdrawn and the card closes on the lock's token; a ruling that arrives
+ * meanwhile hears "being ruled", and on retry decision_closed. If the record
+ * can't move, the lock is released and the card stays rulable. If the close
+ * fails, the lock expires and the sweep re-closes the card.
  */
 export const withdraw = async (input: {
   id: string;
@@ -702,42 +819,76 @@ export const withdraw = async (input: {
   reason?: unknown;
 }): Promise<Record<string, unknown>> => {
   const reason = text(input.reason, 'reason', CAPS.itemText, { required: false });
-  let record = await repo.findById(input.id);
+  const found = await repo.findById(input.id);
   const { caller } = input;
-  const visible = record && (caller.kind === 'human' || caller.authorizedPod(record.podId));
-  if (!record || !visible) return fail('Hand-back not found', 404, 'hand_back_not_found');
+  const visible = found && (caller.kind === 'human' || caller.authorizedPod(found.podId));
+  if (!found || !visible) return fail('Hand-back not found', 404, 'hand_back_not_found');
   const allowed = caller.kind === 'agent'
-    ? caller.agentUserId === record.authorAgentUserId
-    : [record.ownerInstalledBy, record.ownerUserId].includes(caller.userId);
+    ? caller.agentUserId === found.authorAgentUserId
+    : [found.ownerInstalledBy, found.ownerUserId].includes(caller.userId);
   if (!allowed) {
     if (caller.kind === 'human') {
       // eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
       const DMService = require('./dmService');
-      const pod = await Pod.findById(record.podId).select('_id type members').lean();
+      const pod = await Pod.findById(found.podId).select('_id type members').lean();
       if (!pod || !(await DMService.canViewPod(caller.userId, pod))) fail('Hand-back not found', 404, 'hand_back_not_found');
     }
     fail('Only the agent that sent it, or its owner, can withdraw it', 403, 'not_allowed');
   }
-  record = await reconcile(record as HandBackRecord);
+  const record = await reconcile(found as HandBackRecord);
+  if (!record) return fail('Hand-back not found', 404, 'hand_back_not_found');
   const from = record.status;
-  if (!(repo.OPEN_STATUSES as string[]).includes(from)) {
-    fail(`This record is ${from} and can't be withdrawn`, 409, 'stale_state', { status: from });
+  const stale = (status: HandBackStatus): never => fail(
+    `This record is ${status} and can't be withdrawn`, 409, 'stale_state', { status },
+  );
+  if (!(repo.OPEN_STATUSES as string[]).includes(from)) stale(from);
+
+  // eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
+  const decisions = require('./decisionRequestService');
+  let openCard: string | null = null;
+  if (from === 'plan_sent') openCard = record.planDecisionId;
+  else if (from === 'handed_back') openCard = record.handbackDecisionId;
+  let lockToken: string | null = null;
+  if (openCard) {
+    const claim = await decisions.claimRulingLock(openCard);
+    if (claim.token) {
+      lockToken = claim.token;
+    } else if (claim.state === 'ruled') {
+      // Ruled since the reconcile above: copy it in and report where it stands.
+      const after = await reconcile(record);
+      stale(after?.status || from);
+    } else if (claim.state === 'locked') {
+      fail('A reviewer is answering this right now; try again in a moment', 409, 'ruling_in_progress');
+    }
+    // closed or missing: there is no card left to close.
   }
+  const release = async () => {
+    if (!openCard || !lockToken) return;
+    await decisions.releaseRulingLock(openCard, lockToken).catch((error: Error) => {
+      console.warn('[hand-back] releasing the ruling lock after a failed withdraw failed; it expires:', error.message);
+    });
+  };
+
   const now = new Date();
   const withdrawnBy = caller.kind === 'agent'
     ? { kind: 'agent', userId: caller.agentUserId, ...(reason ? { reason } : {}) }
     : { kind: 'owner', userId: caller.userId, ...(reason ? { reason } : {}) };
-  const moved = await repo.transition({
-    id: record.id, from, to: 'withdrawn', set: { withdrawn_by: withdrawnBy, withdrawn_at: now }, now,
-  });
-  if (!moved) fail('Someone else changed this record first', 409, 'stale_state');
-  let openCard: string | null = null;
-  if (from === 'plan_sent') openCard = record.planDecisionId;
-  else if (from === 'handed_back') openCard = record.handbackDecisionId;
-  if (openCard) {
+  let moved: HandBackRecord | null;
+  try {
+    moved = await repo.transition({
+      id: record.id, from, to: 'withdrawn', set: { withdrawn_by: withdrawnBy, withdrawn_at: now }, now,
+    });
+  } catch (error) {
+    await release();
+    throw error;
+  }
+  if (!moved) {
+    await release();
+    fail('Someone else changed this record first', 409, 'stale_state');
+  }
+  if (openCard && lockToken) {
     try {
-      // eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
-      await require('./decisionRequestService').closeDecision(openCard);
+      await decisions.closeDecision(openCard, { lockToken });
     } catch (error) {
       console.warn('[hand-back] closing the withdrawn card failed; the sweep retries:', (error as Error).message);
     }
@@ -747,7 +898,8 @@ export const withdraw = async (input: {
 
 /**
  * The scheduler sweep (ADR-037 §3): catch up records whose card is ruled,
- * and close a still-pending card whose record was withdrawn.
+ * recover records that never stored their card's id, and close a
+ * still-pending card whose record was withdrawn.
  */
 export const sweepHandBacks = async (now: Date = new Date()): Promise<{
   applied: number; closed: number; delivered: number;
@@ -766,8 +918,9 @@ export const sweepHandBacks = async (now: Date = new Date()): Promise<{
           if (cardId && cards.get(cardId)?.status === 'pending' && await closeDecision(cardId)) closed += 1;
         }
       } else {
-        const after = await reconcile(record, cards);
-        if (after.status !== record.status) applied += 1;
+        const after = await reconcile(record, cards, now);
+        if (after?.status !== record.status || after?.planDecisionId !== record.planDecisionId
+          || after?.handbackDecisionId !== record.handbackDecisionId) applied += 1;
       }
     } catch (error) {
       console.warn('[hand-back] sweep step failed:', (error as Error).message);

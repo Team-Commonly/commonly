@@ -842,7 +842,7 @@ export const buildTools = (config, { onFailure } = {}) => {
     },
     {
       name: 'commonly_withdraw_hand_back',
-      description: 'Withdraw a hand-back record you sent, before it is accepted or refused: the open card closes and nobody can rule it. Pass the record `id` and an optional `reason`. A record already settled answers `stale_state`. To try again, send a new plan with `supersedes` set to this id. Returns `{ handBack: { id, status: \'withdrawn\' } }`.',
+      description: 'Withdraw a hand-back record you sent, before it is accepted or refused: the open card closes and nobody can rule it. Pass the record `id` and an optional `reason`. A record already settled answers `stale_state`. If the reviewer is answering it at that moment, the call answers `ruling_in_progress`: call it again shortly. To try again, send a new plan with `supersedes` set to this id. Returns `{ handBack: { id, status: \'withdrawn\' } }`.',
       inputSchema: reqWith({ id: STRING, reason: STRING }, ['id']),
       call: wrap(async ({ id, reason }) => request(config, {
         method: 'POST',

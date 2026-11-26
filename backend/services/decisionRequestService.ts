@@ -493,6 +493,50 @@ const postRulingReply = async (
 };
 
 /**
+ * The claim a ruling takes before it posts its reply: a pending card with no
+ * live lock. A subject's withdraw takes the same claim (claimRulingLock), so
+ * the two can never both act on one card.
+ */
+const claimableFilter = (decisionId: unknown, now: Date): Record<string, unknown> => ({
+  _id: decisionId,
+  status: 'pending',
+  $or: [
+    { rulingLock: { $exists: false } },
+    { 'rulingLock.expiresAt': { $lt: now } },
+  ],
+});
+
+/**
+ * ADR-037 §3: a subject that is about to withdraw takes the card's ruling
+ * lock first. Returns the token, or why the card could not be claimed:
+ * `ruled`, `closed`, `locked` (a ruling is mid-post) or `missing`.
+ */
+export const claimRulingLock = async (
+  decisionId: unknown,
+): Promise<{ token: string } | { state: 'ruled' | 'closed' | 'locked' | 'missing' }> => {
+  const token = crypto.randomUUID();
+  const claimed = await DecisionRequest.findOneAndUpdate(
+    claimableFilter(String(decisionId), new Date()),
+    { $set: { rulingLock: { token, expiresAt: new Date(Date.now() + RULE_LOCK_MS) } } },
+    { new: true },
+  );
+  if (claimed) return { token };
+  const current = await DecisionRequest.findById(String(decisionId)).select('status').lean();
+  if (!current) return { state: 'missing' };
+  if (current.status === 'ruled') return { state: 'ruled' };
+  if (current.status === 'closed') return { state: 'closed' };
+  return { state: 'locked' };
+};
+
+/** Give back a lock taken with claimRulingLock; only that holder's token releases it. */
+export const releaseRulingLock = async (decisionId: unknown, token: string): Promise<void> => {
+  await DecisionRequest.updateOne(
+    { _id: String(decisionId), status: 'pending', 'rulingLock.token': token },
+    { $unset: { rulingLock: 1 } },
+  );
+};
+
+/**
  * First human member to claim the row posts the ruling. The short lock covers
  * the durable chat write, and is cleared on failure so a transient PG outage
  * cannot strand an undecided card.
@@ -598,21 +642,17 @@ export const chooseDecision = async (
   };
   if (!(await subjectStageHolds(row))) return stageMismatch;
 
-  const now = new Date();
   const lockToken = crypto.randomUUID();
   const claimed = await DecisionRequest.findOneAndUpdate(
-    {
-      _id: row._id,
-      status: 'pending',
-      $or: [
-        { rulingLock: { $exists: false } },
-        { 'rulingLock.expiresAt': { $lt: now } },
-      ],
-    },
-    { $set: { rulingLock: { token: lockToken, expiresAt: new Date(now.getTime() + RULE_LOCK_MS) } } },
+    claimableFilter(row._id, new Date()),
+    { $set: { rulingLock: { token: lockToken, expiresAt: new Date(Date.now() + RULE_LOCK_MS) } } },
     { new: true },
   );
   if (!claimed) {
+    // A withdraw holds this same lock while it moves its record (ADR-037 §3),
+    // so a ruling that races one is answered here, and on retry the card is
+    // closed and answers decision_closed below. Known residual: a ruling whose
+    // lease expires mid-post (issue #4394).
     const current = await DecisionRequest.findById(decisionId);
     if (current?.status === 'ruled') {
       return { status: 409, body: { error: 'Decision already ruled', decision: await standingPayload(current) } };
@@ -865,17 +905,18 @@ export const chooseCardButton = async (
  * ruling, and a ruling still under its lock fails to finalize. Resolves the
  * card's attention rows. True when this call closed it.
  */
-export const closeDecision = async (decisionId: unknown): Promise<boolean> => {
+export const closeDecision = async (
+  decisionId: unknown, opts: { lockToken?: string } = {},
+): Promise<boolean> => {
   const now = new Date();
   // A ruling holding a live lock is mid-post: leave the card to it. If that
   // ruling then fails its stage check it releases the lock, and the hand-back
-  // sweep retries this close.
+  // sweep retries this close. A caller that holds the lock itself (a withdraw,
+  // via claimRulingLock) closes on its own token instead.
   const closed = await DecisionRequest.findOneAndUpdate(
-    {
-      _id: String(decisionId),
-      status: 'pending',
-      $or: [{ rulingLock: { $exists: false } }, { 'rulingLock.expiresAt': { $lt: now } }],
-    },
+    opts.lockToken
+      ? { _id: String(decisionId), status: 'pending', 'rulingLock.token': opts.lockToken }
+      : claimableFilter(String(decisionId), now),
     { $set: { status: 'closed', closedAt: now }, $unset: { rulingLock: 1 } },
     { new: true },
   );
@@ -887,9 +928,9 @@ export const closeDecision = async (decisionId: unknown): Promise<boolean> => {
 };
 
 export default {
-  requestDecision, chooseDecision, closeDecision, chooseCardButton, cardChoiceState, normalizeOptions, normalizeDecisionClass, DecisionRequestError,
+  requestDecision, chooseDecision, closeDecision, claimRulingLock, releaseRulingLock, chooseCardButton, cardChoiceState, normalizeOptions, normalizeDecisionClass, DecisionRequestError,
 };
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 module.exports = {
-  requestDecision, chooseDecision, closeDecision, chooseCardButton, cardChoiceState, normalizeOptions, normalizeDecisionClass, DecisionRequestError,
+  requestDecision, chooseDecision, closeDecision, claimRulingLock, releaseRulingLock, chooseCardButton, cardChoiceState, normalizeOptions, normalizeDecisionClass, DecisionRequestError,
 };

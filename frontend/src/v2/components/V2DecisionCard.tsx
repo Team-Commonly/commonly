@@ -187,6 +187,7 @@ const V2DecisionCard: React.FC<V2DecisionCardProps> = ({ decision, onRuled }) =>
       if (response?.status === 409 && standing?.value) {
         const next = {
           value: standing.value,
+          ...(standing.reason ? { reason: standing.reason } : {}),
           ...(standing.by ? { by: standing.by } : {}),
           ...(standing.byName ? { byName: standing.byName } : {}),
           ...(standing.at ? { at: standing.at } : {}),
