@@ -26,6 +26,18 @@
  * newer start); that skew, and one from cap drops, corrects itself once the
  * queue empties. Running counts (checked out, waiting, open) are clamped at 0.
  *
+ * `samples` is how many wait samples the interval's `waited` and percentiles
+ * are computed from: completed checkouts that found a start time. It can be
+ * below `checkouts` (an end with no start time, as above, still counts as a
+ * checkout). Percentiles of 0 with samples=0 are no data, not a 0 ms wait.
+ *
+ * `maxWaiting` is the interval's peak of checkouts started and not yet served
+ * or failed. Every checkout raises it, even one served at once, so any
+ * interval with checkouts has maxWaiting >= 1: it measures checkout
+ * concurrency, not waiting. `waitingNow` is the running count at the moment
+ * of the line: checkouts started and not yet finished. A checkout still
+ * pending at the line shows there, not in the wait figures.
+ *
  * The wait includes connect time: a checkout that has to open a new
  * connection counts the TCP/TLS handshake as wait. Waits with `created` above
  * 0 and maxCheckedOut well under the pool size point at slow new connections,
@@ -207,10 +219,12 @@ export const startMongoPoolStats = (
         .map(([r, n]) => `${r}:${n}`)
         .join(',');
       const line = `[mongo-pool] checkouts=${checkouts} waited=${waited}`
+        + ` samples=${waits.length}`
         + ` waitMs p50=${Math.round(percentile(sorted, 50))}`
         + ` p95=${Math.round(percentile(sorted, 95))}`
         + ` max=${Math.round(sorted.length ? sorted[sorted.length - 1] : 0)}`
         + ` maxCheckedOut=${maxCheckedOut} maxWaiting=${maxWaiting}`
+        + ` waitingNow=${waiting}`
         + ` failed=${failed} created=${created} closed=${closed} open=${open}`
         + ` servers=${queues.size} dropped=${dropped}`
         + (reasons ? ` failedReasons=${reasons}` : '');

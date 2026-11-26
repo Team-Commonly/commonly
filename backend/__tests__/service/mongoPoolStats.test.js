@@ -56,6 +56,9 @@ describe('mongoPoolStats against a real mongod', () => {
     expect(field(line, 'waited')).toBeGreaterThan(0);
     expect(field(line, 'p95')).toBeGreaterThan(0);
     expect(field(line, 'maxWaiting')).toBeGreaterThan(0);
+    // every checkout here started after stats did, so each one is sampled
+    expect(field(line, 'samples')).toBe(field(line, 'checkouts'));
+    expect(field(line, 'waitingNow')).toBe(0);
     expect(field(line, 'failed')).toBe(0);
   });
 });

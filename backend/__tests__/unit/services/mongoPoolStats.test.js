@@ -107,8 +107,8 @@ describe('startMongoPoolStats', () => {
     ev.start(); clock.advance(7); ev.out();
     jest.advanceTimersByTime(1000);
     expect(lines[0]).toBe(
-      '[mongo-pool] checkouts=1 waited=1 waitMs p50=7 p95=7 max=7 maxCheckedOut=1 maxWaiting=1'
-      + ' failed=0 created=1 closed=0 open=1 servers=1 dropped=0',
+      '[mongo-pool] checkouts=1 waited=1 samples=1 waitMs p50=7 p95=7 max=7 maxCheckedOut=1 maxWaiting=1'
+      + ' waitingNow=0 failed=0 created=1 closed=0 open=1 servers=1 dropped=0',
     );
     expect(lines[0]).not.toContain('db-a');
     expect(lines[0]).not.toContain('27017');
@@ -230,6 +230,42 @@ describe('startMongoPoolStats', () => {
     expect(field(second, 'p95')).toBe(30);
     expect(field(second, 'max')).toBe(30);
     expect(field(second, 'maxWaiting')).toBe(1);
+    stats.stop();
+  });
+
+  it('counts a checkout with no start time in checkouts but not in samples', () => {
+    const { clock, lines, stats, ev } = setup();
+    ev.out(); // in flight before stats started: no start time
+    ev.start(); clock.advance(3); ev.out(); // paired: one sample
+    jest.advanceTimersByTime(1000);
+    expect(field(lines[0], 'checkouts')).toBe(2);
+    expect(field(lines[0], 'samples')).toBe(1);
+    stats.stop();
+  });
+
+  it('an immediate checkout peaks maxWaiting at 1 but leaves waitingNow at 0', () => {
+    const { lines, stats, ev } = setup();
+    ev.start(); ev.out(); // served at once
+    jest.advanceTimersByTime(1000);
+    expect(field(lines[0], 'maxWaiting')).toBe(1);
+    expect(field(lines[0], 'waitingNow')).toBe(0);
+    expect(field(lines[0], 'samples')).toBe(1);
+    expect(field(lines[0], 'p95')).toBe(0);
+    stats.stop();
+  });
+
+  it('a started checkout not completed by the flush shows in waitingNow, not in samples', () => {
+    const { clock, lines, stats, ev } = setup();
+    ev.start();
+    clock.advance(500);
+    jest.advanceTimersByTime(1000);
+    expect(field(lines[0], 'waitingNow')).toBe(1);
+    expect(field(lines[0], 'samples')).toBe(0);
+    expect(field(lines[0], 'checkouts')).toBe(0);
+    ev.out();
+    jest.advanceTimersByTime(1000);
+    expect(field(lines[1], 'waitingNow')).toBe(0);
+    expect(field(lines[1], 'samples')).toBe(1);
     stats.stop();
   });
 
