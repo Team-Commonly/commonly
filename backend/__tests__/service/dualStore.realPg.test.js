@@ -4,8 +4,10 @@
  * the ON CONFLICT clause is what keeps a late write from overwriting a newer
  * one, so it is proven against the engine that enforces it.
  */
+const mongoose = require('mongoose');
 const { createRealPgSchema } = require('../utils/realPgSchema');
-const { pgTableAdapter } = require('../../repositories/dualStore');
+const { pgTableAdapter, createDualStore, dualStorePlugin } = require('../../repositories/dualStore');
+const { setupMongoDb, closeMongoDb } = require('../utils/testUtils');
 
 const real = process.env.INTEGRATION_TEST === 'true' ? describe : describe.skip;
 const ID = '6a692a1be833c668acdb84cf';
@@ -165,5 +167,110 @@ real('pgTableAdapter on real PostgreSQL', () => {
     expect(() => pgTableAdapter({
       pool, table: 'widgets', idColumn: 'id', columns: ['title'], jsonColumns: ['payload'],
     })).toThrow(/jsonColumns must be listed in columns/);
+  });
+});
+
+/**
+ * findOneAndUpdateWhere end to end: decided on a real Mongo, copied to a real
+ * Postgres table through pgTableAdapter, then checked by the helper's own
+ * verify. The AgentProviderKey shapes: an $inc upsert and a generation lock.
+ */
+real('findOneAndUpdateWhere on real Mongo and real PostgreSQL', () => {
+  const ENV = 'STORE_MODE_DUAL_STORE_REAL_PG_KEY';
+  const keySchema = new mongoose.Schema({
+    agent: { type: String, required: true, unique: true },
+    owner: { type: String, required: true },
+    generation: { type: Number, default: 0 },
+    secretRef: { type: String, default: null },
+  }, { timestamps: true });
+  dualStorePlugin(keySchema);
+  const Key = mongoose.models.DualStoreRealPgKey || mongoose.model('DualStoreRealPgKey', keySchema);
+  const toRow = (doc) => ({
+    id: String(doc._id),
+    agent: doc.agent,
+    owner: doc.owner,
+    generation: doc.generation ?? null,
+    secret_ref: doc.secretRef ?? null,
+    created_at: doc.createdAt ?? null,
+    updated_at: doc.updatedAt ?? null,
+  });
+  const filter = { agent: 'a1', owner: 'o1' };
+  let database;
+  let pg;
+  let store;
+
+  beforeAll(async () => {
+    await setupMongoDb();
+    await Key.init();
+  });
+  afterAll(closeMongoDb);
+  beforeEach(async () => {
+    process.env[ENV] = 'dual';
+    await Key.deleteMany({});
+    database = await createRealPgSchema();
+    await database.pool.query(`CREATE TABLE provider_keys (
+      id TEXT PRIMARY KEY, agent TEXT, owner TEXT, generation DOUBLE PRECISION, secret_ref TEXT,
+      created_at TIMESTAMPTZ, updated_at TIMESTAMPTZ, pg_version INTEGER NOT NULL)`);
+    pg = pgTableAdapter({
+      pool: database.pool,
+      table: 'provider_keys',
+      idColumn: 'id',
+      columns: ['agent', 'owner', 'generation', 'secret_ref', 'created_at', 'updated_at'],
+    });
+    store = createDualStore({
+      name: 'DualStoreRealPgKey', model: Key, pg, toRow, fromRow: (row) => row,
+    });
+  });
+  afterEach(async () => {
+    delete process.env[ENV];
+    if (database) await database.close();
+  });
+
+  const expectClean = async () => {
+    const counts = await store.verify();
+    expect(counts).toMatchObject({ missing: 0, differs: 0, extra: 0 });
+    expect(counts.checksumPg).toBe(counts.checksumMongo);
+    return counts;
+  };
+
+  it('racing $inc upserts make one document, and Postgres holds the same number at the same version', async () => {
+    const steps = [1, 1, 1, 1, 0.5, -0.25, 1, 1];
+    const results = await Promise.all(steps.map((by) => store.findOneAndUpdateWhere(
+      filter, { $inc: { generation: by } }, { returnDocument: 'after', upsert: true },
+    )));
+    expect(results.every(Boolean)).toBe(true);
+    const raw = await Key.findOne(filter).lean();
+    expect(raw).toMatchObject({ generation: 6.25, pgVersion: 8 });
+    expect(raw.pgPending).toBeUndefined();
+    const got = await pg.get(String(raw._id));
+    expect(got.version).toBe(8);
+    expect(got.row.generation).toBe(6.25);
+    expect(await expectClean()).toMatchObject({ mongo: 1, pg: 1 });
+  });
+
+  it('racing generation locks have one winner; the pre-image is the old row and Postgres the new one', async () => {
+    await store.findOneAndUpdateWhere(filter, { $inc: { generation: 1 } }, { returnDocument: 'after', upsert: true });
+    const outcomes = await Promise.all(Array.from({ length: 6 }, (_, i) => store.findOneAndUpdateWhere(
+      { ...filter, generation: 1 }, { $set: { secretRef: `r${i}` }, $inc: { generation: 1 } },
+      { returnDocument: 'before' },
+    )));
+    const winners = outcomes.filter(Boolean);
+    expect(winners).toHaveLength(1);
+    expect(winners[0]).toMatchObject({ generation: 1, secretRef: null });
+    const raw = await Key.findOne(filter).lean();
+    expect(raw).toMatchObject({ generation: 2, pgVersion: 2 });
+    expect((await pg.get(String(raw._id))).row.secret_ref).toBe(raw.secretRef);
+    await expectClean();
+  });
+
+  it('refuses pg mode before touching either store', async () => {
+    process.env[ENV] = 'pg';
+    const query = jest.spyOn(database.pool, 'query');
+    await expect(store.findOneAndUpdateWhere(filter, { $inc: { generation: 1 } }, {
+      returnDocument: 'after', upsert: true,
+    })).rejects.toThrow(/not supported in pg mode until step 4/);
+    expect(query).not.toHaveBeenCalled();
+    expect(await Key.countDocuments({})).toBe(0);
+    query.mockRestore();
   });
 });

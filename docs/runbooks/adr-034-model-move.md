@@ -139,6 +139,43 @@ up to 5 seconds, so during an outage those reads fail until the cache expires an
 falls back to Postgres. A `pg-ahead` mismatch means Postgres holds a version Mongo never wrote, which
 only a rollback from `pg` can produce. That case is out of scope until step 4 is lifted.
 
+## Helper shapes for AgentProviderKey, HostedMcpDcrRegistration and WaitlistRequest
+
+These three models are not moved yet. The helper has the shapes their callers use, so each one can move
+in its own change:
+
+- **`findOneAndUpdateWhere(filter, update, { returnDocument, upsert })`** is Mongoose's `findOneAndUpdate`.
+  `update` may use `$set`, `$inc` and, with `upsert`, `$setOnInsert`, all on top-level schema paths, and never
+  `$unset`. `returnDocument` is required: `'before'` returns the pre-image (null for an insert), and `'after'`
+  returns the post-image. With no match and no `upsert`, it returns null.
+  - In dual and pg-read, Mongo decides the write. A change is one pipeline update that also carries the
+    version and the marker. `$inc` becomes `$add`, and it fails on a non-numeric value as `$inc` does. An
+    insert works as `insertIfAbsent` does, at version 1. The copy is the whole document, so `$inc` reaches
+    Postgres exactly as Mongo computed it.
+  - It covers:
+    - AgentProviderKey's `$inc` upsert, its `DELETE` (whose pre-image names the secret it removed) and its
+      generation-locked `$set`;
+    - the DCR registry's `$setOnInsert` claim, its refusal (a pre-image) and its ask claim (a post-image under
+      `$or`).
+  - The filter runs only on Mongo. It is refused unless it uses only equality, `$eq`, `$ne`, ranges, `$in`,
+    `$nin` and `$exists`, combined with `$and`, `$or` and `$nor`. RegExp, `$where` and `$expr` are refused.
+- **`findPageMongo(filter, { sort, skip, limit, fields })` and `countMongo(filter)`** serve WaitlistRequest's
+  admin list. Both read Mongo in mongo, dual and pg-read. They are the only filters that may use a RegExp or
+  `$regex`, because Postgres never runs them. The repository populates refs on the plain documents they
+  return.
+- **`update` now stores a null in dual** as mongo mode does. `castObject` used to drop it, so WaitlistRequest's
+  close (`invitedAt: null`, and the like) would have been lost in dual.
+
+**All three throw `not supported in pg mode until step 4` in `pg`.** Before a model that uses them runs in
+`pg`, each needs a single-statement Postgres form, tested on real Postgres:
+- AgentProviderKey's upsert: `INSERT … ON CONFLICT … DO UPDATE SET generation = generation + 1`;
+- its locks: `UPDATE … WHERE … RETURNING`, with the pre-image read in the same statement through a CTE;
+- the waitlist list: an `ILIKE` search, which needs its own parity check against Mongo's `$regex` with
+  `$options: 'i'`.
+
+The other calls these models make are already covered by `findById`, `findOneWhere` (with `fields`), `create`,
+`update` and `setWhere`. The DCR script's sorted `find` can sort in JS or use `findPageMongo`.
+
 ## Before step 4 (held until after 2026-11-30)
 
 - **`AgentPodReadCursor` needs a single-statement upsert in pg mode.** The helper's pg-mode `upsert` is

@@ -69,6 +69,12 @@ type PgValue = string | number | boolean | Date | null;
  */
 export type PgWhere = Record<string, PgValue | Record<string, PgValue | PgValue[]>>;
 
+/** What a Mongo-decided filter may use on a field, and to combine conditions. */
+const FIELD_OPS = ['$eq', '$ne', '$gt', '$gte', '$lt', '$lte', '$in', '$nin', '$exists'];
+const LOGICAL_OPS = ['$and', '$or', '$nor'];
+/** The operators findOneAndUpdateWhere takes. Never $unset. */
+const UPDATE_OPS = ['$set', '$inc', '$setOnInsert'];
+
 /** Operators that must be the only key of their condition object. */
 const LONE_OPS = ['$in', '$exists'];
 const loneOpMixed = (condition: Record<string, unknown>): string | undefined => {
@@ -443,6 +449,47 @@ export interface DualStore {
    */
   updateManyWhere(filter: Doc, pipeline: Doc[]): Promise<number>;
   /**
+   * Mongoose's `findOneAndUpdate` for one document `filter` matches, with an
+   * operator update of `$set`, `$inc` and (with `upsert`) `$setOnInsert` on
+   * top-level schema paths, never `$unset`. Returns the document as it was
+   * (`returnDocument: 'before'`, null on an insert) or as it is now
+   * (`'after'`), or null when nothing matched and `upsert` is off. In dual and
+   * pg-read the write is decided on Mongo: an existing document is changed by
+   * one pipeline update that also takes the version and the marker (an `$inc`
+   * is an `$add` that fails on a non-numeric value, as `$inc` does), and an
+   * absent one is inserted as `insertIfAbsent` inserts (version 1, timestamps
+   * on the insert only); an insert that loses the unique-key race goes round
+   * once more and applies the change onto the winner, where mongo mode's
+   * server retries only a filter that is pure equality on the unique key and
+   * otherwise throws code 11000 (callers already handle that). The copy is the whole document at its version, so
+   * an `$inc` lands in Postgres exactly as Mongo computed it. With
+   * `'before'`, the copy reads the document at this write's version and, when
+   * a later write has already replaced it, leaves the copy to that write. An
+   * upsert whose update is only `$setOnInsert` writes nothing when it finds the
+   * document (Mongoose would bump its updatedAt). The filter runs only on Mongo
+   * and is refused unless it is equality and `$eq`/`$ne`/ranges/`$in`/`$nin`/
+   * `$exists` on fields, under `$and`/`$or`/`$nor`: no RegExp, `$where`,
+   * `$expr` or other operator. Refused in pg mode until step 4.
+   */
+  findOneAndUpdateWhere(
+    filter: Doc,
+    update: { $set?: Doc; $inc?: Record<string, number>; $setOnInsert?: Doc },
+    options: { returnDocument: 'before' | 'after'; upsert?: boolean },
+  ): Promise<Doc | null>;
+  /**
+   * A sorted page read that stays on Mongo in mongo, dual and pg-read (Mongo
+   * is the system of record there, so it is never stale), for a list Postgres
+   * cannot serve yet, such as a case-insensitive search. Unlike every other
+   * filter here it may use a RegExp or `$regex`/`$options`, because Postgres
+   * never runs it; `$where`, `$expr` and other operators are still refused.
+   * `limit` is required. Refused in pg mode until step 4.
+   */
+  findPageMongo(filter: Doc, options: {
+    sort?: Record<string, 1 | -1>; skip?: number; limit: number; fields?: string[];
+  }): Promise<Doc[]>;
+  /** The count for `findPageMongo`'s filter, on Mongo; refused in pg mode until step 4. */
+  countMongo(filter: Doc): Promise<number>;
+  /**
    * Filtered reads. `filter` is equality and `$gt`/`$gte`/`$lt`/`$lte` on the
    * fields the store declares in `filterColumns`, ANDed; `$in` takes a
    * non-empty list without null, and `$exists` only a field whose column the
@@ -523,7 +570,13 @@ export function createDualStore(
   const splitFields = (fields: Doc) => {
     const unset = Object.keys(fields).filter((key) => fields[key] === undefined);
     const toSet = Object.fromEntries(Object.entries(fields).filter(([, value]) => value !== undefined));
-    return { unset, set: Model.castObject(toSet) as Doc };
+    const set = Model.castObject(toSet) as Doc;
+    // castObject drops a null, but Mongoose's $set of a schema path stores one,
+    // so mongo mode would set the field and dual would leave it as it was.
+    Object.keys(toSet).forEach((key) => {
+      if (toSet[key] === null && Model.schema.path(key)) set[key] = null;
+    });
+    return { unset, set };
   };
   const bump = { pgVersion: { $add: [{ $ifNull: ['$pgVersion', 0] }, 1] } };
   const markPending = { $set: { pgPending: '$pgVersion' } };
@@ -768,6 +821,185 @@ export function createDualStore(
     },
   };
 
+  /**
+   * The filter shapes a Mongo-decided write or a Mongo-only read accepts:
+   * equality and FIELD_OPS on fields, under LOGICAL_OPS. `allowPattern` lets a
+   * Mongo-only read match with a RegExp or $regex, which Postgres never runs.
+   */
+  const checkMongoFilter = (method: string, filter: unknown, allowPattern = false): void => {
+    const fail = (why: string): never => { throw new Error(`dual-store: ${name} ${method} ${why}`); };
+    const scalar = (field: string, value: unknown): void => {
+      if (value instanceof RegExp) {
+        if (!allowPattern) fail(`cannot match ${field} with a regular expression`);
+        return;
+      }
+      const hex = (value as { toHexString?: unknown } | null)?.toHexString;
+      if (!isPgValue(value) && typeof hex !== 'function') fail(`needs a scalar to match ${field}`);
+    };
+    const walk = (where: unknown): void => {
+      if (!isPlainObject(where)) fail('needs a plain object filter');
+      Object.entries(where as Doc).forEach(([key, value]) => {
+        if (key.startsWith('$')) {
+          if (!LOGICAL_OPS.includes(key)) fail(`does not support ${key}`);
+          if (!Array.isArray(value) || !value.length) fail(`${key} needs a non-empty array`);
+          (value as unknown[]).forEach(walk);
+          return;
+        }
+        if (key.split('.').some((part) => !part || part.startsWith('$'))) {
+          fail('filter path must not be empty or start with $');
+        }
+        if (value === undefined) fail(`cannot match ${key} against undefined`);
+        if (!isPlainObject(value)) {
+          scalar(key, value);
+          return;
+        }
+        const ops = Object.keys(value);
+        if (!ops.length || ops.some((op) => !op.startsWith('$'))) fail(`cannot match ${key} against a document`);
+        ops.forEach((op) => {
+          const operand = value[op];
+          if (allowPattern && op === '$regex') {
+            if (typeof operand !== 'string' && !(operand instanceof RegExp)) fail(`$regex on ${key} needs a pattern`);
+            return;
+          }
+          if (allowPattern && op === '$options') {
+            if (typeof operand !== 'string' || !('$regex' in value)) {
+              fail(`$options on ${key} needs a string and $regex`);
+            }
+            return;
+          }
+          if (!FIELD_OPS.includes(op)) fail(`does not support ${op} on ${key}`);
+          if (op === '$exists') {
+            if (typeof operand !== 'boolean') fail(`$exists on ${key} needs true or false`);
+            return;
+          }
+          if (op === '$in' || op === '$nin') {
+            if (!Array.isArray(operand)) fail(`${op} on ${key} needs an array`);
+            (operand as unknown[]).forEach((element) => scalar(key, element));
+            return;
+          }
+          scalar(key, operand);
+        });
+      });
+    };
+    walk(filter);
+  };
+
+  /** One top-level schema path's value, cast and set as Mongoose casts a $set (castObject drops null). */
+  const castPath = (path: string, value: unknown): unknown => {
+    const type = Model.schema.path(path) as unknown as
+      { applySetters: (v: unknown, scope: null, init: boolean) => unknown } | undefined;
+    if (!type) throw new Error(`dual-store: ${name} has no schema path ${JSON.stringify(path)} to update`);
+    return type.applySetters(value, null, false);
+  };
+
+  /** Checks a findOneAndUpdateWhere update and casts it; throws before any write. */
+  const planUpdate = (update: unknown, upsert: boolean) => {
+    const fail = (why: string): never => { throw new Error(`dual-store: ${name} findOneAndUpdateWhere ${why}`); };
+    if (!isPlainObject(update)) fail('needs an operator update');
+    const given = update as Doc;
+    Object.keys(given).forEach((op) => {
+      if (!UPDATE_OPS.includes(op)) fail(`does not support ${op}; only ${UPDATE_OPS.join(', ')}`);
+      if (!isPlainObject(given[op])) fail(`${op} needs an object`);
+    });
+    const $set = (given.$set ?? {}) as Doc;
+    const $inc = (given.$inc ?? {}) as Doc;
+    const $setOnInsert = (given.$setOnInsert ?? {}) as Doc;
+    if (Object.keys($setOnInsert).length && !upsert) fail('$setOnInsert needs upsert');
+    if (!Object.keys($set).length && !Object.keys($inc).length && !Object.keys($setOnInsert).length) {
+      fail('needs at least one field to change');
+    }
+    const seen = new Set<string>();
+    const checkPath = (op: string, path: string) => {
+      if (!path || path.includes('.') || path.startsWith('$')) {
+        fail(`${op} path ${JSON.stringify(path)} must be a top-level field`);
+      }
+      if (MARKERS.includes(path) || (path === '_id' && op !== '$setOnInsert')) fail(`${op} must not change ${path}`);
+      if (seen.has(path)) fail(`changes ${path} in two operators`);
+      seen.add(path);
+    };
+    const set: Doc = {};
+    Object.entries($set).forEach(([path, value]) => {
+      checkPath('$set', path);
+      if (value === undefined) fail(`$set ${path} is undefined; this helper never unsets`);
+      set[path] = castPath(path, value);
+    });
+    const inc: Record<string, number> = {};
+    Object.entries($inc).forEach(([path, value]) => {
+      checkPath('$inc', path);
+      if ((Model.schema.path(path) as { instance?: string } | undefined)?.instance !== 'Number') {
+        fail(`$inc ${path} needs a Number schema path`);
+      }
+      if (typeof value !== 'number' || !Number.isFinite(value)) fail(`$inc ${path} needs a finite number`);
+      inc[path] = value as number;
+    });
+    Object.entries($setOnInsert).forEach(([path, value]) => {
+      checkPath('$setOnInsert', path);
+      if (value === undefined) fail(`$setOnInsert ${path} is undefined`);
+      castPath(path, value);
+    });
+    return { set, inc, onInsert: { ...$set, ...inc, ...$setOnInsert } };
+  };
+
+  /**
+   * `$inc` as a pipeline expression: a missing field becomes `by`, a number
+   * gains `by`, and anything else (null, a string, a date) makes the write
+   * fail, as `$inc` does: `$add` of a string throws. The string comes from
+   * `_id` at run time, so the server cannot fold it into a constant error.
+   */
+  const incExpression = (path: string, by: number): Doc => {
+    const field = `$${path}`;
+    return {
+      $cond: [
+        { $eq: [{ $type: field }, 'missing'] },
+        by,
+        { $cond: [{ $isNumber: field }, { $add: [field, by] }, { $add: [{ $toString: '$_id' }, by] }] },
+      ],
+    };
+  };
+
+  /**
+   * The insert of insertIfAbsent and findOneAndUpdateWhere: a `$setOnInsert`
+   * upsert carrying version 1, the marker and the timestamps, so a call that
+   * finds the document writes nothing and bumps nothing. Not lean: a lean query
+   * drops the result metadata that says whether this call inserted.
+   */
+  const claimInsert = (live: Doc, fields: Doc): Promise<RawResult> => {
+    const stamps = (Model.schema as { $timestamps?: { createdAt?: string | null; updatedAt?: string | null } })
+      .$timestamps;
+    const at = (Model.base as { now?: () => Date }).now?.() ?? new Date();
+    const stamped = Object.fromEntries([stamps?.createdAt, stamps?.updatedAt]
+      .filter((path): path is string => Boolean(path)).map((path) => [path, at]));
+    return reveal(Model.findOneAndUpdate(
+      live,
+      // The stamp wins over a caller's own createdAt, as Mongoose's upsert
+      // timestamps do in mongo mode (applyTimestampsToUpdate).
+      { $setOnInsert: { ...fields, ...stamped, pgVersion: 1, pgPending: 1 } },
+      {
+        upsert: true, includeResultMetadata: true, setDefaultsOnInsert: true, new: true, timestamps: false,
+      },
+    )) as unknown as Promise<RawResult>;
+  };
+
+  /**
+   * A write that returned its pre-image copies the document at its own
+   * version. If a later write has replaced it, that write set its own marker
+   * and copies itself, so there is nothing left to copy for this one. A failed
+   * read leaves this write's marker for repair, never fails the caller.
+   */
+  const copyFromPreImage = async (before: Doc): Promise<void> => {
+    const version = Number(before.pgVersion ?? 0) + 1;
+    let doc: Doc | null;
+    try {
+      doc = await reveal(Model.findOne({ _id: before._id, pgVersion: version })).lean() as Doc | null;
+    } catch (error) {
+      flagged = { value: true, at: Date.now() };
+      console.warn(`[dual-store] post-image read failed model=${name}; repair copies it:`,
+        (error as Error)?.message);
+      return;
+    }
+    if (doc) await finishCopy(before._id, version, doc);
+  };
+
   const api: DualStore = {
     async create(doc) {
       const mode = storeMode(name);
@@ -880,22 +1112,7 @@ export function createDualStore(
       // the document writes nothing and bumps nothing. So do the timestamps:
       // Mongoose would put updatedAt in a $set, which a found document takes
       // without a version or a copy, leaving its row's updated_at behind.
-      // Not lean: a lean query drops the result metadata that says whether
-      // this call inserted.
-      const stamps = (Model.schema as { $timestamps?: { createdAt?: string | null; updatedAt?: string | null } })
-        .$timestamps;
-      const claim = () => {
-        const at = (Model.base as { now?: () => Date }).now?.() ?? new Date();
-        const stamped = Object.fromEntries([stamps?.createdAt, stamps?.updatedAt]
-          .filter((path): path is string => Boolean(path)).map((path) => [path, at]));
-        return reveal(Model.findOneAndUpdate(
-          { ...filter, pgDeleted: { $ne: true } },
-          // The stamp wins over a caller's own createdAt, as Mongoose's upsert
-          // timestamps do in mongo mode (applyTimestampsToUpdate).
-          { $setOnInsert: { ...fields, ...stamped, pgVersion: 1, pgPending: 1 } },
-          { ...options, new: true, timestamps: false },
-        )) as unknown as Promise<RawResult>;
-      };
+      const claim = () => claimInsert({ ...filter, pgDeleted: { $ne: true } }, fields);
       // The server retries a duplicate-key upsert only when the filter is pure
       // equality on the unique key, which the pgDeleted clause rules out. One
       // retry here restores that: the winner has committed, so it matches and
@@ -984,6 +1201,105 @@ export function createDualStore(
         if (await api.updateWhere({ $and: [filter, { _id: id }] }, pipeline)) updated += 1;
       }
       return updated;
+    },
+
+    async findOneAndUpdateWhere(filter, update, options) {
+      const mode = storeMode(name);
+      if (mode === 'pg') throw notYetInPg('findOneAndUpdateWhere');
+      const { returnDocument, upsert = false } = options ?? ({} as { returnDocument?: string; upsert?: boolean });
+      if (returnDocument !== 'before' && returnDocument !== 'after') {
+        throw new Error(`dual-store: ${name} findOneAndUpdateWhere needs returnDocument 'before' or 'after'`);
+      }
+      checkMongoFilter('findOneAndUpdateWhere', filter);
+      const { set, inc, onInsert } = planUpdate(update, upsert);
+      const after = returnDocument === 'after';
+      if (mode === 'mongo') {
+        return plain(await Model.findOneAndUpdate(filter, update, {
+          new: after, upsert, setDefaultsOnInsert: true,
+        }).lean() as Doc | null);
+      }
+      const live = { ...filter, pgDeleted: { $ne: true } };
+      const changes = Object.keys(set).length + Object.keys(inc).length > 0;
+      // Built fresh for each attempt: Mongoose appends its updatedAt stage to the array it is given.
+      // $literal keeps a value like "$5 off" from being read as a field path.
+      const stages = (): Doc[] => [{
+        $set: {
+          ...Object.fromEntries(Object.entries(set).map(([path, value]) => [path, { $literal: value }])),
+          ...Object.fromEntries(Object.entries(inc).map(([path, by]) => [path, incExpression(path, by)])),
+          ...bump,
+        },
+      }, markPending];
+      let lostInsert = false;
+      for (let attempt = 0; attempt < UPSERT_ATTEMPTS; attempt += 1) {
+        if (changes) {
+          // eslint-disable-next-line no-await-in-loop -- retried only on a lost first-write race
+          const doc = await reveal(Model.findOneAndUpdate(live, stages(), { new: after })).lean() as Doc | null;
+          if (doc) {
+            // eslint-disable-next-line no-await-in-loop
+            if (after) await finishCopy(doc._id, doc.pgVersion as number, doc);
+            // eslint-disable-next-line no-await-in-loop
+            else await copyFromPreImage(doc);
+            return conceal(plain(doc));
+          }
+        } else {
+          // $setOnInsert alone changes nothing on a match, so a match is a read.
+          // eslint-disable-next-line no-await-in-loop
+          const found = await reveal(Model.findOne(live)).lean() as Doc | null;
+          if (found) return conceal(plain(found));
+        }
+        if (!upsert) return null;
+        let result: RawResult;
+        try {
+          // eslint-disable-next-line no-await-in-loop
+          result = await claimInsert(live, onInsert);
+        } catch (error) {
+          // A loser of the unique-key race goes round once more and finds the
+          // winner; a duplicate that survives that (a document marked deleted,
+          // or another unique index) propagates, as Mongo's own does.
+          if (!isDuplicateKey(error) || lostInsert) throw error;
+          lostInsert = true;
+          continue; // eslint-disable-line no-continue
+        }
+        if (result?.lastErrorObject?.updatedExisting === false && result.value) {
+          const doc = (result.value as { toObject: (o: object) => Doc }).toObject({ flattenMaps: true });
+          // eslint-disable-next-line no-await-in-loop
+          await finishCopy(doc._id, doc.pgVersion as number, doc);
+          return after ? conceal(plain(doc)) : null;
+        }
+        // Another call inserted between the two steps and this insert wrote
+        // nothing: go round and apply the change onto that document.
+      }
+      throw new Error(`dual-store: ${name} findOneAndUpdateWhere lost ${UPSERT_ATTEMPTS} races in a row`);
+    },
+
+    async findPageMongo(filter, options) {
+      const mode = storeMode(name);
+      if (mode === 'pg') throw notYetInPg('findPageMongo');
+      checkMongoFilter('findPageMongo', filter, true);
+      const {
+        sort, skip = 0, limit, fields,
+      } = options ?? ({} as { sort?: Record<string, 1 | -1>; skip?: number; limit?: number; fields?: string[] });
+      if (!Number.isInteger(limit) || (limit as number) < 1) {
+        throw new Error(`dual-store: ${name} findPageMongo needs a positive integer limit`);
+      }
+      if (!Number.isInteger(skip) || skip < 0) {
+        throw new Error(`dual-store: ${name} findPageMongo needs a non-negative integer skip`);
+      }
+      if (sort !== undefined && (!isPlainObject(sort) || Object.entries(sort).some(([path, direction]) => (
+        path.split('.').some((part) => !part || part.startsWith('$')) || (direction !== 1 && direction !== -1))))) {
+        throw new Error(`dual-store: ${name} findPageMongo sort needs field paths, each 1 or -1`);
+      }
+      const docs = await reveal(Model.find({ ...filter, pgDeleted: { $ne: true } }))
+        .sort(sort ?? {}).skip(skip).limit(limit as number)
+        .lean() as Doc[];
+      return docs.map((doc) => pick(conceal(plain(doc), fields) as Doc, fields));
+    },
+
+    async countMongo(filter) {
+      const mode = storeMode(name);
+      if (mode === 'pg') throw notYetInPg('countMongo');
+      checkMongoFilter('countMongo', filter, true);
+      return Model.countDocuments({ ...filter, pgDeleted: { $ne: true } });
     },
 
     async findOneWhere(filter, { fields } = {}) {

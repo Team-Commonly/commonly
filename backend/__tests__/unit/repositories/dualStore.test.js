@@ -1476,4 +1476,360 @@ describe('dual-store helper (ADR-034 D3)', () => {
       expect(select.mock.calls.filter(([projection]) => projection === '+secret')).toHaveLength(1);
     });
   });
+
+  describe('20. findOneAndUpdateWhere, findPageMongo and countMongo', () => {
+    // Shaped like AgentProviderKey (a generation lock, an $inc upsert), with a
+    // hidden field, a setter and timestamps, so every path of the copy is seen.
+    let beforeFindOne = null;
+    const keySchema = new mongoose.Schema({
+      agent: { type: String, required: true, unique: true },
+      owner: { type: String, required: true },
+      providerId: { type: String, default: 'p0' },
+      generation: { type: Number, default: 0 },
+      secretRef: { type: String, default: null },
+      email: { type: String, lowercase: true, trim: true },
+      secret: { type: String, select: false },
+    }, { timestamps: true });
+    keySchema.pre('findOne', async () => {
+      const hook = beforeFindOne;
+      beforeFindOne = null;
+      if (hook) await hook();
+    });
+    dualStorePlugin(keySchema);
+    const Key = mongoose.models.DualStoreTestKey || mongoose.model('DualStoreTestKey', keySchema);
+    const KEY_ENV = 'STORE_MODE_DUAL_STORE_TEST_KEY';
+    const keyRow = (doc) => ({
+      id: String(doc._id),
+      agent: doc.agent ?? null,
+      owner: doc.owner ?? null,
+      provider_id: doc.providerId ?? null,
+      generation: doc.generation ?? null,
+      secret_ref: doc.secretRef ?? null,
+      email: doc.email ?? null,
+      secret: doc.secret ?? null,
+      created_at: doc.createdAt ?? null,
+      updated_at: doc.updatedAt ?? null,
+    });
+    const keys = (pg) => createDualStore({
+      name: 'DualStoreTestKey', model: Key, pg, toRow: keyRow, fromRow: (row) => row,
+    });
+    const filter = { agent: 'a1', owner: 'o1' };
+    const bumpGeneration = { $inc: { generation: 1 }, $setOnInsert: { providerId: 'p1' } };
+    const after = { returnDocument: 'after' };
+    const before = { returnDocument: 'before' };
+    // The stored document with its hidden field, as the copy sees it.
+    const stored = () => Key.findOne({ agent: 'a1' }).select('+secret').lean();
+    const expectCopied = async (pg) => {
+      const raw = await stored();
+      expect(raw.pgPending).toBeUndefined();
+      expect(pg.rows.get(String(raw._id))).toEqual({ row: keyRow(raw), version: raw.pgVersion });
+      return raw;
+    };
+
+    beforeAll(async () => { await Key.init(); });
+    beforeEach(async () => {
+      await Key.deleteMany({});
+      beforeFindOne = null;
+    });
+    afterEach(() => { delete process.env[KEY_ENV]; });
+
+    it('mongo: Mongoose\'s own findOneAndUpdate, both images, upsert and no Postgres call', async () => {
+      const pg = fakePg();
+      const s = keys(pg);
+      const created = await s.findOneAndUpdateWhere(filter, bumpGeneration, { ...after, upsert: true });
+      expect(created).toMatchObject({ ...filter, providerId: 'p1', generation: 1, secretRef: null });
+      expect(created.secret).toBeUndefined();
+      expect(await s.findOneAndUpdateWhere(filter, bumpGeneration, { ...after, upsert: true }))
+        .toMatchObject({ generation: 2, providerId: 'p1' });
+      const pre = await s.findOneAndUpdateWhere(
+        { ...filter, generation: 2 }, { $set: { secretRef: 'r1' } }, before,
+      );
+      expect(pre).toMatchObject({ generation: 2, secretRef: null });
+      expect(await s.findOneAndUpdateWhere({ ...filter, generation: 1 }, { $set: { secretRef: 'r2' } }, after))
+        .toBeNull();
+      expect(await s.findOneAndUpdateWhere({ agent: 'a2', owner: 'o1' }, bumpGeneration, { ...before, upsert: true }))
+        .toBeNull();
+      expect(await Key.countDocuments({})).toBe(2);
+      expect((await stored()).pgVersion).toBeUndefined();
+      expect(pg.calls).toEqual([]);
+    });
+
+    it.each(['dual', 'pg-read'])('%s: an $inc upsert creates, then updates, each copied whole at its version',
+      async (mode) => {
+        process.env[KEY_ENV] = mode;
+        const pg = fakePg();
+        const s = keys(pg);
+        const created = await s.findOneAndUpdateWhere(filter, bumpGeneration, { ...after, upsert: true });
+        expect(created).toMatchObject({ ...filter, providerId: 'p1', generation: 1, secretRef: null });
+        expect(created.pgVersion).toBeUndefined();
+        let raw = await expectCopied(pg);
+        expect(raw).toMatchObject({ pgVersion: 1, generation: 1 });
+        expect(raw.createdAt).toEqual(raw.updatedAt);
+        await new Promise((resolve) => { setTimeout(resolve, 5); });
+        const updated = await s.findOneAndUpdateWhere(filter, bumpGeneration, { ...after, upsert: true });
+        expect(updated).toMatchObject({ generation: 2, providerId: 'p1' });
+        raw = await expectCopied(pg);
+        expect(raw).toMatchObject({ pgVersion: 2, generation: 2 });
+        // The pipeline update is stamped, as Mongoose stamps its $set in mongo mode.
+        expect(raw.updatedAt.getTime()).toBeGreaterThan(raw.createdAt.getTime());
+        expect(await Key.countDocuments({})).toBe(1);
+      });
+
+    it('dual: the pre-image is what Mongo held, and the copy is the post-image', async () => {
+      process.env[KEY_ENV] = 'dual';
+      const pg = fakePg();
+      const s = keys(pg);
+      await s.findOneAndUpdateWhere(filter, bumpGeneration, { ...after, upsert: true });
+      await s.findOneAndUpdateWhere({ ...filter, generation: 1 }, { $set: { secretRef: 'r1', secret: 's1' } }, after);
+      // The DELETE shape: the pre-image names the secret this call removed.
+      const removed = await s.findOneAndUpdateWhere(filter, {
+        $inc: { generation: 1 }, $set: { secretRef: null, secret: null },
+      }, before);
+      expect(removed).toMatchObject({ generation: 1, secretRef: 'r1' });
+      expect(removed.secret).toBeUndefined();
+      const raw = await expectCopied(pg);
+      expect(raw).toMatchObject({ generation: 2, secretRef: null, secret: null, pgVersion: 3 });
+      // An insert has no pre-image.
+      expect(await s.findOneAndUpdateWhere({ agent: 'a2', owner: 'o1' }, bumpGeneration, { ...before, upsert: true }))
+        .toBeNull();
+      expect(pg.rows.size).toBe(2);
+    });
+
+    it('dual: a pre-image write overtaken before its copy leaves the copy to the later write', async () => {
+      process.env[KEY_ENV] = 'dual';
+      const pg = fakePg();
+      const s = keys(pg);
+      await s.findOneAndUpdateWhere(filter, bumpGeneration, { ...after, upsert: true });
+      beforeFindOne = () => s.findOneAndUpdateWhere(filter, { $set: { providerId: 'later' } }, after);
+      const pre = await s.findOneAndUpdateWhere(filter, { $set: { secretRef: 'r1' } }, before);
+      expect(pre).toMatchObject({ secretRef: null, providerId: 'p1' });
+      const raw = await expectCopied(pg);
+      expect(raw).toMatchObject({ secretRef: 'r1', providerId: 'later', pgVersion: 3 });
+    });
+
+    it('dual: no match without upsert writes nothing and copies nothing', async () => {
+      process.env[KEY_ENV] = 'dual';
+      const pg = fakePg();
+      const s = keys(pg);
+      expect(await s.findOneAndUpdateWhere(filter, { $set: { secretRef: 'r' } }, after)).toBeNull();
+      expect(await s.findOneAndUpdateWhere(filter, { $inc: { generation: 1 } }, before)).toBeNull();
+      expect(await Key.countDocuments({})).toBe(0);
+      expect(pg.calls).toEqual([]);
+    });
+
+    it('$inc parity: Mongo and the Postgres copy agree on ints, negatives and fractions', async () => {
+      process.env[KEY_ENV] = 'dual';
+      const pg = fakePg();
+      const s = keys(pg);
+      for (const by of [1, 5, -2, 0.5, -0.25]) {
+        // eslint-disable-next-line no-await-in-loop
+        await s.findOneAndUpdateWhere(filter, { $inc: { generation: by } }, { ...after, upsert: true });
+      }
+      const raw = await expectCopied(pg);
+      expect(raw.generation).toBe(4.25);
+      expect(pg.rows.get(String(raw._id)).row.generation).toBe(4.25);
+      // The same calls in mongo mode reach the same number.
+      delete process.env[KEY_ENV];
+      const m = keys(fakePg());
+      for (const by of [1, 5, -2, 0.5, -0.25]) {
+        // eslint-disable-next-line no-await-in-loop
+        await m.findOneAndUpdateWhere({ agent: 'm1', owner: 'o1' }, { $inc: { generation: by } }, { ...after, upsert: true });
+      }
+      expect((await Key.findOne({ agent: 'm1' }).lean()).generation).toBe(4.25);
+    });
+
+    it.each(['mongo', 'dual'])('%s: $inc on a non-numeric value fails, as Mongo\'s $inc does', async (mode) => {
+      if (mode !== 'mongo') process.env[KEY_ENV] = mode;
+      const pg = fakePg();
+      const s = keys(pg);
+      await Key.collection.insertOne({ ...filter, generation: null });
+      await expect(s.findOneAndUpdateWhere(filter, { $inc: { generation: 1 } }, after)).rejects.toThrow();
+      await Key.collection.updateOne({ agent: 'a1' }, { $set: { generation: 'x' } });
+      await expect(s.findOneAndUpdateWhere(filter, { $inc: { generation: 1 } }, after)).rejects.toThrow();
+      expect((await Key.findOne({ agent: 'a1' }).lean()).pgVersion).toBeUndefined();
+      expect(pg.calls).toEqual([]);
+    });
+
+    it('dual: a failed copy returns the write and leaves the marker for repair', async () => {
+      process.env[KEY_ENV] = 'dual';
+      const pg = fakePg();
+      const s = keys(pg);
+      pg.failNext('upsert');
+      expect(await s.findOneAndUpdateWhere(filter, bumpGeneration, { ...after, upsert: true }))
+        .toMatchObject({ generation: 1 });
+      expect((await stored()).pgPending).toBe(1);
+      pg.failNext('upsert');
+      expect(await s.findOneAndUpdateWhere(filter, { $set: { secretRef: 'r1' } }, before))
+        .toMatchObject({ secretRef: null });
+      expect((await stored()).pgPending).toBe(2);
+      expect(dualStoreStats('DualStoreTestKey')['pg-write-failed']).toBe(2);
+      expect(await s.repair()).toMatchObject({ copied: 1, failed: 0 });
+      await expectCopied(pg);
+    });
+
+    it('dual: racing generation locks have exactly one winner, decided on Mongo', async () => {
+      process.env[KEY_ENV] = 'dual';
+      const pg = fakePg();
+      const s = keys(pg);
+      await s.findOneAndUpdateWhere(filter, bumpGeneration, { ...after, upsert: true });
+      const outcomes = await Promise.all(Array.from({ length: 8 }, (_, i) => s.findOneAndUpdateWhere(
+        { ...filter, generation: 1 }, { $set: { secretRef: `r${i}` }, $inc: { generation: 1 } }, before,
+      )));
+      expect(outcomes.filter(Boolean)).toHaveLength(1);
+      const raw = await expectCopied(pg);
+      expect(raw).toMatchObject({ generation: 2, pgVersion: 2 });
+    });
+
+    it('dual: racing $inc upserts make one document and lose no increment', async () => {
+      process.env[KEY_ENV] = 'dual';
+      const pg = fakePg();
+      const s = keys(pg);
+      const results = await Promise.all(Array.from({ length: 8 }, () => s.findOneAndUpdateWhere(
+        filter, bumpGeneration, { ...after, upsert: true },
+      )));
+      expect(results.map((doc) => doc.generation).sort()).toEqual([1, 2, 3, 4, 5, 6, 7, 8]);
+      expect(await Key.countDocuments({})).toBe(1);
+      const raw = await expectCopied(pg);
+      expect(raw).toMatchObject({ generation: 8, pgVersion: 8 });
+    });
+
+    it.each(['mongo', 'dual'])('%s: a $setOnInsert-only upsert claims once and every racer reads the winner',
+      async (mode) => {
+        // The hosted-MCP client registration shape: the caller picks the _id.
+        if (mode !== 'mongo') process.env[KEY_ENV] = mode;
+        const pg = fakePg();
+        const s = keys(pg);
+        const ids = Array.from({ length: 6 }, () => new mongoose.Types.ObjectId());
+        // Filtered on the unique key alone, which is when Mongo's server retries a
+        // racing upsert in mongo mode; dual retries once whatever the filter.
+        const results = await Promise.all(ids.map((_id) => s.findOneAndUpdateWhere(
+          { agent: 'a1' }, { $setOnInsert: { _id, owner: 'o1', providerId: String(_id) } }, { ...after, upsert: true },
+        )));
+        const winner = String(results[0]._id);
+        expect(results.every((doc) => String(doc._id) === winner && doc.providerId === winner)).toBe(true);
+        expect(await Key.countDocuments({})).toBe(1);
+        if (mode === 'dual') {
+          const raw = await expectCopied(pg);
+          expect(raw.pgVersion).toBe(1);
+          expect(pg.calls.filter((c) => c === 'upsert')).toHaveLength(1);
+        }
+        // A duplicate on another unique index propagates, in both modes.
+        await expect(s.findOneAndUpdateWhere(
+          { agent: 'a1', owner: 'o2' }, { $setOnInsert: { providerId: 'x' } }, { ...after, upsert: true },
+        )).rejects.toMatchObject({ code: 11000 });
+      });
+
+    it('dual: casts $set as Mongoose does, setters and null included, and keeps a $ value a value', async () => {
+      process.env[KEY_ENV] = 'dual';
+      const pg = fakePg();
+      const s = keys(pg);
+      await s.findOneAndUpdateWhere(filter, { $set: { email: '  A@B.Example ', secretRef: '$5 off' } }, {
+        ...after, upsert: true,
+      });
+      await s.findOneAndUpdateWhere(filter, { $set: { email: '  C@D ', providerId: '$owner' } }, after);
+      let raw = await expectCopied(pg);
+      expect(raw).toMatchObject({ email: 'c@d', providerId: '$owner', secretRef: '$5 off' });
+      await s.findOneAndUpdateWhere(filter, { $set: { secretRef: null } }, after);
+      raw = await expectCopied(pg);
+      expect(raw.secretRef).toBeNull();
+      delete process.env[KEY_ENV];
+      await keys(fakePg()).findOneAndUpdateWhere({ agent: 'm1', owner: 'o1' }, { $set: { email: '  C@D ' } }, {
+        ...after, upsert: true,
+      });
+      expect((await Key.findOne({ agent: 'm1' }).lean()).email).toBe('c@d');
+    });
+
+    it('dual: update() stores a null as Mongo mode does (castObject alone would drop it)', async () => {
+      process.env[KEY_ENV] = 'dual';
+      const pg = fakePg();
+      const s = keys(pg);
+      const doc = await s.create({ ...filter, secretRef: 'r1' });
+      expect(await s.update(doc._id, { secretRef: null })).toMatchObject({ secretRef: null });
+      const raw = await expectCopied(pg);
+      expect(raw.secretRef).toBeNull();
+    });
+
+    it('refuses pg mode, and every unsupported filter or update, before any write', async () => {
+      const pg = fakePg();
+      const s = keys(pg);
+      const upsert = { ...after, upsert: true };
+      for (const mode of ['mongo', 'dual', 'pg-read']) {
+        process.env[KEY_ENV] = mode;
+        const refusals = [
+          [{ agent: /a/ }, { $set: { owner: 'x' } }, upsert, /regular expression/],
+          [{ agent: { $in: [/a/] } }, { $set: { owner: 'x' } }, upsert, /regular expression/],
+          [{ $where: 'true' }, { $set: { owner: 'x' } }, upsert, /\$where/],
+          [{ $expr: { $eq: [1, 1] } }, { $set: { owner: 'x' } }, upsert, /\$expr/],
+          [{ agent: { $regex: 'a' } }, { $set: { owner: 'x' } }, upsert, /\$regex/],
+          [{ agent: { name: 'a' } }, { $set: { owner: 'x' } }, upsert, /against a document/],
+          [{ agent: undefined }, { $set: { owner: 'x' } }, upsert, /undefined/],
+          [filter, { $unset: { secretRef: 1 } }, upsert, /\$unset/],
+          [filter, { $push: { tags: 'x' } }, upsert, /\$push/],
+          [filter, { $set: { 'a.b': 1 } }, upsert, /top-level/],
+          [filter, { $set: { pgVersion: 9 } }, upsert, /must not change pgVersion/],
+          [filter, { $set: { _id: 'x' } }, upsert, /must not change _id/],
+          [filter, { $set: { nope: 1 } }, upsert, /no schema path/],
+          [filter, { $set: { secretRef: undefined } }, upsert, /never unsets/],
+          [filter, { $set: { generation: 1 }, $inc: { generation: 1 } }, upsert, /two operators/],
+          [filter, { $inc: { owner: 1 } }, upsert, /Number schema path/],
+          [filter, { $inc: { generation: '1' } }, upsert, /finite number/],
+          [filter, { $setOnInsert: { owner: 'x' } }, after, /needs upsert/],
+          [filter, {}, upsert, /at least one field/],
+          [filter, { $set: { owner: 'x' } }, {}, /returnDocument/],
+        ];
+        for (const [f, update, options, message] of refusals) {
+          // eslint-disable-next-line no-await-in-loop
+          await expect(s.findOneAndUpdateWhere(f, update, options)).rejects.toThrow(message);
+        }
+      }
+      process.env[KEY_ENV] = 'pg';
+      await expect(s.findOneAndUpdateWhere(filter, bumpGeneration, upsert))
+        .rejects.toThrow(/findOneAndUpdateWhere is not supported in pg mode until step 4/);
+      await expect(s.findPageMongo({}, { limit: 10 })).rejects.toThrow(/not supported in pg mode until step 4/);
+      await expect(s.countMongo({})).rejects.toThrow(/not supported in pg mode until step 4/);
+      expect(await Key.countDocuments({})).toBe(0);
+      expect(pg.calls).toEqual([]);
+    });
+
+    describe('findPageMongo and countMongo', () => {
+      const seed = async () => {
+        const base = Date.UTC(2026, 10, 1);
+        for (let i = 0; i < 5; i += 1) {
+          // eslint-disable-next-line no-await-in-loop
+          await Key.collection.insertOne({
+            agent: `a${i}`, owner: i % 2 ? 'Odd' : 'even', generation: i, secret: `s${i}`,
+            createdAt: new Date(base + i * 1000),
+          });
+        }
+        await Key.collection.insertOne({ agent: 'gone', owner: 'Odd', pgDeleted: true, createdAt: new Date(base + 9000) });
+      };
+
+      it.each(['mongo', 'dual', 'pg-read'])('%s: a sorted, searched page and its count, read on Mongo', async (mode) => {
+        if (mode !== 'mongo') process.env[KEY_ENV] = mode;
+        const pg = fakePg();
+        const s = keys(pg);
+        await seed();
+        const search = { $or: [{ owner: { $regex: 'odd', $options: 'i' } }, { agent: /^a4$/ }] };
+        const page = await s.findPageMongo(search, { sort: { createdAt: -1 }, skip: 0, limit: 2 });
+        expect(page.map((doc) => doc.agent)).toEqual(['a4', 'a3']);
+        expect(page[0].secret).toBeUndefined();
+        expect(page[0].pgDeleted).toBeUndefined();
+        const next = await s.findPageMongo(search, { sort: { createdAt: -1 }, skip: 2, limit: 2, fields: ['agent'] });
+        expect(next).toEqual([{ _id: expect.anything(), agent: 'a1' }]);
+        expect(await s.countMongo(search)).toBe(3);
+        expect(await s.countMongo({})).toBe(5);
+        expect(pg.calls).toEqual([]);
+      });
+
+      it('refuses $where, $expr, a bad sort, and a missing limit', async () => {
+        const s = keys(fakePg());
+        await expect(s.findPageMongo({ $where: 'true' }, { limit: 1 })).rejects.toThrow(/\$where/);
+        await expect(s.countMongo({ owner: { $expr: 1 } })).rejects.toThrow(/\$expr/);
+        await expect(s.findPageMongo({}, { limit: 1, sort: { createdAt: 'desc' } })).rejects.toThrow(/sort/);
+        await expect(s.findPageMongo({}, {})).rejects.toThrow(/limit/);
+        await expect(s.findPageMongo({}, { limit: 1, skip: -1 })).rejects.toThrow(/skip/);
+        await expect(s.findPageMongo({ owner: { $options: 'i' } }, { limit: 1 })).rejects.toThrow(/\$options/);
+      });
+    });
+  });
 });
