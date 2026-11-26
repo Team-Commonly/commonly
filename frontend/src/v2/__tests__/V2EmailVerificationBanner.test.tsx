@@ -121,8 +121,14 @@ describe('V2EmailVerificationBanner', () => {
     const view = renderBanner(authFor('first-user'));
     dismissBanner();
     view.unmount();
-    renderBanner(authFor('second-user'));
+    const second = renderBanner(authFor('second-user'));
     expect(screen.getByRole('status')).toBeInTheDocument();
+
+    // The first account's dismiss is still kept, so this test also fails if a
+    // remount forgets the dismiss, not only if it leaks across accounts.
+    second.unmount();
+    renderBanner(authFor('first-user'));
+    expect(screen.queryByRole('status')).not.toBeInTheDocument();
   });
 
   test('a page load brings the reminder back after a dismiss (F652)', () => {
