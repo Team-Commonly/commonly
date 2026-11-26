@@ -154,3 +154,55 @@
 .v2-ui-card .gl { color:var(--v2-ink); }
 .v2-root .v2-msg.v2-ui-card { display:flex; flex-direction:column; gap:4px; align-items:stretch; }
 .v2-ui-card .ui-trace-skeleton { width:80%; height:8px; background:var(--v2-surface-tint); }
+/* Revision 3: Progress, BarChart, LineChart and acting Buttons. Series take
+   accent, ink, secondary and muted in that fixed order; lines after the
+   first are dashed, so a series never rests on colour alone. */
+.v2-ui-card { --c1:var(--v2-accent);--c2:var(--v2-ink);--c3:var(--v2-text-secondary);--c4:var(--v2-text-muted); }
+.v2-ui-card .ui-pg { display:grid; gap:6px; }
+.v2-ui-card .ui-pg-h { display:flex; justify-content:space-between; gap:8px; font-size:13px; line-height:18px; }
+.v2-ui-card .ui-pg-h .n { font:500 12px/18px var(--v2-font-mono); color:var(--s); font-variant-numeric:tabular-nums; }
+.v2-ui-card .ui-pg-t { height:6px; border-radius:3px; background:var(--t); overflow:hidden; }
+.v2-ui-card .ui-pg-t > span { display:block; height:100%; border-radius:3px; background:var(--c1); }
+.v2-ui-card .ui-ch { margin:0; display:grid; gap:6px; min-width:0; }
+.v2-ui-card .ui-ch-svg { display:block; width:100%; height:auto; max-width:100%; overflow:visible; }
+.v2-ui-card .ui-ch-svg .gr { stroke:var(--d); stroke-width:1; }
+.v2-ui-card .ui-ch-svg .bl { stroke:var(--b); stroke-width:1; }
+.v2-ui-card .ui-ch-svg .tk { fill:var(--m); font:500 11px var(--v2-font-mono); font-variant-numeric:tabular-nums; }
+.v2-ui-card .ui-ch-svg rect.c1 { fill:var(--c1); } .v2-ui-card .ui-ch-svg rect.c2 { fill:var(--c2); }
+.v2-ui-card .ui-ch-svg rect.c3 { fill:var(--c3); } .v2-ui-card .ui-ch-svg rect.c4 { fill:var(--c4); }
+.v2-ui-card .ui-ch-svg g.c1 { color:var(--c1); } .v2-ui-card .ui-ch-svg g.c2 { color:var(--c2); }
+.v2-ui-card .ui-ch-svg g.c3 { color:var(--c3); } .v2-ui-card .ui-ch-svg g.c4 { color:var(--c4); }
+.v2-ui-card .ui-ch-svg .ln { fill:none; stroke:currentColor; stroke-width:2; stroke-linejoin:round; stroke-linecap:round; }
+.v2-ui-card .ui-ch-svg .ln.d { stroke-dasharray:5 3; }
+.v2-ui-card .ui-ch-svg circle { fill:currentColor; stroke:var(--v2-bg); stroke-width:2; }
+.v2-ui-card .ui-ch-lg { display:flex; flex-wrap:wrap; gap:4px 12px; font-size:12px; line-height:16px; color:var(--s); }
+.v2-ui-card .ui-ch-lg .k { display:inline-flex; align-items:center; gap:6px; }
+.v2-ui-card .ui-ch-lg .k i { width:10px; height:10px; border-radius:2px; background:var(--c1); }
+.v2-ui-card .ui-ch-lg .c2 i { background:var(--c2); } .v2-ui-card .ui-ch-lg .c3 i { background:var(--c3); }
+.v2-ui-card .ui-ch-lg .c4 i { background:var(--c4); }
+.v2-ui-card .ui-ch-lg .ax { margin-left:auto; font:500 11px/16px var(--v2-font-mono); color:var(--m); }
+.v2-ui-card .ui-ch-data { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0 0 0 0); clip-path: inset(50%); white-space: nowrap; border: 0; }
+.v2-ui-card button.ub { cursor:pointer; }
+.v2-ui-card button.ub:disabled { cursor:default; color:var(--m); }
+.v2-ui-card button.ub.on { color:var(--k); border-color:var(--k); }
+.v2-ui-card button.ub:focus-visible { outline:2px solid var(--v2-ink); outline-offset:2px; }
+.v2-ui-card .ui-ft .ui-cn { margin-left:0; }
+/* Motion. The active step spins, pending steps breathe, Progress eases to its
+   value and grows in on first render, and chart marks draw in once. All of it
+   stops under prefers-reduced-motion, leaving the same static frame. */
+.v2-ui-card .ui-steps .gl .tr { stroke:var(--d); }
+.v2-ui-card .ui-steps li.active .gl { color:var(--v2-accent); }
+.v2-ui-card .ui-steps li.active .gl .arc { transform-origin:8px 8px; animation:ui-spin 0.9s linear infinite; }
+.v2-ui-card .ui-steps li.pending .gl { animation:ui-pulse 1.8s ease-in-out infinite; }
+.v2-ui-card .ui-pg-t > span { transform-origin:left center; transition:width 0.4s ease-out; animation:ui-grow-x 0.6s ease-out; }
+.v2-ui-card .ui-ch-svg .mk { animation:ui-draw 0.7s ease-out; }
+@keyframes ui-spin { to { transform:rotate(360deg); } }
+@keyframes ui-pulse { 0%, 100% { opacity:1; } 50% { opacity:0.4; } }
+@keyframes ui-grow-x { from { transform:scaleX(0); } to { transform:scaleX(1); } }
+@keyframes ui-draw { from { clip-path:inset(0 100% 0 0); } to { clip-path:inset(0 0 0 0); } }
+@media (prefers-reduced-motion: reduce) {
+  .v2-ui-card .ui-steps li.active .gl .arc,
+  .v2-ui-card .ui-steps li.pending .gl,
+  .v2-ui-card .ui-pg-t > span,
+  .v2-ui-card .ui-ch-svg .mk { animation:none; transition:none; }
+}

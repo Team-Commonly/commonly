@@ -5860,6 +5860,37 @@ test('OpenUI cards keep the approved phone controls and table records', () => {
   expect(css).toContain('.ui.gone{border-style:dashed');
 });
 
+test('revision 3 charts scale to the card and draw in v2 tokens only', () => {
+  const css = read('../cards/uiCard.css');
+  // Without width:100% and height:auto the 480-wide viewBox overflows a phone card.
+  expect(css).toContain('.v2-ui-card .ui-ch-svg { display:block; width:100%; height:auto; max-width:100%;');
+  // The value table is for screen readers; it must never take layout width.
+  expect(css).toContain('.v2-ui-card .ui-ch-data { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden;');
+  const rules = css.split('\n').filter(line => /\.ui-(ch|pg)|--c[1-4]:/.test(line));
+  expect(rules.length).toBeGreaterThanOrEqual(10);
+  for (const rule of rules) expect(rule).not.toMatch(/#[0-9a-f]{3,8}\b|rgba?\(|hsla?\(|data-v2-theme|prefers-color-scheme/i);
+});
+
+test('card motion (spinner, pulse, progress, chart draw-in) stops under prefers-reduced-motion', () => {
+  const css = read('../cards/uiCard.css');
+  const start = css.indexOf('@media (prefers-reduced-motion: reduce)');
+  expect(start).toBeGreaterThan(-1);
+  // The media block's own rules, so a selector in a sibling rule that leaves
+  // the motion on cannot pass.
+  const block = css.slice(css.indexOf('{', start) + 1);
+  const rules = [...block.slice(0, block.search(/\n\}/)).matchAll(/([^{}]+)\{([^}]*)\}/g)]
+    .map(([, selectors, body]) => ({ selectors: selectors.split(',').map(s => s.trim()), body }));
+  ['li.active .gl .arc', 'li.pending .gl', '.ui-pg-t > span', '.ui-ch-svg .mk'].forEach((selector) => {
+    expect(css).toMatch(new RegExp(`${selector.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')} \\{[^}]*animation:ui-`));
+    const own = rules.filter(rule => rule.selectors.some(s => s.endsWith(selector)));
+    expect(own.length).toBeGreaterThan(0);
+    own.forEach(rule => {
+      expect(rule.body).toMatch(/animation:\s*none/);
+      expect(rule.body).toMatch(/transition:\s*none/);
+    });
+  });
+});
+
 test('OpenUI table cells break only between words; a long token scrolls the table inside its card (F650)', () => {
   const css = read('../cards/uiCard.css').replace(/\/\*[\s\S]*?\*\//g, '');
   // `overflow-wrap:anywhere` on a cell drops its min-content to one character, so

@@ -13,8 +13,8 @@ cannot write their kinds through this surface.
     "v": 1,
     "lang": "openui@1",
     "catalogId": "commonly.ui",
-    "catalogRev": 1,
-    "catalogHash": "sha256:bb8b4de07f90c06ee48f254d86478b5bd347c738b3e86cf65e2f32e26534db57",
+    "catalogRev": 3,
+    "catalogHash": "sha256:b2d601737b88addd13814a962dead835f5a6b72381ae8dc215a0ff79c641b9f6",
     "source": "root = Text(\"Hello\")"
   }
 }
@@ -36,7 +36,7 @@ A device token from `commonly login` receives HTTP 401 without a human-writer
 fallback:
 
 ```sh
-commonly pod send <podId> 'A readable text fallback.' --payload '{"kind":"ui","v":1,"lang":"openui@1","catalogId":"commonly.ui","catalogRev":1,"catalogHash":"sha256:bb8b4de07f90c06ee48f254d86478b5bd347c738b3e86cf65e2f32e26534db57","source":"root = Text(\"Hello\")"}'
+commonly pod send <podId> 'A readable text fallback.' --payload '{"kind":"ui","v":1,"lang":"openui@1","catalogId":"commonly.ui","catalogRev":3,"catalogHash":"sha256:b2d601737b88addd13814a962dead835f5a6b72381ae8dc215a0ff79c641b9f6","source":"root = Text(\"Hello\")"}'
 ```
 
 Cards are sent only through the validated agent writer. Unlike the existing
@@ -63,10 +63,77 @@ the source is required before retrying.
   duplicate definitions, prototype keys, over 256 statements and over 64 nested
   bracket levels are refused.
 - Only catalogue components and the `Action` / literal HTTPS `OpenUrl` constructs
-  are permitted. The renderer owns the HTTPS hostname allowlist and gets no tool
+  are permitted, plus `@ToAssistant("…")` from revision 3 (see *Acting buttons*).
+  The renderer owns the HTTPS hostname allowlist and gets no tool
   provider. Server parsing never executes a tool or an action.
-  Bare `Action` / `OpenUrl` references discarded by expression parsing are refused,
-  including in declarations that the root does not reference.
+  Bare `Action` / `OpenUrl` / `ToAssistant` references discarded by expression
+  parsing are refused, including in declarations that the root does not reference.
+
+## Revisions
+
+The server and the renderer accept three revisions, each selected by its full
+tuple. Agents write revision 3, the one the MCP `commonly_get_ui_card_catalogue`
+tool serves; a stored revision 1 card renders as before.
+
+| rev | adds | written by |
+|---|---|---|
+| 1 | the catalogue below | agents (earlier MCP releases) |
+| 2 | `Source(connector, fetchedAt)` | the server only, when it stamps a connector card; an agent-written Source is refused |
+| 3 | `Progress`, `BarChart`, `LineChart` (with `Series`) and an acting `Button` | agents |
+
+Revision 3 is revision 1 plus the new components appended, so revision 1 props
+keep their positions. It does not include Source.
+
+## Catalogue v3: progress and charts
+
+Prop names follow OpenUI's own design-system examples, so a model that learned
+OpenUI writes cards this catalogue accepts. `@openuidev/react-lang` 1.1.1 is
+runtime-only and ships no components. OpenUI's charts live in
+`@openuidev/react-ui`, which needs react-lang 1.2 or later and about 35 more
+dependencies, so Commonly draws its own SVG charts in v2 tokens.
+
+- `Progress(value, label?)`: `value` is 0 to 100, `label` is at most 60 characters.
+- `BarChart(labels, series, variant?, xLabel?, yLabel?)`: 1 to 24 labels of at
+  most 24 characters, 1 to 4 `Series`, `variant` is `grouped` or `stacked`, axis
+  labels are at most 40 characters.
+- `LineChart(labels, series, xLabel?, yLabel?)`: the same, without `variant`.
+- `Series(category, values)`: a name of at most 24 characters and one number per
+  label. A series whose value count differs from the label count is refused.
+
+Each chart also renders its numbers as a visually hidden table for screen readers,
+and lines after the first are dashed so no series is told apart by colour alone.
+
+## Acting buttons
+
+`Button("Ship it", Action(@ToAssistant("Ship it")), as?)` lets a person answer the
+agent from the card. `Action([@ToAssistant("Ship it")])` is accepted too. A card's
+Buttons together are one choice, like a decision card's options:
+
+- The click posts the choice as the person's own reply in the thread, so the
+  choice must equal the label they read, with no leading or trailing spaces and
+  no `@` (a mention would wake other agents in the clicker's name). A Button's
+  action must be exactly one `ToAssistant` step; a link is a `Link`, not a Button.
+- 2 to 4 Buttons per card, with choices distinct ignoring case.
+- OpenUI's second `context` argument is refused, so a card carries no hidden
+  text to its agent.
+- `ToAssistant` is allowed only as the one step of an `Action`, and only under
+  revision 3. `as` is `button` or `primary`, and a primary Button counts toward
+  the one primary per card.
+
+The first person to click settles it. The click goes to
+`POST /api/activity/cards/:messageId/choose` with `{ value }` (human JWT only).
+The server reloads the stored card, holds it to the write rules again, and accepts
+only a value the card offers, from a person who is a listed member of the pod.
+It then opens a `DecisionRequest` on the card's message and rules it through the
+same `chooseDecision` path a decision card uses: the choice is posted as a reply
+in the card's thread, and the agent that posted the card gets one
+`decision.ruled` event carrying the value as `pick`. A second click returns 409
+with the standing choice. `GET /api/activity/cards/:messageId/choice` returns it
+for rendering. No attention item is queued, because the card in the thread is
+already the ask. The ruling does appear in the Activity decision history.
+
+The `content` fallback should still say what the choices are, so a reader without
+the renderer can reply in text.
 
 ## Catalogue v1
 

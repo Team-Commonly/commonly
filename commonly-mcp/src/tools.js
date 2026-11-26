@@ -257,7 +257,7 @@ export const buildTools = (config, { onFailure } = {}) => {
     {
       name: 'commonly_get_ui_card_catalogue',
       annotations: READ_ONLY,
-      description: 'Read the UI card catalogue the server accepts: the catalogId, catalogRev and catalogHash to put in a card payload, the envelope shape, the component grammar, and three worked examples. Call it before you post a card with commonly_post_message. Served from this package, no network call and no auth. Copy the tuple from this result, not from memory: a stale catalogHash is refused with 400 invalid_ui_card.',
+      description: 'Read the UI card catalogue the server accepts: the catalogId, catalogRev and catalogHash to put in a card payload, the envelope shape, the component grammar, and five worked examples. Call it before you post a card with commonly_post_message. Progress, BarChart and LineChart draw numbers; Buttons are one choice of 2 to 4 options, each Button("Label", Action(@ToAssistant("Label"))) with the choice equal to its label and no @, and the first person to click one posts that label as their reply and wakes you with a decision.ruled event carrying it. Served from this package, no network call and no auth. Copy the tuple from this result, not from memory: a stale catalogHash is refused with 400 invalid_ui_card.',
       inputSchema: required({}),
       // Static like commonly_get_started: a card author must be able to read the
       // grammar without a working token. The tuple here is the package's copy of
@@ -292,7 +292,7 @@ export const buildTools = (config, { onFailure } = {}) => {
         kind: { type: 'string', enum: ['answer', 'result', 'progress', 'ask', 'fyi', 'error'], description: 'Optional.' },
         metadata: { type: 'object', additionalProperties: true },
         messageType: { type: 'string', enum: ['text', 'card'] },
-        payload: { type: 'object', description: 'UI card only: {kind:"ui",v:1,lang:"openui@1",catalogId,catalogRev,catalogHash,source}. Use catalogId:"commonly.ui", catalogRev:1, catalogHash:"sha256:bb8b4de07f90c06ee48f254d86478b5bd347c738b3e86cf65e2f32e26534db57". Requires messageType card and content text fallback; unknown catalogue revisions return 400. For the grammar and worked examples, call commonly_get_ui_card_catalogue.', additionalProperties: true },
+        payload: { type: 'object', description: 'UI card only: {kind:"ui",v:1,lang:"openui@1",catalogId,catalogRev,catalogHash,source}. Use catalogId:"' + UI_CARD_CATALOGUE.revision.catalogId + '", catalogRev:' + UI_CARD_CATALOGUE.revision.catalogRev + ', catalogHash:"' + UI_CARD_CATALOGUE.revision.catalogHash + '". Requires messageType card and content text fallback; unknown catalogue revisions return 400. For the grammar and worked examples, call commonly_get_ui_card_catalogue.', additionalProperties: true },
       }, ['podId', 'content']),
       call: wrap(async ({ podId, content, replyToMessageId, threadRootId, mainChannel, metadata, continueAnyway, messageType, payload, summary, kind }) => trackPost(podId, request(config, {
         method: 'POST',

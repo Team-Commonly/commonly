@@ -1,8 +1,8 @@
 {
   "revision": {
     "catalogId": "commonly.ui",
-    "catalogRev": 1,
-    "catalogHash": "sha256:bb8b4de07f90c06ee48f254d86478b5bd347c738b3e86cf65e2f32e26534db57"
+    "catalogRev": 3,
+    "catalogHash": "sha256:b2d601737b88addd13814a962dead835f5a6b72381ae8dc215a0ff79c641b9f6"
   },
   "grammar": {
     "$defs": {
@@ -49,11 +49,23 @@
                 },
                 {
                   "$ref": "#/$defs/RunTrace"
+                },
+                {
+                  "$ref": "#/$defs/Progress"
+                },
+                {
+                  "$ref": "#/$defs/BarChart"
+                },
+                {
+                  "$ref": "#/$defs/LineChart"
+                },
+                {
+                  "$ref": "#/$defs/Button"
                 }
               ]
             },
             "minItems": 1,
-            "maxItems": 6
+            "maxItems": 8
           },
           "meta": {
             "type": "string",
@@ -382,6 +394,163 @@
           "limit"
         ],
         "additionalProperties": false
+      },
+      "Progress": {
+        "type": "object",
+        "properties": {
+          "value": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 100
+          },
+          "label": {
+            "type": "string",
+            "maxLength": 60
+          }
+        },
+        "required": [
+          "value"
+        ],
+        "additionalProperties": false
+      },
+      "BarChart": {
+        "type": "object",
+        "properties": {
+          "labels": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "maxLength": 24
+            },
+            "minItems": 1,
+            "maxItems": 24
+          },
+          "series": {
+            "type": "array",
+            "items": {
+              "$ref": "#/$defs/Series"
+            },
+            "minItems": 1,
+            "maxItems": 4
+          },
+          "variant": {
+            "type": "string",
+            "enum": [
+              "grouped",
+              "stacked"
+            ]
+          },
+          "xLabel": {
+            "type": "string",
+            "maxLength": 40
+          },
+          "yLabel": {
+            "type": "string",
+            "maxLength": 40
+          }
+        },
+        "required": [
+          "labels",
+          "series"
+        ],
+        "additionalProperties": false
+      },
+      "LineChart": {
+        "type": "object",
+        "properties": {
+          "labels": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "maxLength": 24
+            },
+            "minItems": 1,
+            "maxItems": 24
+          },
+          "series": {
+            "type": "array",
+            "items": {
+              "$ref": "#/$defs/Series"
+            },
+            "minItems": 1,
+            "maxItems": 4
+          },
+          "xLabel": {
+            "type": "string",
+            "maxLength": 40
+          },
+          "yLabel": {
+            "type": "string",
+            "maxLength": 40
+          }
+        },
+        "required": [
+          "labels",
+          "series"
+        ],
+        "additionalProperties": false
+      },
+      "Series": {
+        "type": "object",
+        "properties": {
+          "category": {
+            "type": "string",
+            "maxLength": 24
+          },
+          "values": {
+            "type": "array",
+            "items": {
+              "type": "number"
+            },
+            "minItems": 1,
+            "maxItems": 24
+          }
+        },
+        "required": [
+          "category",
+          "values"
+        ],
+        "additionalProperties": false
+      },
+      "Button": {
+        "type": "object",
+        "properties": {
+          "label": {
+            "type": "string",
+            "maxLength": 40
+          },
+          "action": {
+            "type": "object",
+            "properties": {
+              "k": {
+                "const": "Comp"
+              },
+              "name": {
+                "const": "Action"
+              },
+              "args": {
+                "type": "array"
+              }
+            },
+            "required": [
+              "k",
+              "name",
+              "args"
+            ]
+          },
+          "as": {
+            "type": "string",
+            "enum": [
+              "button",
+              "primary"
+            ]
+          }
+        },
+        "required": [
+          "label",
+          "action"
+        ],
+        "additionalProperties": false
       }
     },
     "properties": {
@@ -429,6 +598,21 @@
       },
       "RunTrace": {
         "$ref": "#/$defs/RunTrace"
+      },
+      "Progress": {
+        "$ref": "#/$defs/Progress"
+      },
+      "BarChart": {
+        "$ref": "#/$defs/BarChart"
+      },
+      "LineChart": {
+        "$ref": "#/$defs/LineChart"
+      },
+      "Series": {
+        "$ref": "#/$defs/Series"
+      },
+      "Button": {
+        "$ref": "#/$defs/Button"
       }
     }
   },
@@ -444,6 +628,14 @@
     {
       "title": "Table of results with one link",
       "source": "root = Card(\"Open PRs\", [Table([Col(\"PR\", \"text\"), Col(\"Age\", \"text\")], [[\"#3094\", \"2h\"], [\"#3107\", \"40m\"]]), Link(\"Open the board\", \"https://commonly.me\", \"button\")])"
+    },
+    {
+      "title": "Progress and a bar chart",
+      "source": "root = Card(\"Sprint 14\", [Progress(62, \"Done\"), BarChart([\"Mon\", \"Tue\", \"Wed\"], [Series(\"Merged\", [3, 5, 2]), Series(\"Opened\", [4, 2, 6])], \"grouped\", \"Day\", \"PRs\")])"
+    },
+    {
+      "title": "A choice the person makes with buttons (wakes you with decision.ruled)",
+      "source": "root = Card(\"Ship the release?\", [Text(\"Checks are green on main.\"), Button(\"Ship it\", Action(@ToAssistant(\"Ship it\")), \"primary\"), Button(\"Hold\", Action(@ToAssistant(\"Hold\")))])"
     }
   ]
 }

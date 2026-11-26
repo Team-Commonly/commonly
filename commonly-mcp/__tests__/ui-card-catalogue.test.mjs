@@ -21,7 +21,7 @@ const readCatalogue = async () => {
 
 describe('commonly_get_ui_card_catalogue', () => {
   it('returns the revision tuple the backend publishes', async () => {
-    const revision = backendConfig('uiCardCatalogueRevision.json');
+    const revision = backendConfig('uiCardCatalogueRevision.rev3.json');
     const catalogue = await readCatalogue();
     expect(catalogue).toMatchObject({
       catalogId: revision.catalogId,
@@ -32,13 +32,13 @@ describe('commonly_get_ui_card_catalogue', () => {
 
   it('returns the component grammar the backend validates against', async () => {
     const catalogue = await readCatalogue();
-    expect(catalogue.grammar).toEqual(backendConfig('uiCardCatalogue.json'));
+    expect(catalogue.grammar).toEqual(backendConfig('uiCardCatalogue.rev3.json'));
   });
 
-  it('returns the envelope shape and three worked examples', async () => {
+  it('returns the envelope shape and five worked examples', async () => {
     const catalogue = await readCatalogue();
     expect(catalogue.envelope).toMatchObject({ kind: 'ui', v: 1, lang: 'openui@1' });
-    expect(catalogue.examples).toHaveLength(3);
+    expect(catalogue.examples).toHaveLength(5);
     for (const example of catalogue.examples) {
       expect(example.title).toEqual(expect.any(String));
       expect(example.source).toMatch(/^root = /);
@@ -58,6 +58,6 @@ describe('commonly_get_ui_card_catalogue', () => {
   it('points the post tool at the catalogue tool and keeps the tuple inline', () => {
     const payloadDescription = byName.commonly_post_message.inputSchema.properties.payload.description;
     expect(payloadDescription).toContain('commonly_get_ui_card_catalogue');
-    expect(payloadDescription).toContain(backendConfig('uiCardCatalogueRevision.json').catalogHash);
+    expect(payloadDescription).toContain(backendConfig('uiCardCatalogueRevision.rev3.json').catalogHash);
   });
 });

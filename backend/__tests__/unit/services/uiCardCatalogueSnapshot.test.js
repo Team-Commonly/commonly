@@ -6,8 +6,8 @@
  */
 const fs = require('fs');
 const path = require('path');
-const catalogueRevision = require('../../../config/uiCardCatalogueRevision.json');
-const catalogue = require('../../../config/uiCardCatalogue.json');
+const catalogueRevision = require('../../../config/uiCardCatalogueRevision.rev3.json');
+const catalogue = require('../../../config/uiCardCatalogue.rev3.json');
 const { validateAgentCardPayload } = require('../../../services/uiCardValidation');
 
 const snapshotPath = path.join(__dirname, '../../../../commonly-mcp/src/ui-card-catalogue.json');

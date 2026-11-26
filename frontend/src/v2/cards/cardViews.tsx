@@ -32,7 +32,10 @@ export function KeyValueView({ pairs }: { pairs: Array<{ key: string; value: unk
 }
 function StateGlyph({ state }: { state: string }) {
   return <svg className="gl" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
-    {state === 'done' ? <path d="m3 8 3 3 7-7" /> : state === 'failed' ? <path d="m4 4 8 8M12 4l-8 8" /> : state === 'skipped' ? <path d="M3 8h10" /> : <circle cx="8" cy="8" r="5" strokeDasharray={state === 'pending' ? '2 2' : undefined} />}
+    {state === 'done' ? <path d="m3 8 3 3 7-7" /> : state === 'failed' ? <path d="m4 4 8 8M12 4l-8 8" /> : state === 'skipped' ? <path d="M3 8h10" />
+      // Active: a faint track and a quarter arc that uiCard.css spins.
+      : state === 'active' ? <><circle className="tr" cx="8" cy="8" r="5" /><path className="arc" d="M8 3a5 5 0 0 1 5 5" /></>
+        : <circle cx="8" cy="8" r="5" strokeDasharray={state === 'pending' ? '2 2' : undefined} />}
   </svg>;
 }
 export function StepsView({ steps }: { steps: Node[] }) {
