@@ -243,4 +243,5 @@ only a rollback from `pg` can produce. That case is out of scope until step 4 is
   can go unseen by this process's 5-second flag cache, and a Postgres read would answer unknown token: the
   link in an email the person has just received would go nowhere. The overflow read moves to Postgres in
   `pg-read`: a stale answer only delays a held ask to the next digest or shows it in one more, and the
-  digest re-reads each ask from Mongo before showing it.
+  digest re-reads each ask from Mongo before showing it. A failed Postgres read there falls back to Mongo, so
+  a Postgres outage never stops a digest.

@@ -183,19 +183,26 @@ export async function markNeedsYouClicked(id: unknown, at: Date = new Date()): P
  * not been copied is shown in one more digest. The digest re-reads every ask
  * from Mongo (open, the recipient's, in a pod they are still in) before
  * showing it.
+ *
+ * In pg-read a failed Postgres read falls back to the Mongo read, which is
+ * still authoritative there: a Postgres outage must not stop a digest that
+ * mongo mode would have sent.
  */
 export async function listUndigestedOverflow(recipientUserId: unknown): Promise<Array<{
   _id: unknown; attentionItemId: unknown;
 }>> {
+  type Row = { _id: unknown; attentionItemId: unknown };
   const filter = { recipientUserId, status: 'overflow', includedInDigestAt: { $exists: false } };
-  if (storeMode(NAME) === 'mongo') {
-    return NeedsYouEmail.find(filter).select('_id attentionItemId').lean() as unknown as Promise<Array<{
-      _id: unknown; attentionItemId: unknown;
-    }>>;
+  const fromMongo = () => NeedsYouEmail.find(filter).select('_id attentionItemId').lean() as unknown as Promise<Row[]>;
+  const mode = storeMode(NAME);
+  if (mode === 'mongo') return fromMongo();
+  try {
+    return await needsYouEmailStore().findWhere(filter, { fields: ['attentionItemId'] }) as Row[];
+  } catch (error) {
+    if (mode !== 'pg-read') throw error;
+    console.warn('[dual-store] NeedsYouEmail overflow read failed in Postgres; reading Mongo:', (error as Error).message);
+    return fromMongo();
   }
-  return await needsYouEmailStore().findWhere(filter, { fields: ['attentionItemId'] }) as Array<{
-    _id: unknown; attentionItemId: unknown;
-  }>;
 }
 
 /**

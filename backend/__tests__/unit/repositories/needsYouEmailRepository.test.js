@@ -297,6 +297,24 @@ describe('needs-you email repository (ADR-034 step 2)', () => {
       expect(mockPg.current.calls.includes('findWhere')).toBe(mode === 'pg-read');
     });
 
+    it('a failed Postgres overflow read falls back to Mongo, so the digest still has its answer', async () => {
+      const recipient = new Types.ObjectId();
+      const held = newClaim(recipient);
+      const heldId = await claimNeedsYouEmail(held);
+      await setNeedsYouEmailStatus(heldId, { status: 'overflow' });
+      mockPg.current.failNext('findWhere');
+      const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
+      try {
+        const listed = await listUndigestedOverflow(recipient);
+        expect(listed).toEqual([{ _id: heldId, attentionItemId: held.attentionItemId }]);
+        expect(Object.keys(listed[0]).sort()).toEqual(['_id', 'attentionItemId']);
+        // dual reads Mongo first and never reaches Postgres; pg-read reaches it, fails, and reads Mongo.
+        expect(warn).toHaveBeenCalledTimes(mode === 'pg-read' ? 1 : 0);
+      } finally {
+        warn.mockRestore();
+      }
+    });
+
     it('the digest mark changes only unmarked claims, each with its own version and one copy', async () => {
       const recipient = new Types.ObjectId();
       const ids = [];
