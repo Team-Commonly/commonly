@@ -20,6 +20,7 @@ const {
 const User = require('../models/User');
 const { validatePodParent } = require('../services/podParentService');
 const { mirrorMemberAdded, mirrorMemberRemoved } = require('../services/pgMirrorWrite');
+const roomGrantService = require('../services/roomGrantService');
 // Add PGPod at the top level if it's available
 let PGPod: any;
 let PGMessage: any;
@@ -788,6 +789,8 @@ exports.leavePod = async (req: any, res: any) => {
     await pod.save();
     // F183: drop the PG `pod_members` mirror row too. Best-effort; never fails the leave.
     await mirrorMemberRemoved(String(pod._id), String(req.userId));
+    // F660: their pod grants end with the membership. Never throws.
+    await roomGrantService.endMemberPodGrants({ podId: String(pod._id), userId: String(req.userId) });
     await leaveUnviewablePodRooms(String(req.userId));
 
     // Populate the user data
@@ -833,10 +836,11 @@ exports.removeMember = async (req: any, res: any) => {
       return res.status(400).json({ msg: 'Cannot remove pod creator' });
     }
 
-    const isMember = pod.members.some(
+    // The stored id, not the path's: it is what the grant revoke below queries by.
+    const removedMember = pod.members.find(
       (member: any) => member.toString() === memberId.toString(),
     );
-    if (!isMember) {
+    if (!removedMember) {
       return res.status(400).json({ msg: 'User is not a member of this pod' });
     }
 
@@ -858,6 +862,8 @@ exports.removeMember = async (req: any, res: any) => {
         );
       }
     }
+    // F660: their pod grants end with the membership. Never throws.
+    await roomGrantService.endMemberPodGrants({ podId: String(pod._id), userId: String(removedMember) });
     await leaveUnviewablePodRooms(memberId.toString());
 
     await pod.populate('createdBy', 'username profilePicture');

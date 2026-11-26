@@ -321,7 +321,9 @@ describe('the park and the card', () => {
   test('an owner who left the pod is never sent a card they cannot see', async () => {
     await Pod.updateOne({ _id: pod._id }, { $pull: { members: owner._id } });
     const answer = await hostedCall(await project(), 'sentry_update_issue', args());
-    expect(answer).toMatchObject({ outcome: 'refused', content: { error: 'approver_not_in_pod' } });
+    // The grant itself is refused once its owner is not a member (F660), so the
+    // call never reaches the approval step that would have parked a card.
+    expect(answer).toMatchObject({ outcome: 'refused', content: { error: 'grant_owner_not_member' } });
     expect(await ApprovalAction.countDocuments({})).toBe(0);
     expect(mockVendorCall).not.toHaveBeenCalled();
   });

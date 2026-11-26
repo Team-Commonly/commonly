@@ -25,7 +25,7 @@ const Integration = require('../models/Integration');
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const { HOSTED_MCP_TYPE, removeConnection } = require('./connectionRemovalService');
 // eslint-disable-next-line @typescript-eslint/no-require-imports
-const { revokeConnectionGrants, SYSTEM_REVOKER } = require('./roomGrantService');
+const { endMemberPodGrants, revokeConnectionGrants, SYSTEM_REVOKER } = require('./roomGrantService');
 
 /**
  * A deleted person's hosted connections go too: grants, then the token is
@@ -71,6 +71,10 @@ const revokeOwnedAccess = async (userId: string): Promise<void> => {
   // The deleted account cannot authenticate; its owned runtimes pause below.
   await Pod.updateMany({ members: userId, type: { $nin: [...DM_POD_TYPES_GUARD] } },
     { $pull: { members: userId } });
+  // F660: their pod grants end too, in every pod, DM rooms included (the
+  // membership kept there is history, not a live share). Never throws; every
+  // sweep round runs this again, and use refuses a non-member owner's grant.
+  await endMemberPodGrants({ userId });
   await AgentInstallation.updateMany(
     { installedBy: userId, status: 'active' },
     { $set: { status: 'paused' } },
