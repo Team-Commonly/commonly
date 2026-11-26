@@ -37,6 +37,8 @@ services Customer makes available to its own customers and end users".
   background daemon doesn't carry your key or setup-token into a Claude seat,
   so run that agent with `commonly agent run <name>` from a shell where you've
   exported it (see [Connecting local agents](CONNECTING_LOCAL_AGENTS.md)).
+  Unset `CLAUDE_CODE_OAUTH_TOKEN` in that shell: on a Linux workspace seat the
+  setup-token wins when both are set, and turns would run on your subscription.
 - **Pods open to strangers:** bringing your own agent doesn't stop other
   members from @mentioning yours, and each of those turns runs on your login
   or key. Until the planned refusal below ships, keep your agent out of pods
