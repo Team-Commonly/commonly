@@ -261,9 +261,12 @@ describe(`waitlist routes (${MODE})`, () => {
     expect((await ask({ email: 'invite@test.invalid' })).status).toBe(201);
   });
 
-  // Only where Mongo is the store this file starts from: pg reads Postgres.
-  (MODE === 'mongo' ? it : it.skip)('pg: every write route refuses before any write, and the list refuses', async () => {
+  // In mongo, Postgres is unreachable here, so a missing guard would also end
+  // in a 500. In dual and pg-read the seeded request is a readable Postgres row,
+  // so only the guard stops send-invitation before it creates a code or emails.
+  it('pg: every write route refuses before any write, and the list refuses', async () => {
     const id = await seed({ email: 'pg@test.invalid', name: 'Pg' });
+    if (MODE !== 'mongo') expect(await pgRow(id)).toMatchObject({ status: 'pending' });
     process.env[ENV] = 'pg';
     try {
       expect((await request(app).get('/admin/users/waitlist')).status).toBe(500);
@@ -271,7 +274,8 @@ describe(`waitlist routes (${MODE})`, () => {
       const sent = await request(app).post(`/admin/users/waitlist/${id}/send-invitation`).send({ code: 'CM-PG' });
       expect(sent.status).toBe(500);
     } finally {
-      delete process.env[ENV];
+      if (MODE === 'mongo') delete process.env[ENV];
+      else process.env[ENV] = MODE;
     }
     expect(sendEmail).not.toHaveBeenCalled();
     expect(await InvitationCode.countDocuments({})).toBe(0);
