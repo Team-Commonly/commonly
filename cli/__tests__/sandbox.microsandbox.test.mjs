@@ -29,8 +29,10 @@ import {
   GUEST_CODEX_VERSION,
   ensureGuestAgent,
   ensureMsb,
+  ensureNoSeatVm,
   microvmFlagOn,
   microvmSeatHome,
+  microvmSeatLabel,
   msbAsset,
   parseWhpProbe,
   probeWhp,
@@ -275,6 +277,13 @@ describe('buildMicrovmRunArgs', () => {
     expect(GUEST_IMAGE).toMatch(/@sha256:[0-9a-f]{64}$/);
   });
 
+  test('no label unless one is passed (the Claude turn passes none), each before the image', () => {
+    expect(buildMicrovmRunArgs(base)).not.toContain('--label');
+    const args = buildMicrovmRunArgs({ ...base, labels: ['commonly-seat=abc-public'] });
+    expect(args.slice(args.indexOf('--label'), args.indexOf('--label') + 2)).toEqual(['--label', 'commonly-seat=abc-public']);
+    expect(args.indexOf('--label')).toBeLessThan(args.indexOf(GUEST_IMAGE));
+  });
+
   test('a turn mounts the agents volume read-only; only the install mounts it writable', () => {
     expect(GUEST_VOLUME_TURN_SPEC).toBe(`${GUEST_VOLUME_SPEC},ro`);
     const args = buildMicrovmRunArgs(base);
@@ -509,5 +518,103 @@ describe('writeMicrovmTurn', () => {
     expect(entry).toContain(`${GUEST_TURN_DIR}/turn.json`);
     expect(JSON.parse(readFileSync(join(dir, 'mcp.json'), 'utf8'))).toEqual({ mcpServers: {} });
     expect(existsSync(join(dir, 'mcp-shim.js'))).toBe(true);
+  });
+});
+
+describe('ensureNoSeatVm', () => {
+  const MSB = 'C:\\msb\\msb.exe';
+  const label = microvmSeatLabel(join('seats', 'abc123-public'));
+  const OTHER = 'commonly-seat=def456-public';
+
+  // A pretend msb holding `vms`; `list` filters by label as msb does.
+  const msb = (vms, { stops = true, list = null } = {}) => {
+    const calls = [];
+    const run = (cmd, args, options) => {
+      calls.push({ cmd, args, options });
+      if (args[0] === 'list') {
+        if (list) return list();
+        const wanted = args[args.indexOf('--label') + 1];
+        return {
+          status: 0,
+          stdout: JSON.stringify(vms.filter((vm) => vm.label === wanted).map(({ name, status }) => ({ name, status }))),
+        };
+      }
+      if (args[0] === 'stop' && stops) {
+        const vm = vms.find((entry) => entry.name === args[args.length - 1]);
+        if (vm) vm.status = 'Stopped';
+      }
+      return { status: 0, stdout: '' };
+    };
+    return { calls, run };
+  };
+
+  test('the label is the seat HOME\'s folder name', () => {
+    expect(label).toBe('commonly-seat=abc123-public');
+  });
+
+  test('no VM of the seat: one list, no stop', () => {
+    const fake = msb([{ name: 'msb-1', status: 'Running', label: OTHER }]);
+    expect(ensureNoSeatVm({ msb: MSB, label, run: fake.run })).toEqual({ stopped: [] });
+    expect(fake.calls.map((call) => call.args)).toEqual([['list', '--label', label, '--format', 'json']]);
+  });
+
+  test('a stopped or crashed VM of the seat is no VM', () => {
+    const fake = msb([
+      { name: 'msb-1', status: 'Stopped', label },
+      { name: 'msb-2', status: 'Crashed', label },
+    ]);
+    expect(ensureNoSeatVm({ msb: MSB, label, run: fake.run })).toEqual({ stopped: [] });
+  });
+
+  test('a live VM of the seat is force-stopped by name and confirmed gone; another seat\'s is left', () => {
+    const vms = [
+      { name: 'msb-1', status: 'Running', label },
+      { name: 'msb-2', status: 'Draining', label },
+      { name: 'msb-3', status: 'Running', label: OTHER },
+    ];
+    const fake = msb(vms);
+    expect(ensureNoSeatVm({ msb: MSB, label, run: fake.run })).toEqual({ stopped: ['msb-1', 'msb-2'] });
+    expect(fake.calls.filter((call) => call.args[0] === 'stop').map((call) => call.args)).toEqual([
+      ['stop', '--force', '--quiet', '--', 'msb-1'],
+      ['stop', '--force', '--quiet', '--', 'msb-2'],
+    ]);
+    expect(fake.calls.at(-1).args[0]).toBe('list');
+    expect(vms[2].status).toBe('Running');
+  });
+
+  test('a VM still alive after the stop refuses', () => {
+    const fake = msb([{ name: 'msb-1', status: 'Running', label }], { stops: false });
+    expect(() => ensureNoSeatVm({ msb: MSB, label, run: fake.run }))
+      .toThrow(expect.objectContaining({ code: 'microvm_seat_busy', message: expect.stringMatching(/msb-1 \(Running\)/) }));
+  });
+
+  test.each([
+    ['msb fails', () => ({ status: 1, stderr: 'database is locked' }), /database is locked/],
+    ['msb cannot start', () => ({ error: new Error('spawn EACCES') }), /EACCES/],
+    ['an answer that is not JSON', () => ({ status: 0, stdout: 'NAME IMAGE' }), /could not be read/],
+    ['an answer that is not a list', () => ({ status: 0, stdout: '{"name":"msb-1"}' }), /could not be read/],
+    ['a live VM with no name', () => ({ status: 0, stdout: '[{"status":"Running"}]' }), /no name/],
+  ])('it refuses when it cannot confirm: %s', (_, list, message) => {
+    const fake = msb([], { list });
+    expect(() => ensureNoSeatVm({ msb: MSB, label, run: fake.run }))
+      .toThrow(expect.objectContaining({ code: 'microvm_seat_busy', message: expect.stringMatching(message) }));
+  });
+
+  test('no msb or no seat label refuses before asking msb anything', () => {
+    const fake = msb([]);
+    for (const options of [
+      { msb: '', label }, { msb: MSB, label: '' }, { msb: MSB, label: 'commonly-seat=' }, { msb: MSB, label: 'other=x' },
+    ]) {
+      expect(() => ensureNoSeatVm({ ...options, run: fake.run })).toThrow(expect.objectContaining({ code: 'microvm_seat_busy' }));
+    }
+    expect(fake.calls).toHaveLength(0);
+  });
+
+  test('msb gets the env it is given and a timeout', () => {
+    const fake = msb([]);
+    ensureNoSeatVm({ msb: MSB, label, run: fake.run, env: { LOCALAPPDATA: 'C:\\x' } });
+    expect(fake.calls[0].options).toEqual(expect.objectContaining({
+      env: { LOCALAPPDATA: 'C:\\x' }, timeout: expect.any(Number), windowsHide: true,
+    }));
   });
 });

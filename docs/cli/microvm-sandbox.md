@@ -84,7 +84,8 @@ that says so.
 with the seat token as a file path and the public seat's withheld tools in
 `COMMONLY_MCP_WITHHELD_TOOLS`. The guest's Codex gets each entry in a
 `config.toml` that the host writes into its Codex home before the turn and
-removes after it. Each entry has the guest shim as its command, Codex's
+removes after it (after a killed turn, the next turn's prepare removes it). The
+turn secret is also redacted from any failure msb or Codex prints. Each entry has the guest shim as its command, Codex's
 `disabled_tools` for the same withheld list, and an `env` table with the bridge
 address and the turn secret. Codex passes its MCP children none of its own
 environment, so without the table the shim couldn't find the bridge and the
@@ -130,8 +131,31 @@ under it goes through `sandbox/guest-home.js`. Each path component is checked
 with `lstat` and a link is refused, never followed or removed. Folders are made
 one level at a time. Files are written to a randomly named staged file, created
 exclusively (with `O_NOFOLLOW` where the platform has it), then renamed over the
-target. A refusal names the path; remove the link and run the turn again. These
-run only while no VM of the seat is up: before it boots, and after msb exits.
+target. A refusal names the path; remove the link and run the turn again.
+
+**The host touches the seat HOME only when no VM of the seat is running.** The
+checks above stop working if a guest can swap a folder for a link between the
+host's check and its action, so they need the HOME unmounted. msb exiting does
+not prove that: msb runs the VM as a process of its own, and killing `msb.exe`
+(a timeout, a cancel, the supervisor) skips the code that stops it. So every
+Codex turn's VM carries a `commonly-seat=<seat folder>` label (`msb run
+--label`), and the host acts as follows:
+- Before any step under the HOME, it asks `msb list --label <seat> --format
+  json` for that seat's VMs. msb checks each VM's process is alive. Any VM not
+  `Stopped` or `Crashed` is stopped with `msb stop --force <name>`, which kills
+  the VM's process and waits for it to exit. Then it lists again. If msb fails,
+  its answer can't be read, or a VM is still listed, the turn refuses
+  (`microvm_seat_busy`) and the HOME is not touched.
+- After msb exits on its own, the same check runs before the reply is read and
+  before the cleanup, because msb only warns when it fails to stop its VM.
+- After `msb.exe` was killed, nothing touches the HOME: no reply read and no
+  cleanup. The next turn's check stops the VM before its own steps, and its
+  prepare clears what the killed turn left.
+Another seat's VMs carry another label and are never listed or stopped. One seat
+runs one turn at a time, so a VM of the seat still running is always a
+leftover. A Windows job object would tie the VM to the CLI's process, but Node
+has no way to make one without a native addon, so the check above is the
+mechanism.
 
 **Other differences.**
 - The host-side git check for a public Codex workspace
@@ -152,8 +176,14 @@ run only while no VM of the seat is up: before it boots, and after msb exits.
 - DNS stays open (`allow@dns`), so a guest can leak data through lookups. The
   host alias resolves through msb's resolver; whether it still resolves without
   that rule is untested.
-- Stopping a turn kills `msb.exe`. Whether the VM process always goes with it is
-  untested; one left behind costs memory, not access.
+- Stopping a turn kills `msb.exe`, and the VM can outlive it, still holding
+  the seat HOME mounted until something stops it. For a Codex seat, the next
+  turn stops it before touching the HOME, or refuses (see above). Until that
+  turn, it runs inside the fence and uses memory and CPU. A Claude turn's VM
+  carries no label and nothing stops it. The host never writes into a Claude
+  seat's HOME (it only makes the folder; the reply comes over stdout), so that
+  leftover can reach nothing outside its fence and its mounts, but it runs
+  until msb's own maintenance or someone stops it.
 - The bridge runs only the Commonly MCP server, and only a warm build whose
   `package.json` declares `commonly.withheldTools`: it runs on the host, outside
   Claude's deny list, so it must withhold the seat's tools itself. Any other
@@ -187,7 +217,10 @@ run only while no VM of the seat is up: before it boots, and after msb exits.
 - `cli/__tests__/adapters.codex.microvm.test.mjs`: the same invariants for the
   codex adapter: resolution with the flag on and off, declared and undeclared;
   every refusal; the fence; the provider key and seat token kept out of the
-  guest's argv, env and turn files; and the guest MCP entry's env table.
+  guest's argv, env and turn files; and the guest MCP entry's env table. Also
+  the seat's VMs: a killed or cancelled turn leaves the HOME alone; a live VM
+  of the seat is stopped before the HOME is touched, or the turn refuses; and
+  another seat's VM neither blocks nor is stopped.
 - `.github/workflows/cli-microsandbox-windows.yml` runs these on Windows. It then
   boots a real fenced VM with `cli/scripts/windows-microvm-smoke.mjs` and probes
   from inside: the proxy answers; another loopback service, the internet and a
@@ -201,4 +234,7 @@ run only while no VM of the seat is up: before it boots, and after msb exits.
   and that neither msb's arguments nor the guest's turn files carry it. It then
   checks that the host reaches the public URLs (or stops as inconclusive), and
   boots the same fence again with a probe, which finds those URLs and a
-  loopback-only host port unreachable and the fenced port reachable.
+  loopback-only host port unreachable and the fenced port reachable. Last, a
+  turn whose guest stalls is killed at a 60-second timeout. The next turn of
+  that seat must still answer, and msb must then list no running VM with the
+  seat's label. The log shows whether the VM outlived `msb.exe`.

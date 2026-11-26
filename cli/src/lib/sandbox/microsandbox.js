@@ -34,7 +34,7 @@ import {
   chmod, mkdir, mkdtemp, readFile, readdir, rename, rm, stat, writeFile,
 } from 'fs/promises';
 import { homedir, tmpdir } from 'os';
-import { join } from 'path';
+import { basename, join } from 'path';
 
 import {
   MCP_BRIDGE_ENV, MCP_BRIDGE_SECRET_ENV, MCP_SHIM_SOURCE, hostMcpServers, startMcpBridge,
@@ -355,12 +355,15 @@ const mountSource = (path, label) => {
 
 // The workspace is always read-only here: a writable one would hand the guest
 // the project's .git, whose hooks and config the host's own git later runs.
+// `labels`: KEY=VALUE pairs msb keeps on the VM, so a later turn can find this
+// one by its seat (ensureNoSeatVm). Only the Codex turn passes one.
 export const buildMicrovmRunArgs = ({
-  ports, turnDir, workspace, home, cpus = 2, memory = '2G',
+  ports, turnDir, workspace, home, cpus = 2, memory = '2G', labels = [],
 }) => [
   'run',
   '--cpus', String(cpus),
   '--memory', memory,
+  ...labels.flatMap((label) => ['--label', label]),
   ...buildMicrovmFence(ports),
   '--mount-named', GUEST_VOLUME_TURN_SPEC,
   '--mount-dir', `${mountSource(turnDir, 'turn folder')}:${GUEST_TURN_DIR}:ro`,
@@ -371,6 +374,76 @@ export const buildMicrovmRunArgs = ({
   '--',
   'node', `${GUEST_TURN_DIR}/entry.js`,
 ];
+
+// ── one seat, one VM ────────────────────────────────────────────────────────
+
+// The host checks every path under a seat HOME before it touches it, which is
+// sound only while no VM has that HOME mounted. Killing msb.exe (a timeout, a
+// cancel) does not stop the VM: msb runs it as a process of its own and stops
+// it only on its own exit path. So each Codex turn's VM carries its seat's
+// label, and before the host touches the HOME it asks msb for every VM with
+// that label, force-stops any still alive, and asks again.
+
+export const MICROVM_SEAT_LABEL_KEY = 'commonly-seat';
+
+/** The label of a seat's VMs: the seat HOME's folder name (a hash and the trust). */
+export const microvmSeatLabel = (home) => `${MICROVM_SEAT_LABEL_KEY}=${basename(String(home || ''))}`;
+
+// msb's settled statuses (SandboxStatus); a VM in any other may hold the mount.
+const MICROVM_SETTLED_STATUSES = new Set(['Stopped', 'Crashed']);
+
+const seatBusy = (message) => Object.assign(
+  new Error(`the microVM sandbox will not touch this seat's HOME: ${message}`),
+  { code: 'microvm_seat_busy' },
+);
+
+/**
+ * Confirms no VM of this seat is alive, force-stopping any that is, by msb's
+ * own record: `msb list --label` (which checks each VM's process is alive)
+ * and `msb stop --force` (which kills the VM's process and waits for it to
+ * exit). Throws `microvm_seat_busy` whenever it can't confirm: msb fails, its
+ * answer can't be read, or a VM is still alive after the stop. Another seat's
+ * VMs carry another label and are never listed or stopped.
+ */
+export const ensureNoSeatVm = ({
+  msb, label, run = spawnSync, env = process.env, log = () => {}, timeoutMs = 60000,
+}) => {
+  if (!msb || !label || !label.startsWith(`${MICROVM_SEAT_LABEL_KEY}=`) || label.endsWith('=')) {
+    throw seatBusy('there is no msb or no seat label to look its VMs up by');
+  }
+  const options = {
+    encoding: 'utf8', env, timeout: timeoutMs, windowsHide: true,
+  };
+  const live = () => {
+    const listed = run(msb, ['list', '--label', label, '--format', 'json'], options);
+    if (listed?.error || listed?.status !== 0) {
+      throw seatBusy(`msb could not list its VMs (${listed?.error?.message
+        || String(listed?.stderr || '').trim().slice(-300) || `exit ${listed?.status}`})`);
+    }
+    let entries;
+    try {
+      entries = JSON.parse(String(listed.stdout || '').trim() || '[]');
+    } catch {
+      entries = null;
+    }
+    if (!Array.isArray(entries)) throw seatBusy('msb\'s list of VMs could not be read');
+    return entries.filter((entry) => !MICROVM_SETTLED_STATUSES.has(String(entry?.status)));
+  };
+  const before = live();
+  if (!before.length) return { stopped: [] };
+  const names = before.map((entry) => String(entry?.name || ''));
+  if (names.some((name) => !name)) throw seatBusy('msb listed a VM of this seat with no name to stop it by');
+  for (const name of names) {
+    log(`microvm: stopping ${name}, a VM of this seat still running from an earlier turn`);
+    run(msb, ['stop', '--force', '--quiet', '--', name], options);
+  }
+  const after = live();
+  if (after.length) {
+    throw seatBusy(`${after.map((entry) => `${entry?.name} (${entry?.status})`).join(', ')} is still `
+      + 'running after msb stop --force; stop or remove it (msb stop, msb rm) and the next turn runs');
+  }
+  return { stopped: names };
+};
 
 // Runs inside the guest. Reads the turn, starts the agent with exactly that
 // env, and exits with its code. Kept tiny: it is the only code we put in the VM.

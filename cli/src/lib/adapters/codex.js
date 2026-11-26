@@ -97,9 +97,10 @@ import {
 } from '../sandbox/guest-home.js';
 import {
   GUEST_CODEX, GUEST_HOME, GUEST_PATH, GUEST_WORKSPACE, buildMicrovmRunArgs, checkMicrovmAttach,
-  guestProxyBaseUrl, microvmSeatHome, msbHostEnv, prepareMicrovmHost, probeWhp, startMicrovmTurn,
-  writeMicrovmTurn,
+  ensureNoSeatVm, guestProxyBaseUrl, microvmSeatHome, microvmSeatLabel, msbHostEnv, prepareMicrovmHost,
+  probeWhp, startMicrovmTurn, writeMicrovmTurn,
 } from '../sandbox/microsandbox.js';
+import { MCP_BRIDGE_SECRET_ENV } from '../sandbox/microsandbox-mcp-bridge.js';
 import { adapterFailure, spawnCredentials } from '../upstream-refusal.js';
 import { publicSeatWithheldTools } from '../public-withheld-tools.js';
 import { startProviderProxy } from '../provider-proxy.js';
@@ -1609,6 +1610,11 @@ const microvmServerBaseEnv = (source, credential) => {
   return withholdRuntimeCredential(env, { credentialFile: credential?.path || null });
 };
 
+// The turn's MCP bridge secret(s), redacted from anything msb or Codex prints.
+const bridgeSecrets = (mcpConfig) => Object.values(mcpConfig?.mcpServers || {})
+  .map((server) => server?.env?.[MCP_BRIDGE_SECRET_ENV])
+  .filter((secret) => typeof secret === 'string' && secret);
+
 // writePublicCodexInstructions' file operations, through guest-home.js: no
 // link under the seat HOME is followed.
 const guestHomeFileOps = {
@@ -1694,18 +1700,29 @@ const runMicrovmTurn = async ({
   });
   if (hostMcp.unavailable.length) throw publicMcpUnavailableError(hostMcp.unavailable);
 
-  // Its own HOME per seat, apart from a Claude seat of the same name. Readied
-  // (and a planted link refused) before anything is installed or started.
+  // Its own HOME per seat, apart from a Claude seat of the same name.
   const home = ctx._microvmHome || microvmSeatHome(`codex:${codexHomeIdentity(ctx)}`, 'public');
+  const log = (text) => process.stderr.write(`[codex] ${text}\n`);
+  const host = await (ctx._prepareMicrovmHost || prepareMicrovmHost)({ agent: 'codex', log });
+  // Every host step under the HOME checks each path before acting on it, which
+  // holds only while no VM has the HOME mounted. A VM can outlive msb.exe (a
+  // killed turn), so before each of those steps msb is asked for this seat's
+  // VMs, any alive is force-stopped, and the turn refuses if one still is.
+  const seatLabel = microvmSeatLabel(home);
+  const confirmNoSeatVm = () => (ctx._ensureNoSeatVm || ensureNoSeatVm)({
+    msb: host.msb, label: seatLabel, env: msbHostEnv(source), log,
+  });
+  confirmNoSeatVm();
   const { codexHome } = await prepareMicrovmCodexHome(home, ctx);
   const replyName = `${randomBytes(16).toString('hex')}.txt`;
   let providerProxy = null;
   let turn = null;
+  // True once msb.exe was killed rather than exiting on its own: its VM may
+  // still be running, so nothing after it touches the HOME. The next turn's
+  // confirmNoSeatVm stops that VM before its own HOME steps.
+  let killed = false;
+  let vmGone = false;
   try {
-    const host = await (ctx._prepareMicrovmHost || prepareMicrovmHost)({
-      agent: 'codex',
-      log: (text) => process.stderr.write(`[codex] ${text}\n`),
-    });
     providerProxy = await (ctx._startProviderProxy || startProviderProxy)({
       provider: { baseURL },
       keyMaterial: key,
@@ -1753,22 +1770,38 @@ const runMicrovmTurn = async ({
     if (ctx.signal?.aborted) {
       throw ctx.signal.reason || new Error('codex spawn cancelled before the process started');
     }
-    const ran = await runCodex({
-      command: host.msb,
-      args: buildMicrovmRunArgs({
-        ports: turn.ports, turnDir: turn.turnDir, workspace: workspace || ctx.cwd, home,
-      }),
-      cwd: ctx.cwd,
-      env: msbHostEnv(source),
-      timeoutMs: ctx.timeoutMs || DEFAULT_TIMEOUT_MS,
-      credentials: [...spawnCredentials(ctx, CODEX_PROVIDER_KEY_ENVS), key, providerProxy.token].filter(Boolean),
-      spawnImpl: ctx._spawnImpl || childSpawn,
-      onSpawn: ctx.onSpawn,
-      controls: codexControls(guestArgs),
-      ownGroup: wantsOwnProcessGroup(ctx),
-      turnReap: ctx._turnReap,
-      confined: true,
-    });
+    let ran;
+    try {
+      ran = await runCodex({
+        command: host.msb,
+        args: buildMicrovmRunArgs({
+          ports: turn.ports, turnDir: turn.turnDir, workspace: workspace || ctx.cwd, home, labels: [seatLabel],
+        }),
+        cwd: ctx.cwd,
+        env: msbHostEnv(source),
+        timeoutMs: ctx.timeoutMs || DEFAULT_TIMEOUT_MS,
+        credentials: [
+          ...spawnCredentials(ctx, CODEX_PROVIDER_KEY_ENVS), key, providerProxy.token, ...bridgeSecrets(turn.mcpConfig),
+        ].filter(Boolean),
+        spawnImpl: ctx._spawnImpl || childSpawn,
+        onSpawn: ctx.onSpawn,
+        controls: codexControls(guestArgs),
+        ownGroup: wantsOwnProcessGroup(ctx),
+        turnReap: ctx._turnReap,
+        confined: true,
+      });
+    } catch (error) {
+      if (error?.killed || ctx.signal?.aborted) killed = true;
+      throw error;
+    }
+    if (ctx.signal?.aborted) {
+      killed = true;
+      throw ctx.signal.reason || new Error('codex turn cancelled');
+    }
+    // msb exited on its own, but it only warns when it can't stop its VM, so
+    // the reply is read only once no VM of this seat is confirmed alive.
+    confirmNoSeatVm();
+    vmGone = true;
     const text = await readMicrovmReply(home, replyName);
     if (!ran.turnCompleted && !text) throw adapterFailure('codex', 'the turn stopped before it finished');
     const newSessionId = ran.threadId || sessionId || null;
@@ -1783,7 +1816,15 @@ const runMicrovmTurn = async ({
       text, newSessionId, contextTokens: null, ...(Object.keys(stats).length ? { stats } : {}),
     };
   } finally {
-    await cleanMicrovmHome(home, replyName);
+    // After a kill the HOME is left as it is; otherwise it is cleaned once no
+    // VM of this seat is confirmed alive. A leftover reply or config.toml is
+    // cleared by the next turn's prepare, after its own check.
+    if (!killed) {
+      try {
+        if (!vmGone) confirmNoSeatVm();
+        await cleanMicrovmHome(home, replyName);
+      } catch { /* left in place */ }
+    }
     try { await turn?.close?.(); } catch { /* ignore */ }
     try { await providerProxy?.close(); } catch { /* ignore */ }
   }
@@ -1832,7 +1873,10 @@ const runCodex = ({
     const reaped = describeTurnReap(turn.reap(proc));
     // eslint-disable-next-line no-console
     if (reaped) console.warn(`[codex] ${reaped}`);
-    if (timedOut) return reject(new Error(`codex timed out after ${timeoutMs}ms`));
+    // `killed`: the process was stopped from outside (this timeout, or a
+    // signal), not by its own exit. The microVM turn leaves the seat HOME
+    // alone then, since the VM can outlive msb.exe.
+    if (timedOut) return reject(Object.assign(new Error(`codex timed out after ${timeoutMs}ms`), { killed: true }));
     events.flush();
     if (events.turnFailedMessage) {
       // Surface the model-side failure message verbatim — the run loop posts
@@ -1842,15 +1886,19 @@ const runCodex = ({
       // echoed a credential this spawn was handed is redacted before it can be
       // posted into a pod, and a status it names is attached for the circuit
       // breaker rather than left to a regex.
-      return reject(adapterFailure('codex turn failed', events.turnFailedMessage, {
+      const failed = adapterFailure('codex turn failed', events.turnFailedMessage, {
         credentials,
         limit: 2000,
-      }));
+      });
+      if (signal) failed.killed = true;
+      return reject(failed);
     }
     if (code !== 0) {
-      return reject(adapterFailure('codex', stderr.trim(), {
+      const failure = adapterFailure('codex', stderr.trim(), {
         credentials, exitCode: code, limit: 500, signal,
-      }));
+      });
+      if (signal) failure.killed = true;
+      return reject(failure);
     }
     resolve({ threadId: events.threadId, turnCompleted: events.turnCompleted });
   });

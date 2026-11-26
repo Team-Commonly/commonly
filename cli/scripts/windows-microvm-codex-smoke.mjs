@@ -22,6 +22,9 @@
  *      loopback-only host service are unreachable, the fenced port is
  *      reachable, and the workspace and agents volume refuse writes. The host
  *      first reaches the same public URLs, or the step is inconclusive.
+ *   6. A turn whose guest stalls is killed at a short timeout; the next turn of
+ *      that seat still runs (its prepare stops any VM msb left), and msb then
+ *      lists no running VM with the seat's label.
  */
 import { spawn } from 'child_process';
 import {
@@ -33,7 +36,7 @@ import { join } from 'path';
 
 import {
   GUEST_CODEX, GUEST_CODEX_VERSION, GUEST_HOST, GUEST_TURN_DIR, MICROVM_FLAG_ENV, ensureGuestCodex, ensureMsb,
-  msbHostEnv, prepareMicrovmHost, probeWhp, writeMicrovmTurn,
+  microvmSeatLabel, msbHostEnv, prepareMicrovmHost, probeWhp, writeMicrovmTurn,
 } from '../src/lib/sandbox/microsandbox.js';
 
 const codex = (await import('../src/lib/adapters/codex.js')).default;
@@ -185,7 +188,8 @@ const main = async () => {
         env: { ...process.env, CODEX_API_KEY: FAKE_UPSTREAM_KEY },
         environment: { model: 'spike-model', sandbox: { trust: 'public' }, mcp: [] },
         _microvmHome: plantedHome,
-        _prepareMicrovmHost: () => { throw new Error('prepared despite a planted junction'); },
+        _prepareMicrovmHost: (options) => prepareMicrovmHost({ ...options, root }),
+        _startProviderProxy: () => { throw new Error('a proxy started despite a planted junction'); },
       }).then(() => null, (error) => error);
       console.log(refused?.message);
       if (!refused || !/refusing to touch .* in the microVM seat home/.test(refused.message)) {
@@ -304,6 +308,62 @@ const main = async () => {
     } finally {
       standIn.close();
       rmSync(probeDir, { recursive: true, force: true });
+    }
+
+    step('6. a turn killed at its timeout leaves no VM of its seat behind the next turn');
+    {
+      const stallHome = join(scratch, 'stall-home');
+      mkdirSync(stallHome);
+      const label = microvmSeatLabel(stallHome);
+      const seatVms = async () => {
+        const out = await runMsb(msb, ['list', '--label', label, '--format', 'json']);
+        if (out.code !== 0) throw new Error(`msb list exited ${out.code}`);
+        return JSON.parse(out.stdout.trim() || '[]').filter((vm) => !['Stopped', 'Crashed'].includes(vm.status));
+      };
+      const turnCtx = (extra) => ({
+        agentName: 'ci-codex-stall',
+        sessionId: null,
+        cwd: workspace,
+        runtimeToken: FAKE_SEAT_TOKEN,
+        instanceUrl: 'http://127.0.0.1:9',
+        env: {
+          ...process.env,
+          CODEX_API_KEY: FAKE_UPSTREAM_KEY,
+          OPENAI_BASE_URL: `http://127.0.0.1:${upstream.address().port}/v1`,
+        },
+        environment: { model: 'spike-model', sandbox: { trust: 'public' }, mcp: [] },
+        _microvmHome: stallHome,
+        _prepareMicrovmHost: (options) => prepareMicrovmHost({ ...options, root }),
+        ...extra,
+      });
+      // The guest stalls: its turn file is swapped for one that marks the HOME
+      // and then idles, so the adapter's timeout kills msb.exe mid-turn.
+      const killedTurn = await codex.spawn('stall', turnCtx({
+        timeoutMs: 60 * 1000,
+        _spawnImpl: (cmd, args, opts) => {
+          const mount = args.find((a) => a.endsWith(`:${GUEST_TURN_DIR}:ro`));
+          const turnDir = mount.slice(0, mount.length - `:${GUEST_TURN_DIR}:ro`.length);
+          const turn = JSON.parse(readFileSync(join(turnDir, 'turn.json'), 'utf8'));
+          turn.argv = ['node', '-e', "require('fs').writeFileSync('/home/seat/stall-started', '1'); setInterval(() => {}, 1000);"];
+          writeFileSync(join(turnDir, 'turn.json'), JSON.stringify(turn));
+          return spawn(cmd, args, opts);
+        },
+      })).then(() => null, (error) => error);
+      console.log(`killed turn: ${killedTurn?.message}`);
+      if (!killedTurn || !/timed out/.test(killedTurn.message)) fail(`the stalled turn was not killed at its timeout: ${killedTurn?.message || 'it finished'}`);
+      if (!existsSync(join(stallHome, 'stall-started'))) {
+        throw new Error('inconclusive: the stalled guest never started before the kill; the timeout is too short for this runner');
+      }
+      // Informational: whether this msb leaves the VM running after its own
+      // process is killed. The adapter must cope either way.
+      console.log(`VMs of the seat right after the kill: ${JSON.stringify(await seatVms())}`);
+
+      const next = await codex.spawn('Reply with OK.', turnCtx({ timeoutMs: 5 * 60 * 1000 }))
+        .catch((error) => { fail(`the next turn of the seat did not run: ${error?.message || error}`); return null; });
+      if (next && !String(next.text).includes('OK from the stub model')) fail(`the next turn did not answer: ${JSON.stringify(next.text)}`);
+      const left = await seatVms();
+      console.log(`VMs of the seat after the next turn: ${JSON.stringify(left)}`);
+      if (left.length) fail(`a VM of the seat is still running: ${JSON.stringify(left)}`);
     }
   } finally {
     upstream.close();

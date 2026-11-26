@@ -414,20 +414,25 @@ describe('the codex adapter in a microVM', () => {
       expect(fs.readFileSync(path.join(outside, 'skills', 'keep.md'), 'utf8')).toBe('host file');
     };
 
+    // msb and the guest's Codex are readied first (they touch only msb's own
+    // folder and the agents volume), then the seat's VMs are checked, then
+    // the HOME: a planted link refuses before a proxy starts or a VM runs.
     const refusedBeforeAnything = async (plant) => {
       plant();
       const proxy = proxyStub();
-      const prepare = jest.fn(async () => ({ msb: MSB }));
+      const order = [];
+      const prepare = jest.fn(async () => { order.push('prepare'); return { msb: MSB }; });
+      const noSeatVm = jest.fn(() => { order.push('no-seat-vm'); return { stopped: [] }; });
       const { calls, impl } = recorder();
       await withFlag('1', async () => {
         await expect(run(impl, {
-          extra: { _startProviderProxy: proxy.start, _prepareMicrovmHost: prepare },
+          extra: { _startProviderProxy: proxy.start, _prepareMicrovmHost: prepare, _ensureNoSeatVm: noSeatVm },
           // Skills declared, so AGENTS.md would be written.
           sandbox: { trust: 'public' },
         })).rejects.toThrow(/refusing to touch .* in the microVM seat home/);
       });
       expect(calls).toHaveLength(0);
-      expect(prepare).not.toHaveBeenCalled();
+      expect(order).toEqual(['prepare', 'no-seat-vm']);
       expect(proxy.started).toHaveLength(0);
       untouched();
     };
@@ -486,6 +491,187 @@ describe('the codex adapter in a microVM', () => {
       expect(fs.readFileSync(path.join(home, 'codex-home', 'AGENTS.md'), 'utf8')).toContain('# a skill');
       expect(fs.lstatSync(guessed).isSymbolicLink()).toBe(true);
       untouched();
+    });
+  });
+
+  // The HOME checks hold only while no VM has the HOME mounted, and a VM can
+  // outlive a killed msb.exe. msb's own record is the source: its VMs carry
+  // the seat label, `msb list --label` lists them, `msb stop --force` stops one.
+  describe('a VM of this seat that may still be running', () => {
+    const seatLabel = () => microsandbox.microvmSeatLabel(home);
+
+    // A pretend msb: `list` answers by label from `vms`, `stop` settles one
+    // unless `stops` is false. Everything else (the install probe) passes.
+    const fakeMsb = (vms, { stops = true } = {}) => {
+      const stopped = [];
+      spawnSync.mockImplementation((cmd, args) => {
+        if (cmd !== MSB) return { status: 0, stdout: '' };
+        if (args[0] === 'list') {
+          const label = args[args.indexOf('--label') + 1];
+          return {
+            status: 0,
+            stdout: JSON.stringify(vms.filter((vm) => vm.label === label).map(({ name, status }) => ({ name, status }))),
+          };
+        }
+        if (args[0] === 'stop') {
+          const name = args[args.length - 1];
+          stopped.push(name);
+          const vm = vms.find((entry) => entry.name === name);
+          if (vm && stops) vm.status = 'Stopped';
+        }
+        return { status: 0, stdout: '' };
+      });
+      return stopped;
+    };
+
+    // A turn whose msb.exe is killed from outside: it writes its reply, then
+    // runs until kill() closes it with a signal, as Node reports on Windows.
+    const stalled = ({ onStart = () => {} } = {}) => {
+      const calls = [];
+      const impl = (cmd, args) => {
+        calls.push({ cmd, args });
+        const proc = new EventEmitter();
+        proc.stdout = new EventEmitter();
+        proc.stderr = new EventEmitter();
+        proc.kill = jest.fn((signal) => { setTimeout(() => proc.emit('close', null, signal || 'SIGTERM'), 0); });
+        setTimeout(() => {
+          fs.writeFileSync(path.join(home, 'replies', 'left.txt'), 'partial');
+          onStart(proc);
+        }, 0);
+        return proc;
+      };
+      return { calls, impl };
+    };
+
+    const leftBehind = () => ({
+      config: fs.existsSync(path.join(home, 'codex-home', 'config.toml')),
+      reply: fs.existsSync(path.join(home, 'replies', 'left.txt')),
+    });
+
+    test('every turn VM carries the seat label, and the seat is checked before and after msb runs', async () => {
+      const noSeatVm = jest.fn(() => ({ stopped: [] }));
+      const { calls, impl } = recorder();
+      await withFlag('1', () => run(impl, { extra: { _startProviderProxy: proxyStub().start, _ensureNoSeatVm: noSeatVm } }));
+      const { args } = calls[0];
+      expect(args[args.indexOf('--label') + 1]).toBe(seatLabel());
+      expect(args.indexOf('--label')).toBeLessThan(args.indexOf(microsandbox.GUEST_IMAGE));
+      expect(noSeatVm).toHaveBeenCalledTimes(2);
+      for (const [options] of noSeatVm.mock.calls) {
+        expect(options).toEqual(expect.objectContaining({ msb: MSB, label: seatLabel() }));
+      }
+      // Cleaned after the second check.
+      expect(leftBehind().config).toBe(false);
+    });
+
+    test('a turn killed at its timeout leaves the HOME alone: no check, no cleanup', async () => {
+      const noSeatVm = jest.fn(() => ({ stopped: [] }));
+      const { calls, impl } = stalled();
+      await withFlag('1', async () => {
+        await expect(run(impl, {
+          extra: { _startProviderProxy: proxyStub().start, _ensureNoSeatVm: noSeatVm, timeoutMs: 40 },
+        })).rejects.toThrow(/timed out/);
+      });
+      expect(calls).toHaveLength(1);
+      // Only the check before the HOME was readied; nothing after the kill.
+      expect(noSeatVm).toHaveBeenCalledTimes(1);
+      expect(leftBehind()).toEqual({ config: true, reply: true });
+    });
+
+    test('a cancelled turn leaves the HOME alone too', async () => {
+      const noSeatVm = jest.fn(() => ({ stopped: [] }));
+      const controller = new AbortController();
+      const { impl } = stalled({
+        onStart: (proc) => { controller.abort(new Error('cancelled by the pod')); proc.kill('SIGTERM'); },
+      });
+      await withFlag('1', async () => {
+        await expect(run(impl, {
+          extra: { _startProviderProxy: proxyStub().start, _ensureNoSeatVm: noSeatVm, signal: controller.signal },
+        })).rejects.toThrow();
+      });
+      expect(noSeatVm).toHaveBeenCalledTimes(1);
+      expect(leftBehind()).toEqual({ config: true, reply: true });
+    });
+
+    test('a VM msb could not confirm gone after its own exit: no reply is read and nothing is cleaned', async () => {
+      let checks = 0;
+      const noSeatVm = jest.fn(() => {
+        checks += 1;
+        if (checks > 1) throw Object.assign(new Error('msb-77 is still running'), { code: 'microvm_seat_busy' });
+        return { stopped: [] };
+      });
+      const { impl } = recorder({ reply: 'read while the VM may be live' });
+      await withFlag('1', async () => {
+        await expect(run(impl, { extra: { _startProviderProxy: proxyStub().start, _ensureNoSeatVm: noSeatVm } }))
+          .rejects.toThrow(/msb-77 is still running/);
+      });
+      expect(leftBehind().config).toBe(true);
+    });
+
+    test('a live VM of this seat is stopped before the HOME is touched, and the turn runs; another seat\'s is left', async () => {
+      const vms = [
+        { name: 'msb-left0ver', status: 'Running', label: seatLabel() },
+        { name: 'msb-otherseat', status: 'Running', label: 'commonly-seat=0123456789abcdef0123-public' },
+      ];
+      const stopped = fakeMsb(vms);
+      const { calls, impl } = recorder();
+      const result = await withFlag('1', () => run(impl, { extra: { _startProviderProxy: proxyStub().start } }));
+      expect(result.text).toBe('hello from the guest');
+      expect(calls).toHaveLength(1);
+      expect(stopped).toEqual(['msb-left0ver']);
+      expect(vms[1].status).toBe('Running');
+      const stopCall = spawnSync.mock.calls.find(([cmd, args]) => cmd === MSB && args[0] === 'stop');
+      expect(stopCall[1]).toEqual(['stop', '--force', '--quiet', '--', 'msb-left0ver']);
+    });
+
+    test('a live VM of this seat that will not stop refuses the turn, with the HOME untouched', async () => {
+      fs.mkdirSync(path.join(home, 'codex-home'));
+      fs.writeFileSync(path.join(home, 'codex-home', 'AGENTS.override.md'), 'from the live guest');
+      const stopped = fakeMsb([{ name: 'msb-stuck', status: 'Running', label: seatLabel() }], { stops: false });
+      const proxy = proxyStub();
+      const { calls, impl } = recorder();
+      await withFlag('1', async () => {
+        await expect(run(impl, { extra: { _startProviderProxy: proxy.start } }))
+          .rejects.toMatchObject({ code: 'microvm_seat_busy', message: expect.stringMatching(/msb-stuck \(Running\)/) });
+      });
+      expect(stopped).toEqual(['msb-stuck']);
+      expect(calls).toHaveLength(0);
+      expect(proxy.started).toHaveLength(0);
+      // The prepare never ran: the entry it clears is still there.
+      expect(fs.readFileSync(path.join(home, 'codex-home', 'AGENTS.override.md'), 'utf8')).toBe('from the live guest');
+    });
+
+    test('another seat\'s live VM does not block this one, and is never stopped', async () => {
+      const vms = [{ name: 'msb-otherseat', status: 'Running', label: 'commonly-seat=0123456789abcdef0123-public' }];
+      const stopped = fakeMsb(vms, { stops: false });
+      const { calls, impl } = recorder();
+      await withFlag('1', () => run(impl, { extra: { _startProviderProxy: proxyStub().start } }));
+      expect(calls).toHaveLength(1);
+      expect(stopped).toEqual([]);
+    });
+
+    test('the turn\'s bridge secret is redacted from a failure msb or Codex prints', async () => {
+      let secret = null;
+      const impl = () => {
+        const config = fs.readFileSync(path.join(home, 'codex-home', 'config.toml'), 'utf8');
+        secret = /COMMONLY_MCP_BRIDGE_SECRET = "([0-9a-f]{48})"/.exec(config)?.[1];
+        const proc = new EventEmitter();
+        proc.stdout = new EventEmitter();
+        proc.stderr = new EventEmitter();
+        proc.kill = jest.fn();
+        setTimeout(() => {
+          proc.stderr.emit('data', Buffer.from(`Error: bad config: COMMONLY_MCP_BRIDGE_SECRET = "${secret}"\n`));
+          proc.emit('close', 1, null);
+        }, 0);
+        return proc;
+      };
+      let failure = null;
+      await withFlag('1', async () => {
+        failure = await run(impl, { extra: { _startProviderProxy: proxyStub().start } }).catch((error) => error);
+      });
+      expect(secret).toEqual(expect.any(String));
+      expect(failure).toBeInstanceOf(Error);
+      expect(failure.message).toContain('bad config');
+      expect(failure.message).not.toContain(secret);
     });
   });
 
