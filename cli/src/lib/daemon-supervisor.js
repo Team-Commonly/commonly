@@ -640,10 +640,14 @@ export const createDaemonSupervisor = ({
     if (stopped || now() < reconnectAfter) return;
     const startedAtEpoch = failureEpoch;
     try {
+      const inventory = await runtimeInventory();
+      // F637 review: a 429 (or a stop) can land while the inventory is read;
+      // the post must honour it, not go out on the check made before.
+      if (stopped || now() < reconnectAfter) return;
       await client.post(`/api/machines/${record.machineDbId}/heartbeat`, {
         ...machineReport(),
         agents: agentStates(),
-        runtimeInventory: await runtimeInventory(),
+        runtimeInventory: inventory,
       });
       connectionRestored(startedAtEpoch);
     } catch (error) {

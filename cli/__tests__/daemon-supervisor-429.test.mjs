@@ -209,3 +209,35 @@ describe('a request that started before a 429', () => {
     expect(h.client.get).toHaveBeenCalledTimes(2);
   });
 });
+
+// F637 review: the heartbeat reads the runtime inventory before it posts. A
+// 429 that lands during that read must still stop the post.
+test('a 429 during the heartbeat\'s inventory read stops its post', async () => {
+  let clock = 1_000_000;
+  let finishInventory;
+  const client = {
+    get: jest.fn(async () => { throw rateLimited(1_000); }),
+    post: jest.fn(async () => ({ ok: true })),
+  };
+  const supervisor = createDaemonSupervisor({
+    record,
+    client,
+    spawnChild: jest.fn(),
+    loadToken: () => null,
+    saveToken: jest.fn(),
+    resolveAdapter: async () => 'claude',
+    runtimeInventory: () => new Promise((resolve) => { finishInventory = resolve; }),
+    now: () => clock,
+    random: () => 0,
+    setTimeoutFn: () => 1,
+    clearTimeoutFn: () => {},
+  });
+  const beat = supervisor.heartbeat();
+  await Promise.resolve();
+  expect(typeof finishInventory).toBe('function');
+  await supervisor.tick(); // 429: a 60 s cooldown starts while the inventory is read
+  clock += 1_000;
+  finishInventory([]);
+  await beat;
+  expect(client.post).not.toHaveBeenCalled();
+});

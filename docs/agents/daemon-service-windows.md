@@ -76,16 +76,29 @@ on the launcher's (reused) pid counted as alive, and its dead stdout pipe was sw
   sends `Retry-After` on both daemon-route limiters.
 - **What old CLIs see.** The 429 on the heartbeat and on `GET /api/agent-binding/assigned` carries an
   `error` field (old CLIs print `error` before `message`) telling the user to update the CLI and run
-  `npx @commonlyai/cli@latest daemon setup`; other routes under the same limiters are unchanged.
+  `npx @commonlyai/cli@latest daemon setup` (see the opt-in note below); other routes under the same
+  limiters are unchanged.
 - **`DAEMON_MIN_CLI_VERSION_WIN32`** (server env, unset by default). When set, `POST /api/machines`
   refuses with 400 a registration whose host says `win32` with a CLI below it, or with no valid
   version. That is the path an old daemon takes back after its key is revoked. Set it only once a
   fixed CLI has published.
 - **Clearing leftover copies.** Old copies hold no lock, and `daemon setup` doesn't remove them:
   `schtasks /End` ends the task's launcher only, never a `node` it started, and an old copy whose
-  launcher watch already failed keeps running beside the new daemon. So reboot, or end the leftover
-  `node` processes running `commonly daemon run` (Task Manager, Details tab, with the Command line
-  column on), then run `npx @commonlyai/cli@latest daemon setup`.
+  launcher watch already failed keeps running beside the new daemon. The simple fix is a reboot,
+  then `npx @commonlyai/cli@latest daemon setup`. Without a reboot, go in this order, because the
+  launcher restarts `daemon run` about 5 s after it exits while the task runs:
+  1. `schtasks /Change /TN CommonlyDaemon /DISABLE`, so the one-minute watchdog can't start it again;
+  2. `schtasks /End /TN CommonlyDaemon`, which ends the launcher;
+  3. end every leftover `node` process running `commonly daemon run` (Task Manager, Details tab,
+     with the Command line column on);
+  4. `npx @commonlyai/cli@latest daemon setup`. Its install step recreates the task from its
+     definition (`schtasks /Create … /F`, enabled) and runs it.
+- **Setup turns off an unsandboxed opt-in.** Wherever this guide says to run `daemon setup`: if you
+  had turned on running without a sandbox, setup turns it off, and prints "Turned off running without
+  a sandbox: on Windows, agents this daemon runs are refused again until you choose otherwise." To
+  keep it, add `--unsandboxed` (`npx @commonlyai/cli@latest daemon setup --unsandboxed`): agents
+  this daemon runs then have no sandbox; they act with your own access to files and commands, and get
+  no connector grants. See the opt-in section below.
 
 ## No sandbox on Windows, and the opt-in
 
