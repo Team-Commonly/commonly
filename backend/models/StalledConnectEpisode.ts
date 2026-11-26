@@ -1,4 +1,5 @@
 import mongoose, { Document, Model, Schema, Types } from 'mongoose';
+import { dualStorePlugin } from '../repositories/dualStore';
 
 /**
  * Someone installed a seat and never started it.
@@ -119,6 +120,8 @@ StalledConnectEpisodeSchema.index({ status: 1, nudgedAt: 1 });
 StalledConnectEpisodeSchema.index({ status: 1, _id: 1 });
 // The daily digest's read: one installer's open episodes (F502).
 StalledConnectEpisodeSchema.index({ installedBy: 1, status: 1 });
+// ADR-034 step 2: the repair markers (pgVersion, pgPending, pgDeleted) and their sparse index.
+dualStorePlugin(StalledConnectEpisodeSchema);
 
 const StalledConnectEpisode: Model<IStalledConnectEpisode> =
   (mongoose.models.StalledConnectEpisode as Model<IStalledConnectEpisode>)

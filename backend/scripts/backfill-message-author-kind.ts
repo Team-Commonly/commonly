@@ -13,7 +13,7 @@
 import mongoose from 'mongoose';
 
 // eslint-disable-next-line @typescript-eslint/no-require-imports
-const StalledConnectEpisode = require('../models/StalledConnectEpisode');
+const { findEpisodeMessageFields } = require('../repositories/stalledConnectEpisodeRepository');
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const Message = require('../models/Message');
 
@@ -134,8 +134,7 @@ export async function backfillMessageAuthorKind(
 
 export const productionDeps = (pool: PgPool | null): MessageAuthorKindBackfillDeps => ({
   getEpisodeReferences: async () => {
-    const rows = await StalledConnectEpisode.find(episodeReferenceQuery())
-      .select(EPISODE_MESSAGE_FIELDS.join(' ')).lean();
+    const rows = await findEpisodeMessageFields(episodeReferenceQuery(), EPISODE_MESSAGE_FIELDS);
     return episodeMessageReferences(rows);
   },
   getPostgresRows: async (ids) => {

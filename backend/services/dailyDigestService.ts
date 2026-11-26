@@ -11,7 +11,9 @@ const Pod = require('../models/Pod');
 // eslint-disable-next-line global-require
 const ActivityService = require('./activityService');
 // eslint-disable-next-line global-require
-const StalledConnectEpisode = require('../models/StalledConnectEpisode');
+const {
+  findDueStalledEpisodes, findInstallerStalledEpisodes,
+} = require('../repositories/stalledConnectEpisodeRepository');
 // eslint-disable-next-line global-require
 const PGMessage = require('../models/pg/Message');
 // eslint-disable-next-line global-require
@@ -215,10 +217,8 @@ export class DailyDigestService {
       installationId: unknown; installedBy: unknown; podId: string;
       nudgedAt: Date; digestedAt?: Date; digestedAgainAt?: Date;
     };
-    const episodes = await Promise.resolve().then(() => StalledConnectEpisode.find({
-      status: 'open',
-      nudgedAt: { $lte: new Date(at.getTime() - STALL_FIRST_MS) },
-    }).select('installationId installedBy podId nudgedAt digestedAt digestedAgainAt').lean())
+    const episodes = await Promise.resolve()
+      .then(() => findDueStalledEpisodes(new Date(at.getTime() - STALL_FIRST_MS)))
       .catch(warn('episodes')) as Episode[] | null;
     if (!episodes) return [];
     const newest = new Map<string, Episode>();
@@ -264,11 +264,9 @@ export class DailyDigestService {
     memberPods: Array<{ _id: unknown; name?: string }>,
     now: Date,
   ): Promise<StalledDigest> {
-    const episodes = await StalledConnectEpisode.find({
-      installedBy: userId,
-      status: 'open',
-      nudgedAt: { $lte: new Date(now.getTime() - STALL_FIRST_MS) },
-    }).select('installationId podId installedBy agentName instanceId displayName tokenIssuedAt nudgedAt digestedAt digestedAgainAt').lean() as Array<{
+    const episodes = await findInstallerStalledEpisodes(
+      userId, new Date(now.getTime() - STALL_FIRST_MS),
+    ) as Array<{
       _id: unknown; installationId: unknown; podId: string; installedBy: unknown; agentName: string; instanceId?: string;
       displayName?: string; tokenIssuedAt?: Date; nudgedAt: Date; digestedAt?: Date; digestedAgainAt?: Date;
     }>;

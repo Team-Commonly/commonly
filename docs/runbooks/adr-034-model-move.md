@@ -141,11 +141,59 @@ person or admin makes them in the hour: `mismatch`/`repair` lines for `model=Wai
 in the admin waitlist routes' 500s (`Failed to list waitlist requests`, `Failed to update waitlist
 request`, `Failed to send invitation email`).
 
-**Migration order: `0024` must not be applied before `0023`, `0025` before `0024`, `0026` before `0025`, `0027` before `0026`, nor `0028` before `0027`.** The migration
+The fourteenth is `StalledConnectEpisode` (table `stalled_connect_episodes`, migration `0029`,
+`STORE_MODE_STALLED_CONNECT_EPISODE`), the record that a seat was installed and its newest runtime token never
+used: the stalled-connect nudge, its close, and the installer's digest and waiting-owner email lines. Its
+claim uses the helper's `create`: a duplicate key on the unique `(installationId, tokenIssuedAt)` means the
+token-episode was already explained, and the scan posts nothing. The nudge's message id, the close (filtered
+on `status: 'open'`) and the digest marks (`digestedAt`, `digestedAgainAt`, filtered on `status: 'open'`)
+use `setWhere`; a digest mark with no field writes nothing in `dual` (mongo mode's empty `$set` only bumps
+`updatedAt`). `installationId` and `installedBy` are ObjectIds in Mongo and hex text in Postgres;
+`installerUsername` is copied as Mongo holds it. No path is `select: false`, there is no populate or
+aggregate, and no caller deletes an episode (the synthetic-account purge does not touch it).
+**Every read stays on Mongo in `dual` and `pg-read`** (`findPageMongo`): the scan's "already explained on
+this token" read and its open-episode sweep decide whether a nudge or a close is posted in a pod, and the
+digest's two reads and the waiting-owner read decide what a person is emailed. A Postgres row lagging another
+process's claim, close or digest mark would say a line twice. So `pg-read` moves no read of this model. The
+four reads that mongo mode makes as one unbounded `find` (the explained-tokens read, the digest's two, and the
+author-kind backfill script's) page through `findPageMongo` in `_id` order, 500 at a time. Order only matters
+on ties: the explained-tokens read keeps the last episode per token key, and the digest reads keep the first
+episode on a `nudgedAt` tie, so on a tie `dual` picks by `_id` where mongo mode picks by natural order. The waiting-owner read keeps its
+`nudgedAt` order and limit, with ties broken by `_id`. The script's filter is a `$type: 'string'` test the
+helper's filters don't take: outside mongo it reads `$nin: [null, '']` and keeps the rows with a non-empty
+string, the same set. `0029` mirrors the unique key; its other two indexes (`(status, nudged_at)` and
+`(installed_by, status)`) are plain. Mongo has no TTL index, so neither has Postgres. **Before its step 1,
+step 0 also counts, and each must be 0:**
+- documents carrying any field the schema does not declare (an aggregate over `$objectToArray` of each
+  document, keys outside the schema's paths, `_id`, `createdAt` and `updatedAt`). No code ever wrote one, so a
+  hit is a hand write to explain, and it would not be copied;
+- documents whose `installationId` or `installedBy` is not an ObjectId
+  (`{ installationId: { $not: { $type: 'objectId' } } }`, and the same for `installedBy`). The row keeps
+  them as hex text, and `installation_id` is `NOT NULL`;
+- documents whose `tokenIssuedAt` or `nudgedAt` is not a date (`{ tokenIssuedAt: { $not: { $type: 'date' } } }`,
+  and the same for `nudgedAt`). `token_issued_at` is `NOT NULL` and in the unique key, where Postgres admits
+  any number of NULLs that Mongo's index would hold as one;
+- documents whose `nudgeMessageId` or `resolutionMessageId` is set and is not a string
+  (`{ nudgeMessageId: { $exists: true, $not: { $type: 'string' } } }`, and the same for the other): the
+  explained-tokens read would count one, and the column would hold its text;
+- documents whose `status` is not `open` or `resolved`, whose `producer` is not `timer` or `reactive`, or
+  whose `tokenSource` is set and is not `installation` or `user`.
+
+Also check the unique index exists (`getIndexes()` shows `installationId_1_tokenIssuedAt_1` with `unique:
+true`), because `0029` mirrors it and would refuse a second copy.
+
+Its watch must see a nudge, a scan pass that finds the same token already explained, a close (a connect, an
+MCP close or a quiet close on uninstall), a digest carrying a stalled line and its mark, and a waiting-owner
+email, on staging by hand if no real seat makes them in the hour: `mismatch`/`repair` lines for
+`model=StalledConnectEpisode`, no rise in `[stalled-connect] nudge post failed` or `resolution check failed`,
+no `Digest sent but a stalled-connect line could not be marked`, and no `[waiting-email] episode failed`.
+
+**Migration order: `0024` must not be applied before `0023`, `0025` before `0024`, `0026` before `0025`, `0027` before `0026`, `0028` before `0027`, nor `0029` before `0028`.** The migration
 runner matches history to the sorted file list by position, so an instance that has run `0024` refuses to
 boot once a `0023` file appears. `0023` (`DiscordSummaryHistory`) is on main, so `0024` follows it, and
 `0025` (`AgentTaskRowWakeState`) follows `0024`, and `0026` (`AgentProviderKey`) follows `0025`, and `0027`
-(`HostedMcpDcrRegistration`) follows `0026`, and `0028` (`WaitlistRequest`) follows `0027`.
+(`HostedMcpDcrRegistration`) follows `0026`, and `0028` (`WaitlistRequest`) follows `0027`, and `0029`
+(`StalledConnectEpisode`) follows `0028`.
 
 **A model whose callers delete does not enter dual yet.** A completed delete removes the document and its
 row, and the version with them, so a recreated id starts again at version 1 and a late copy, a pg-mode
@@ -154,9 +202,9 @@ in both stores that keep the version. Until then the helper's `remove` throws ou
 store was created with `allowDeletes: true`, which is unsafe for exactly that reason.
 None of `AgentPodReadCursor`, `AgentFirstContact`, `AgentDigestState`, `AgentTaskWakeState`,
 `NeedsYouEmailQuota`, `AgentComputerTakeover`, `BillingEvent`, `DiscordSummaryHistory`, `NeedsYouEmail`,
-`AgentTaskRowWakeState`, `AgentProviderKey`, `HostedMcpDcrRegistration` and `WaitlistRequest` has a delete
-path (and none of `NeedsYouEmail`, `AgentTaskRowWakeState`, `HostedMcpDcrRegistration` and `WaitlistRequest`
-has a TTL index).
+`AgentTaskRowWakeState`, `AgentProviderKey`, `HostedMcpDcrRegistration`, `WaitlistRequest` and
+`StalledConnectEpisode` has a delete path (and none of `NeedsYouEmail`, `AgentTaskRowWakeState`,
+`HostedMcpDcrRegistration`, `WaitlistRequest` and `StalledConnectEpisode` has a TTL index).
 `AgentProviderKey`'s remove clears the binding's fields and keeps the document, and a refused or retired
 DCR client keeps its document. What the key's remove and a DCR refusal delete is the `ConnectorSecret`, a
 model that has not moved. Retiring a DCR client only stops new starts from using it: its secret stays, because
@@ -329,6 +377,24 @@ The other calls these models make are already covered by `findById`, `findOneWhe
 
   Until then, don't set it to `pg`: no one could join the waitlist and no admin could list, close or invite.
 
+- **`StalledConnectEpisode` cannot run in `pg` yet.** `claimStalledConnectEpisode` refuses in `pg` before any
+  write, the nudge record, the close and the digest marks go through the helper's `setWhere`, which refuses,
+  and every read goes through `findPageMongo`, which refuses too. In `mongo`, `dual` and `pg-read` the claim's
+  lock is Mongo's unique `(installationId, tokenIssuedAt)`. Before this model runs in `pg`:
+  - the claim: `INSERT … ON CONFLICT (installation_id, token_issued_at) DO NOTHING RETURNING *` (claimed when a
+    row comes back), tested on real Postgres with racing scans of one token. The helper's pg-only `create`
+    conflicts on `id`, so a second claim would hit the unique key with 23505, not 11000, and the scan would
+    throw instead of reading it as already explained;
+  - the nudge record, the close and the marks: `UPDATE … SET … WHERE id = $1 [AND status = 'open']`, bumping
+    `pg_version`;
+  - the reads: the explained-tokens read (`agent_name = ANY($1) AND nudge_message_id IS NOT NULL AND
+    nudge_message_id <> ''`), the open sweep (`status = 'open' AND id > $after ORDER BY id`, which needs the
+    ids compared in ObjectId order, as hex text in `COLLATE "C"` is), the two digest reads, the waiting-owner
+    read (`ORDER BY nudged_at DESC LIMIT $n`) and the script's, each with a parity test against Mongo.
+
+  Until then, don't set it to `pg`: no nudge, close, digest line or waiting-owner email would go out. The
+  switch is stop-the-world for the same reason as `BillingEvent`'s: a `dual` replica and a `pg` replica could
+  each claim one token-episode and both post the nudge.
 - **`AgentPodReadCursor` needs a single-statement upsert in pg mode.** The helper's pg-mode `upsert` is
   optimistic: it reads, merges, and writes at the version it read, retrying 5 times. More than 5 writers
   racing on one id can exhaust the retries and fail the write (the unit suite shows 20 do). Before this model

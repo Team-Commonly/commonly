@@ -1,6 +1,6 @@
 import { escapeHtml } from '../utils/escape';
 import { isReservedEmailDomain } from '../utils/reservedEmailDomain';
-import StalledConnectEpisode from '../models/StalledConnectEpisode';
+import { findNewestOpenEpisodes } from '../repositories/stalledConnectEpisodeRepository';
 // eslint-disable-next-line global-require
 const AgentEvent = require('../models/AgentEvent');
 // eslint-disable-next-line global-require
@@ -189,9 +189,7 @@ export const sweepWaitingOwnerEmails = async (
   const result = { scanned: 0, sent: 0, skipped: 0, failed: 0 };
   if (!process.env.SMTP2GO_API_KEY || !process.env.SMTP2GO_FROM_EMAIL) return { ...result, disabled: true };
   if (await digestSendingState() !== 'on') return { ...result, disabled: true };
-  const episodes = await StalledConnectEpisode.find({ status: 'open' })
-    .select('installationId podId installedBy agentName instanceId displayName tokenIssuedAt nudgedAt')
-    .sort({ nudgedAt: -1 }).limit(EPISODE_LIMIT).lean() as any[];
+  const episodes = await findNewestOpenEpisodes(EPISODE_LIMIT) as any[];
   // Newest first, so a full read leaves out the oldest installs: say so.
   if (episodes.length === EPISODE_LIMIT) console.warn(`[waiting-email] read the ${EPISODE_LIMIT}-episode limit; older installs wait for a later fix`);
   // A reissue opens a new episode while the old stays open: the newest speaks.
