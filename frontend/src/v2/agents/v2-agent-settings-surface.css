@@ -378,3 +378,17 @@
   .v2-root .v2-agent-settings-page .v2-agent-skills button { min-height: 44px; }
   .v2-agent-settings-page .v2-agent-settings-page__panel--pad:not([hidden]) { padding: 10px 12px; }
 }
+
+/* F669: the owner's turn count above the Wake table. Tokens only, so it follows the theme. */
+.v2-agent-settings-page .v2-agent-turns { margin: 0 0 10px; font: 400 11.5px/1.4 var(--v2-font-mono); color: var(--mu); }
+.v2-agent-settings-page .v2-agent-turns__head { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; min-height: 28px; }
+.v2-agent-settings-page .v2-agent-turns__line { color: var(--se); }
+.v2-agent-settings-page .v2-agent-turns__change:focus-visible { outline: none; box-shadow: var(--v2-focus-ring); border-radius: 6px; }
+.v2-agent-settings-page .v2-agent-turns__toggle .i { width: 13px; height: 13px; transition: transform var(--v2-dur-fast) var(--v2-ease); }
+.v2-agent-settings-page .v2-agent-turns__toggle[aria-expanded="true"] .i { transform: rotate(180deg); }
+.v2-agent-settings-page .v2-agent-turns__change { margin-left: auto; color: var(--c); text-decoration: none; font-family: var(--f-body); font-size: 12.5px; }
+.v2-agent-settings-page .v2-agent-turns__change:hover { text-decoration: underline; }
+.v2-agent-settings-page .v2-agent-turns__pods { list-style: none; margin: 6px 0 0; padding: 4px 0; border: 1px solid var(--d); border-radius: 10px; background: var(--sf); }
+.v2-agent-settings-page .v2-agent-turns__pods li { display: flex; justify-content: space-between; gap: 12px; padding: 6px 12px; }
+.v2-agent-settings-page .v2-agent-turns__pod { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: var(--f-body); font-size: 12.5px; color: var(--ink); }
+.v2-agent-settings-page .v2-agent-turns__count { flex: none; }

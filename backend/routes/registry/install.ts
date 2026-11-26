@@ -73,7 +73,7 @@ const {
   webhookUrlRefusal,
 } = require('../../services/runtimeIdentityOwnership');
 const { webhookUrlRegistrationRefusal } = require('../../services/outboundUrlGuard');
-const { personAgentWakeDefault } = require('../../services/wakeDefaultService');
+const { personAgentInstallDefaults } = require('../../services/wakeDefaultService');
 const { logAgentInstallRefusal } = require('../../middleware/logAgentInstallRefusal');
 const { isObjectIdHex, INVALID_POD_ID } = require('../../middleware/objectIdParam');
 const { logInstallRefusal } = require('../../services/installRefusalLog');
@@ -981,9 +981,11 @@ const installAgent = async (req: any, res: any, addition?: { alreadyInPod: Recor
       }
     }
 
-    // ADR-018 D8.1 (2026-10-21): an agent a person brings into a pod wakes on every human
-    // message by default (services/wakeDefaultService.ts).
-    const wakeDefault = personAgentWakeDefault(installConfig);
+    // What a new install of a person's own agent wakes on, from the Bring your own
+    // page and agent attach alike: mentions only where other people are, every
+    // human message where the installer is the only person or in their direct
+    // message, and a daily digest wake (F669, services/wakeDefaultService.ts).
+    const wakeDefault = await personAgentInstallDefaults(installConfig, pod, userId);
     if (wakeDefault) Object.assign(installConfig, wakeDefault);
 
     const installationKey = { agentName: agentName.toLowerCase(), podId, instanceId: normalizedInstanceId };
@@ -1319,6 +1321,8 @@ const installAgent = async (req: any, res: any, addition?: { alreadyInPod: Recor
         status: installation.status,
         scopes: installation.scopes,
         runtime: sanitizeRuntimeConfig(installConfig.runtime) || null,
+        // What it wakes on here, so `agent attach` can say which default it got (F669).
+        wakeOnMessage: (installConfig.wakeOnMessage as { enabled?: unknown } | undefined)?.enabled === true,
       },
       memoryCopy,
       sharedIdentity: isReusingExistingAgent,

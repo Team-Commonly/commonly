@@ -78,6 +78,8 @@ router.use(require('./registry/provision'));
 router.use(require('./registry/agent-config'));
 // eslint-disable-next-line global-require
 router.use(require('./registry/manage-settings'));
+// eslint-disable-next-line global-require
+router.use(require('./registry/agent-turns'));
 router.use(require('./registry/provider-key'));
 // eslint-disable-next-line global-require
 router.use(require('./registry/publish'));

@@ -232,6 +232,25 @@ describe('performRun', () => {
 
   // F336's path: the adapter returns the failure instead of throwing it, after
   // tool-only output and with no post of its own. It settles with its code too.
+  // F669: the spawn report names the pod the turn ran for.
+  test('a spawn report names the pod the turn ran for', async () => {
+    createClient.mockReturnValue(withPrivatePods({ get: jest.fn().mockResolvedValue({ events: [makeEvent()] }),
+      post: jest.fn().mockResolvedValue({}) }));
+    const spawn = jest.fn(async (_prompt, ctx) => {
+      await ctx.onSpawn?.({ model: 'm', effort: null });
+      return { text: 'hi' };
+    });
+    const observe = jest.fn().mockResolvedValue({});
+    const { stop } = performRun({ instanceUrl: 'http://localhost:5000', token: 'cm_agent_test',
+      agentName: 'my-stub', instanceId: 'default', reportRuntime: true, runtimeReportClient: { post: observe },
+      adapter: { name: 'claude', detect: stubAdapter.detect, spawn },
+      environment: { model: 'm' }, setTimeoutImpl: noopTimeout });
+    await drainMicrotasks(); stop();
+    const spawns = observe.mock.calls.filter(([url, body]) => url === '/api/agents/runtime/observation' && body.event === 'spawn');
+    expect(spawns).toHaveLength(1);
+    expect(spawns[0][1]).toEqual(expect.objectContaining({ podId: 'pod-abc' }));
+  });
+
   test('a failure the adapter returns settles with its reason code', async () => {
     const mockPost = jest.fn().mockResolvedValue({});
     createClient.mockReturnValue(withPrivatePods({ get: jest.fn().mockResolvedValue({ events: [makeEvent()] }), post: mockPost }));

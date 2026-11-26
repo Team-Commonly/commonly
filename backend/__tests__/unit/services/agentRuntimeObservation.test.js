@@ -130,3 +130,33 @@ it('keeps a boolean signedIn and drops anything else', () => {
   expect(result.find((row) => row.harness === 'codex').signedIn).toBe(true);
   expect(result.find((row) => row.harness === 'opencode')).not.toHaveProperty('signedIn');
 });
+
+// F669: each spawn is one turn on the owner's own account, and the owner's
+// panel counts them per pod. The pod rides the spawn report; a settle is not a
+// turn, and a runner from before the field still counts, with no pod.
+it('records one turn per spawn, with its pod, and none for a settle', async () => {
+  const podId = String(new mongoose.Types.ObjectId());
+  const spawn = { agentName: 'receipt-seat', event: 'spawn', harness: 'codex', version: '1', model: 'm', effort: null };
+  const req = request({ ...spawn, podId });
+  await recordRuntimeObservation(req, response());
+  req.body = { ...spawn, podId };
+  await recordRuntimeObservation(req, response());
+  req.body = { agentName: 'receipt-seat', event: 'settled', outcome: 'completed' };
+  await recordRuntimeObservation(req, response());
+  req.body = { ...spawn };
+  await recordRuntimeObservation(req, response());
+  const row = await Observation.findOne({ agentUserId: agent }).lean();
+  expect(row.recentTurns.map((turn) => turn.podId)).toEqual([podId, podId, null]);
+  row.recentTurns.forEach((turn) => expect(turn.at).toBeInstanceOf(Date));
+});
+
+it('refuses a pod that is not an id, and a pod on anything but a spawn', async () => {
+  const spawn = { event: 'spawn', harness: 'codex', version: '1', model: 'm', effort: null };
+  for (const body of [{ ...spawn, podId: 'not-an-id' }, { ...spawn, podId: 42 },
+    { event: 'settled', podId: String(new mongoose.Types.ObjectId()) }]) {
+    const res = response();
+    await recordRuntimeObservation(request(body), res);
+    expect(res.statusCode).toBe(400);
+  }
+  expect(await Observation.countDocuments()).toBe(0);
+});

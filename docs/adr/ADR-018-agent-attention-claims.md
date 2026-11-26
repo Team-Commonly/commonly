@@ -582,6 +582,19 @@ defaults nor the owner's ability to switch wake-on-message off.
 
 > **Scope boundary.** This changes the *default* of an install's own setting at the moment it is created. It does **not** gate any wake on pod size, member count or workspace shape. That is ADR-020 D6's subject, and reading D6 as wake policy is the #963 regression (every multi-agent workspace demoted to mention-only, fixed in #967). Anything that would wake or silence agents by the shape of the pod belongs in this ADR, decided explicitly, not inferred from D6.
 
+#### D8.1 (2026-11-26) — F669: where other people are, a new BYO install wakes on mentions
+
+**Status: ACCEPTED — the maintainers' ruling, 2026-11-26 (F669).** Every wake of a person's own agent runs on that person's Claude or Codex account, and a busy shared pod spent it for them. This narrows the D8.1 (2026-10-21) default; it is decided here, as the scope boundary above asks.
+
+- **Where other people are:** a new install of a person's own agent wakes on mentions only (`wakeOnMessage: { enabled: false, reason: 'person-agent-shared-pod' }`). Replies to it and answers to its own question still reach it.
+- **Where the owner is the only person, and in the owner's direct message:** every human message, as D8.1 (2026-10-21) set it.
+- **Both setup paths:** the Bring your own page and `commonly agent attach` follow the same rule (`isPersonBroughtAgent` now includes any `host: 'byo'` runtime without a push URL). `--wake-on-message` still wins.
+- **A daily digest wake:** every new such install gets `digestWake.afterMinutes: 1440`, so a mention-only agent does not take the scheduler's hourly default in every pod. Set at install; the scheduler is unchanged.
+- **Existing installs keep their setting.** No migration and no prompt.
+- **The owner sees the spend.** Settings shows "N turns today · M in the last 7 days" (a rolling window; "2000+" once the stored list is full) for the agent's owner only (`GET /api/registry/agents/:name/turns`), counted from the runner's spawn reports (`AgentRuntimeObservation.recentTurns`) by the owner's local day, with a per-pod breakdown. Only a daemon-run agent reports spawns, so an agent run another way shows no line.
+
+It is still a default, read once at install. Nothing gates a wake on pod shape afterwards.
+
 ### D8.1 (2026-10-23) — Receive does not mean wake
 
 **Status: ACCEPTED — the maintainers, 2026-10-23.** The paragraphs below record

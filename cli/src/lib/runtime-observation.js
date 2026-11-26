@@ -14,11 +14,16 @@ export const createRuntimeReporter = ({ client, harness, detect }) => {
     async connect() {
       return send({ event: 'connected' });
     },
-    spawn: ({ model, effort, at }) => {
+    // The pod the turn ran for, so the owner's panel can count turns per pod
+    // (F669). A backend from before the field refuses the whole report with a
+    // 400, so it's sent once more without the pod, and the spawn still lands.
+    spawn: ({ model, effort, at, podId }) => {
       const receipt = { event: 'spawn', harness, version: null, model, effort, ...(at ? { at } : {}) };
       queue = queue.then(async () => {
         try { receipt.version = (await detect())?.version || null; } catch { /* unavailable */ }
-        await client.post('/api/agents/runtime/observation', receipt);
+        if (!podId) return client.post('/api/agents/runtime/observation', receipt);
+        return client.post('/api/agents/runtime/observation', { ...receipt, podId })
+          .catch((error) => (error?.status === 400 ? client.post('/api/agents/runtime/observation', receipt) : undefined));
       }).catch(() => {});
       return queue;
     },

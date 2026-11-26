@@ -161,9 +161,12 @@ describe('adding an existing agent to another pod', () => {
       // A pod's own settings stay in the pod they were set in.
       expect(added.config.heartbeat).toBeUndefined();
       expect(added.config.welcomeWake).toBeUndefined();
-      expect(added.config.digestWake).toBeUndefined();
-      // Not the source's `enabled: false`: this pod gets a person-brought agent's default.
-      expect(added.config.wakeOnMessage).toEqual(expect.objectContaining({ enabled: true, humanOnly: true }));
+      // Not the source's settings: this pod gets a new install's own default. Target
+      // has other people in it, so that is mentions only with a daily digest wake
+      // (F669, 2026-11-26; it was every human message before).
+      expect(added.config.digestWake).toEqual({ afterMinutes: 1440 });
+      expect(added.config.wakeOnMessage)
+        .toEqual(expect.objectContaining({ enabled: false, reason: 'person-agent-shared-pod' }));
       expect(added.config.boardWake).toEqual({ enabled: false });
 
       const after = await bot();

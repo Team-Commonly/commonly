@@ -3710,7 +3710,14 @@
     "specialtyCount_other": "{{count}}项专长",
     "boundaryCount_other": "{{count}}条行为边界",
     "colAskFirst": "先问我",
-    "askBeforeOthers": "别人的请求先问我，再运行"
+    "askBeforeOthers": "别人的请求先问我，再运行",
+    "turnsLine_other": "今天{{count}}轮 · 近7天{{week}}轮",
+    "turnsHint": "此智能体在你的电脑上运行的轮数，按你的时区计算。",
+    "turnsByPod": "按 Pod 查看",
+    "turnsPodCounts": "今天{{today}}轮 · 近7天{{week}}轮",
+    "turnsElsewhere": "其他地方",
+    "turnsChange": "更改",
+    "turnsChangeLabel": "更改唤醒方式"
   },
   "agentPolicy": {
     "title": "策略",

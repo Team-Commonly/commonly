@@ -17,7 +17,8 @@ import V2AgentNameRow from './V2AgentNameRow';
 import V2AgentListingRow from './V2AgentListingRow';
 import V2AgentSettingsIcon from './V2AgentSettingsIcon';
 import V2AgentHostedRun from './V2AgentHostedRun';
-import V2AgentWakePods from './V2AgentWakePods';
+import V2AgentWakePods, { AGENT_WAKE_SECTION_ID } from './V2AgentWakePods';
+import V2AgentTurnCount from './V2AgentTurnCount';
 import V2AgentPolicy, { AGENT_MEMORY_EDITOR_ID } from './V2AgentPolicy';
 import V2AgentSkills from '../components/V2AgentSkills';
 import './v2-agent-settings.css';
@@ -447,6 +448,7 @@ const V2AgentSettingsPage: React.FC = () => {
         <div className="v2-agent-settings-page__col">
           {phone && <>{tabs}<div className="v2-agent-settings-page__phonestatus">{status}</div></>}
           {roomFailed && <p role="alert" className="v2-agent-settings__error">{roomFailed}</p>}
+          <V2AgentTurnCount agentName={agentName} instanceId={instanceId} changeHref={`#${AGENT_WAKE_SECTION_ID}`} />
           <V2AgentWakePods agentName={agentName} instanceId={instanceId} updatePod={updatePod}
             onRemoved={(...removed) => { setAddedPod(null); onRemoved(...removed); }}
             displayName={displayName}

@@ -38,6 +38,8 @@ jest.mock('../../../models/Pod', () => ({
 jest.mock('../../../models/User', () => ({
   findOne: jest.fn(),
   findById: jest.fn(),
+  // wakeDefaultService asks whether a pod's other members include a person (F669).
+  exists: jest.fn(),
 }));
 
 jest.mock('../../../models/AgentProfile', () => ({
@@ -254,6 +256,49 @@ describe('registry install runtimeType fallback', () => {
       const config = await ownAgentInstall({ wakeOnMessage: { enabled: false } });
       expect(config.wakeOnMessage).toEqual({ enabled: false });
       expect(config).not.toHaveProperty('boardWake');
+    });
+
+    // F669 (2026-11-26): where other people are in the pod, a
+    // new install of a person's own agent wakes on mentions only, whichever way
+    // it was set up, and every new install takes a digest wake once a day. The
+    // direct-message case is wakeDefaultService.test.js's: this route refuses a
+    // fixture install into one before the default.
+    describe('by the people in the pod', () => {
+      const ATTACH_RUNTIME = { runtimeType: 'claude-code', adapter: 'claude', host: 'byo' };
+      const sharedPod = () => {
+        Pod.findById.mockReturnValue(buildLeanChain({
+          _id: 'a0000000000000000000000a', createdBy: 'user-2', members: ['user-2', 'user-1'], type: 'chat',
+        }));
+        User.exists.mockResolvedValue({ _id: 'user-2' });
+      };
+
+      it('a page install wakes on mentions only, with a daily digest wake', async () => {
+        sharedPod();
+        const config = await ownAgentInstall();
+        expect(config.wakeOnMessage)
+          .toEqual(expect.objectContaining({ enabled: false, reason: 'person-agent-shared-pod' }));
+        expect(config.boardWake).toEqual({ enabled: false });
+        expect(config.digestWake).toEqual({ afterMinutes: 1440 });
+      });
+
+      it('agent attach gets the same answer as the page', async () => {
+        sharedPod();
+        const page = await ownAgentInstall();
+        AgentInstallation.install.mockClear();
+        const attach = await ownAgentInstall({ runtime: ATTACH_RUNTIME });
+        expect(attach.runtime).toEqual(expect.objectContaining({ runtimeType: 'claude-code', host: 'byo' }));
+        const { defaultedAt: _pageAt, ...pageWake } = page.wakeOnMessage;
+        const { defaultedAt: _attachAt, ...attachWake } = attach.wakeOnMessage;
+        expect(attachWake).toEqual(pageWake);
+        expect(attach.digestWake).toEqual(page.digestWake);
+      });
+
+      it('agent attach in a pod where the installer is the only person wakes on every human message', async () => {
+        const config = await ownAgentInstall({ runtime: ATTACH_RUNTIME });
+        expect(config.wakeOnMessage).toEqual(expect.objectContaining({ enabled: true, humanOnly: true }));
+        expect(config.digestWake).toEqual({ afterMinutes: 1440 });
+        expect(User.exists).not.toHaveBeenCalled();
+      });
     });
   });
 

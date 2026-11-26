@@ -13,6 +13,17 @@ const receipt = new Schema({
   effort: { type: String, default: null },
   at: { type: Date, required: true },
 }, { _id: false });
+// F669: one row per spawn the runner reported, the turn count's source. Each is
+// a turn on the owner's own Claude or Codex account. `podId` is the pod the turn
+// ran for, null from a runner that predates the field. Kept to the newest
+// RECENT_TURN_LIMIT, oldest first, to bound the document. An agent that runs
+// more than that in seven days loses its oldest turns, and the count says so
+// (agentTurnCountService's weekCapped).
+export const RECENT_TURN_LIMIT = 2000;
+const turn = new Schema({
+  podId: { type: String, default: null },
+  at: { type: Date, required: true },
+}, { _id: false });
 const schema = new Schema({
   agentUserId: { type: Schema.Types.ObjectId, ref: 'User', required: true, unique: true },
   machineId: { type: String, required: true },
@@ -23,6 +34,7 @@ const schema = new Schema({
   lastSpawnOutcome: { type: String, enum: ['completed', 'failed', null], default: null },
   lastSpawnFailure: { type: String, enum: [...SPAWN_FAILURE_REASONS, null], default: null },
   lastSpawn: { type: receipt, default: null },
+  recentTurns: { type: [turn], default: [] },
 }, { timestamps: true });
 export default mongoose.model('AgentRuntimeObservation', schema);
 // eslint-disable-next-line @typescript-eslint/no-require-imports

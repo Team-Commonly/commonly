@@ -3722,7 +3722,15 @@
     "boundaryCount_one": "{{count}} boundary",
     "boundaryCount_other": "{{count}} boundaries",
     "colAskFirst": "ask first",
-    "askBeforeOthers": "Ask me before anyone else's request runs"
+    "askBeforeOthers": "Ask me before anyone else's request runs",
+    "turnsLine_one": "{{count}} turn today · {{week}} in the last 7 days",
+    "turnsLine_other": "{{count}} turns today · {{week}} in the last 7 days",
+    "turnsHint": "Turns this agent ran on your computer, counted in your time zone.",
+    "turnsByPod": "Turns by pod",
+    "turnsPodCounts": "{{today}} today · {{week}} in the last 7 days",
+    "turnsElsewhere": "Elsewhere",
+    "turnsChange": "Change",
+    "turnsChangeLabel": "Change when it wakes"
   },
   "agentPolicy": {
     "title": "Policy",

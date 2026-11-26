@@ -32,6 +32,8 @@ const NUMERAL_PLACEHOLDERS = [
   'stars',
   // harness.answeredIn: a reply's measured duration in seconds.
   'seconds',
+  // agentSettings.turnsLine / turnsPodCounts (F669): an agent's turns today and in the last 7 days.
+  'today', 'week',
   // a formatted duration, closed because the ruling names this key explicitly:
   // tools.budgetWindow renders 「每1小时可调用5次」
   'window',

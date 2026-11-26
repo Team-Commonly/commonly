@@ -45,6 +45,8 @@ const MESSAGE_WAKE_SETTINGS: Record<MessageWakeChoice, Pick<InstallationSettings
   all: { wakeOnMessage: true, humanOnly: false },
 };
 const HEARTBEAT_INTERVALS = [15, 30, 60, 120, 360, 720, 1440];
+/** The Wake heading's id: the turn count's change link lands here (F669). */
+export const AGENT_WAKE_SECTION_ID = 'agent-wake';
 
 interface HostedHeartbeat {
   minMinutes: number;
@@ -279,7 +281,7 @@ const V2AgentWakePods: React.FC<{
     <div className="v2-agent-wake-pods">
       {confirmDialog}
       {error && <p className="v2-agent-wake-pods__error" role="alert">{error}</p>}
-      <h2 className="gtitle">
+      <h2 className="gtitle" id={AGENT_WAKE_SECTION_ID}>
         <svg className="i" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ width: 13, height: 13 }} aria-hidden="true"><path d="M13 2 4 14h7l-1 8 9-12h-7z" /></svg>
         {t('agentSettings.wakeTitle')}
         <span role="button" tabIndex={0} className={`info${wakeNoteOpen ? ' pin' : ''}`} aria-label={wakeNote}

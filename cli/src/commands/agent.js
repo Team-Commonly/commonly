@@ -1763,9 +1763,10 @@ export const performAttach = async ({
         host: 'byo',
       },
       ...(environment ? { environment: environmentForServer(environment) } : {}),
-      // ADR-018: ambient wake is a per-install opt-in read by
-      // agentMentionService (`config.wakeOnMessage.enabled === true`, default
-      // OFF). Until now the only way to set it for a BYO seat was a DB write.
+      // ADR-018 ambient wake, read by agentMentionService. Without the flag
+      // the server's default applies, the same one the Bring your own page
+      // gets (F669, backend wakeDefaultService): every human message where the
+      // person is the only one in the pod, @mentions only where others are.
       ...(wakeOnMessage ? { wakeOnMessage: { enabled: true } } : {}),
     },
     scopes: ['context:read', 'messages:write', 'memory:read', 'memory:write'],
@@ -3407,7 +3408,8 @@ export const performRun = ({
       const spawnCtx = {
         onSpawn: reportRuntime ? (controls) => {
           observedSpawn = true;
-          return runtimeReporter.spawn(controls);
+          // The pod rides the report so the owner's panel counts turns per pod (F669).
+          return runtimeReporter.spawn({ ...controls, ...(eventPodId ? { podId: String(eventPodId) } : {}) });
         } : undefined,
         providerKey,
         timeoutMs: effectiveTurnTimeoutMs,
@@ -5810,7 +5812,7 @@ Docs:
     .option('--env <path>', 'Path to environment.json (ADR-008 — sandbox/skills/MCP)')
     .option('--import-memory [path]', 'Import local memory (CLAUDE.md / MEMORY.md / ~/.claude project memory, or a given file/dir) into the agent after attach')
     .option('--yes', 'Skip the import confirmation prompt')
-    .option('--wake-on-message', `Wake this agent on every message in the pod, not only @mentions (ADR-018 ambient wake; default off). Change later with: ${CLI} agent wake <name> on|off`)
+    .option('--wake-on-message', `Wake this agent on every message in the pod, not only @mentions (ADR-018 ambient wake). Without it, the server picks: every human message in a pod where you're the only person or your direct message, @mentions only where other people are. Change later with: ${CLI} agent wake <name> on|off`)
     .option('--confirm-narrowing', NARROWING_FLAG_HELP)
     .option('--instance <url>', 'Target Commonly instance')
     .action(async (adapterName, opts) => {
@@ -5859,8 +5861,12 @@ Docs:
         if (workspace) {
           console.log(`✓ Workspace: ${workspace.path}${workspace.created ? ' (created)' : ''}`);
         }
-        if (opts.wakeOnMessage) {
+        // The server picks the default by who is in the pod (F669); an older
+        // server sends no answer, so only the flag is reported then.
+        if (opts.wakeOnMessage || installation.wakeOnMessage === true) {
           console.log('✓ Wake-on-message: ON (sees every pod message; answers only when addressed or genuinely useful)');
+        } else if (installation.wakeOnMessage === false) {
+          console.log(`✓ Wakes on @mentions and replies only. Every message: ${CLI} agent wake ${opts.name} on`);
         }
 
         // Retention plan Phase C: the agent arrives whole. Import failure is

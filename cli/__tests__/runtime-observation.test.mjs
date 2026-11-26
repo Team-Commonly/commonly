@@ -94,3 +94,25 @@ test('a refusal other than a 400 is not resent, and never rejects the turn', asy
   await expect(reporter.settled('failed', 'login')).resolves.toBeUndefined();
   expect(sent).toEqual([{ event: 'settled', outcome: 'failed', reason: 'login' }]);
 });
+
+// F669: the spawn report names the pod the turn ran for, so the owner's panel
+// can count turns per pod. A backend from before the field refuses the report
+// with a 400, and it is sent once more without the pod, so the turn still lands.
+test('a spawn report carries its pod, and a 400 resends it without the pod', async () => {
+  const sent = [];
+  let refuse = false;
+  const reporter = createRuntimeReporter({ harness: 'codex', detect: async () => ({ version: '1' }), client: { post: async (_url, body) => {
+    sent.push({ ...body });
+    if (refuse && body.podId) throw Object.assign(new Error('invalid_runner_observation'), { status: 400 });
+  } } });
+  const POD = 'aaaaaaaaaaaaaaaaaaaaaaaa';
+  await reporter.spawn({ model: 'm', effort: null, podId: POD });
+  expect(sent).toEqual([{ event: 'spawn', harness: 'codex', version: '1', model: 'm', effort: null, podId: POD }]);
+  sent.length = 0;
+  refuse = true;
+  await reporter.spawn({ model: 'm', effort: null, podId: POD });
+  expect(sent).toEqual([
+    { event: 'spawn', harness: 'codex', version: '1', model: 'm', effort: null, podId: POD },
+    { event: 'spawn', harness: 'codex', version: '1', model: 'm', effort: null },
+  ]);
+});
