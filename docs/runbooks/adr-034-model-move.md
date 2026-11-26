@@ -28,6 +28,16 @@ of an agent's computer and its bound browser target, whose owner-keyed writes us
 The eighth is `DiscordSummaryHistory` (table
 `discord_summary_histories`, migration `0023`, `STORE_MODE_DISCORD_SUMMARY_HISTORY`), the record of each
 Discord summary queued for Commonly Bot, which is insert-only and uses the helper's `create`.
+The ninth is `NeedsYouEmail` (table `needs_you_emails`, migration `0024`, `STORE_MODE_NEEDS_YOU_EMAIL`),
+one needs-you email per attention item, whose claim uses the helper's `create` (a duplicate key on
+`attentionItemId` means the item was already claimed), whose status changes use `update`, whose first-click
+stamp uses `updateWhere` on `clickedAt: { $exists: false }`, whose digest mark uses `updateManyWhere`, and
+whose overflow read uses `findWhere` with `$exists` on its two presence columns. Its `clickToken` is
+`select: false`: the helper copies it and never hands it back unless a read names it.
+
+**Migration order: `0024` must not be applied before `0023`.** The migration runner matches history to the
+sorted file list by position, so an instance that has run `0024` refuses to boot once a `0023` file appears.
+`0023` (`DiscordSummaryHistory`) is on main, so `0024` follows it.
 
 **A model whose callers delete does not enter dual yet.** A completed delete removes the document and its
 row, and the version with them, so a recreated id starts again at version 1 and a late copy, a pg-mode
@@ -35,7 +45,8 @@ compare-and-set or a backfill of the old document can land on it. The prerequisi
 in both stores that keep the version. Until then the helper's `remove` throws outside `mongo` unless the
 store was created with `allowDeletes: true`, which is unsafe for exactly that reason.
 None of `AgentPodReadCursor`, `AgentFirstContact`, `AgentDigestState`, `AgentTaskWakeState`,
-`NeedsYouEmailQuota`, `AgentComputerTakeover`, `BillingEvent` and `DiscordSummaryHistory` has a delete path.
+`NeedsYouEmailQuota`, `AgentComputerTakeover`, `BillingEvent`, `DiscordSummaryHistory` and
+`NeedsYouEmail` has a delete path (and `NeedsYouEmail` has no TTL index).
 
 The mode variable is `STORE_MODE_` plus the model name in upper snake case:
 `AgentPodReadCursor` reads `STORE_MODE_AGENT_POD_READ_CURSOR`. Unset means `mongo`, which makes no
@@ -210,3 +221,27 @@ only a rollback from `pg` can produce. That case is out of scope until step 4 is
   tested on real Postgres. Until then, don't set it to `pg`: both writers would fail after they have
   queued the summary for Commonly Bot, the Discord sync would report a failure, and the scheduler would
   leave the buffer uncleared, so the same messages would be summarized again on the next run.
+- **`NeedsYouEmail` cannot run in `pg` yet.** `claimNeedsYouEmail` and `setNeedsYouEmailStatus` refuse in
+  `pg` before any write, and `markNeedsYouClicked` and `markIncludedInDigest` go through the helper's
+  `updateWhere` and `updateManyWhere`, which throw `not supported in pg mode until step 4`. In `mongo`, `dual`
+  and `pg-read` the claim's lock is Mongo's unique index on `attentionItemId`. Before this model runs in
+  `pg`, each write needs a single-statement Postgres form, bumping `pg_version` and tested on real Postgres:
+  - the claim: `INSERT … ON CONFLICT (attention_item_id) DO NOTHING RETURNING id` (claimed when a row comes
+    back), tested with racing sends of one item. The helper's pg-only `create` conflicts on `id`, so a second
+    send would hit the `attention_item_id` index with 23505, not 11000, and fail instead of reading as
+    already claimed;
+  - a status change: `UPDATE … SET status = $s, sent_at = COALESCE($sentAt, sent_at) WHERE id = $id`;
+  - the first click: `UPDATE … SET clicked_at = $now WHERE id = $id AND clicked_at IS NULL`;
+  - the digest mark: `UPDATE … SET included_in_digest_at = $at WHERE id = ANY($ids) AND
+    included_in_digest_at IS NULL`, returning the count.
+
+  Until then, don't set it to `pg`: `sendNeedsYouEmail` would log each refusal and send nothing. The switch
+  is stop-the-world for the same reason as `BillingEvent`'s: Mongo's and Postgres's unique indexes don't
+  coordinate, so a `dual` replica and a `pg` replica could each claim one item and both send it.
+
+  **The click lookup stays on Mongo in `pg-read`.** A claim committed by another process whose copy failed
+  can go unseen by this process's 5-second flag cache, and a Postgres read would answer unknown token: the
+  link in an email the person has just received would go nowhere. The overflow read moves to Postgres in
+  `pg-read`: a stale answer only delays a held ask to the next digest or shows it in one more, and the
+  digest re-reads each ask from Mongo before showing it. A failed Postgres read there falls back to Mongo, so
+  a Postgres outage never stops a digest.
