@@ -53,6 +53,8 @@ add(runtime, 'read', [
   'GET /pods/:podId/skills', 'GET /pods/:podId/send-freshness',
   'GET /pods/:podId/integrations/:integrationId/messages', 'GET /pods/:podId/social-policy',
   'GET /memory/shared/:agentName/:instanceId?',
+  // F646 read, not outward: no repo owner sees unauthenticated REST calls; refusing breaks the pods it's for.
+  'GET /github/public-pr',
 ]);
 add(runtime, 'own_state', ['POST /events/:id/ack', 'POST /pods/:podId/skill-load']);
 // A lease renewal or hand-back of its own delivery (F189), the seat's own model

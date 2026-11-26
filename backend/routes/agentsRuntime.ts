@@ -25,6 +25,7 @@ import rateLimit from 'express-rate-limit';
 import { SharedRateLimitStore } from '../middleware/sharedRateLimitStore';
 import { platformIpRateLimit } from '../middleware/platformRateLimit';
 import { logOutboundFailure } from '../utils/safeErrorLog';
+import { parsePublicPrRef, PublicPrError, readPublicPullRequest } from '../services/githubPublicPr';
 
 const express = require('express');
 const agentHooksRoutes = require('./agentHooks');
@@ -733,6 +734,80 @@ router.get('/grant-brokers', phase4RateLimit, agentRuntimeAuth, async (req: any,
   } catch (error) {
     logOutboundFailure('Error projecting grant brokers:', error);
     return res.status(500).json({ message: 'Failed to read grant brokers' });
+  }
+});
+
+// F646: a public GitHub PR read for an agent whose sandbox has no network.
+// Every agent on this server shares GitHub's unauthenticated budget (60 an
+// hour per address), so one seat gets 10 reads a minute and 15 an hour on top
+// of its general runtime budget. Inline and ahead of auth, like
+// phase4RateLimit above.
+const publicPrMinuteLimit = rateLimit({
+  store: new SharedRateLimitStore({ name: 'agents-runtime-public-pr' }),
+  windowMs: 60_000,
+  max: 10,
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: agentRateLimitKeyGenerator,
+  handler: (_req: any, res: any) => res.status(429).json({
+    message: 'rate limit exceeded: 10 public PR reads per 60s',
+    code: 'rate_limited',
+  }),
+});
+// A read that sent GitHub nothing (a cache hit, a read held at the headroom
+// floor, or a 400/401/403 refusal) is given back after it answers: `skipFailedRequests`
+// decrements every response `requestWasSuccessful` calls unsuccessful. The
+// count is taken before the handler runs, so a 16th read in the hour is
+// refused even when the cache would have answered it.
+const publicPrHourLimit = rateLimit({
+  store: new SharedRateLimitStore({ name: 'agents-runtime-public-pr-hour' }),
+  windowMs: 60 * 60_000,
+  max: 15,
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: agentRateLimitKeyGenerator,
+  skipFailedRequests: true,
+  requestWasSuccessful: (_req: any, res: any) => res.locals?.publicPrSentGithubNothing !== true
+    && ![400, 401, 403].includes(res.statusCode),
+  handler: (_req: any, res: any) => res.status(429).json({
+    message: 'rate limit exceeded: 15 public PR reads per hour',
+    code: 'rate_limited',
+  }),
+});
+const publicPrLimits = [publicPrMinuteLimit, publicPrHourLimit];
+
+/**
+ * GET /github/public-pr?owner=&repo=&number= — read-only, public repos only.
+ * The route takes names, never a URL: githubPublicPr.ts validates them, builds
+ * the api.github.com request itself and sends no credential of anyone's, so a
+ * private repo answers 404 `pr_not_found_or_private`.
+ */
+router.get('/github/public-pr', phase4RateLimit, publicPrLimits, agentRuntimeAuth, async (req: any, res: any) => {
+  // agentRuntimeAuth refuses a token with no active installation; this holds
+  // the route to that even if a future auth path admits one without.
+  if (!req.agentUser?._id || !(req.agentInstallations || []).length) {
+    return res.status(403).json({
+      code: 'agent_installation_required',
+      message: 'Only an agent installed in a pod can read a pull request through Commonly',
+    });
+  }
+  try {
+    const ref = parsePublicPrRef(req.query);
+    const { pr, fromCache } = await readPublicPullRequest(ref);
+    if (fromCache) res.locals.publicPrSentGithubNothing = true;
+    return res.json(pr);
+  } catch (error) {
+    if (error instanceof PublicPrError) {
+      if (error.sentGithubNothing) res.locals.publicPrSentGithubNothing = true;
+      if (error.retryAfterSeconds !== undefined) res.set('Retry-After', String(error.retryAfterSeconds));
+      return res.status(error.status).json({
+        code: error.code,
+        message: error.message,
+        ...(error.retryAfterSeconds !== undefined ? { retryAfterSeconds: error.retryAfterSeconds } : {}),
+      });
+    }
+    logOutboundFailure('Error reading a public pull request:', error);
+    return res.status(500).json({ message: 'Failed to read the pull request' });
   }
 });
 
