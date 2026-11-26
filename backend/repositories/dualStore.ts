@@ -497,7 +497,17 @@ export function createDualStore(
   Model.schema.eachPath((path: string, type: { options?: { select?: unknown } }) => {
     if (type.options?.select === false) hidden.push(path);
   });
-  if (hidden.some((path) => path.includes('.'))) {
+  // eachPath does not descend into sub-documents or arrays of them, so a hidden
+  // path inside one would be dropped from every copy with verify none the
+  // wiser (it reads Mongo the same way). Walk the child schemas too.
+  const hidesInside = (schema: Schema): boolean => schema.childSchemas.some(({ schema: child }) => {
+    let found = false;
+    child.eachPath((_path: string, type: { options?: { select?: unknown } }) => {
+      if (type.options?.select === false) found = true;
+    });
+    return found || hidesInside(child);
+  });
+  if (hidden.some((path) => path.includes('.')) || hidesInside(Model.schema)) {
     throw new Error(`dual-store: ${name} hides a nested path with select: false, which the helper cannot strip`);
   }
   const revealed = hidden.map((path) => `+${path}`).join(' ');

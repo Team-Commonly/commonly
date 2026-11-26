@@ -1407,6 +1407,31 @@ describe('dual-store helper (ADR-034 D3)', () => {
       })).toThrow(/nested path/);
     });
 
+    it.each([
+      ['a sub-document', (sub) => ({ sub })],
+      ['an array of sub-documents', (sub) => ({ subs: [sub] })],
+      ['a sub-document two levels down', (sub) => ({ outer: new mongoose.Schema({ sub }) })],
+    ])('refuses a hidden path inside %s, which eachPath alone would miss', (label, shape) => {
+      const sub = new mongoose.Schema({ key: { type: String, select: false } });
+      const schema = new mongoose.Schema(shape(sub));
+      dualStorePlugin(schema);
+      const modelName = `DualStoreTestHiddenInside${label.replace(/[^a-z]/gi, '')}`;
+      const Inside = mongoose.models[modelName] || mongoose.model(modelName, schema);
+      expect(() => createDualStore({
+        name: modelName, model: Inside, pg: fakePg(), toRow, fromRow,
+      })).toThrow(/nested path/);
+    });
+
+    it('accepts sub-documents with nothing hidden', () => {
+      const sub = new mongoose.Schema({ key: String });
+      const schema = new mongoose.Schema({ sub, subs: [sub] });
+      dualStorePlugin(schema);
+      const Plain = mongoose.models.DualStoreTestPlainSubs || mongoose.model('DualStoreTestPlainSubs', schema);
+      expect(() => createDualStore({
+        name: 'DualStoreTestPlainSubs', model: Plain, pg: fakePg(), toRow, fromRow,
+      })).not.toThrow();
+    });
+
     it('a model with no hidden path never adds a projection: the old query runs unchanged', async () => {
       // The seven live models have no select: false path, so this is their path.
       process.env[ENV] = 'dual';
