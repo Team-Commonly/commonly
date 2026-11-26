@@ -66,13 +66,17 @@ const silentChild = () => {
   spawned.add(child);
   return child;
 };
-// A zombie (exited, not yet reaped by whoever adopted it) is not running.
-const isZombie = (pid) => {
-  try { return /^\d+ \(.*\) Z /.test(fs.readFileSync(`/proc/${pid}/stat`, 'utf8')); } catch { return false; }
-};
+// A zombie (exited, not yet reaped by whoever adopted it) is not running, and
+// neither is a pid whose /proc entry can't be read after the signal check
+// succeeded: it was reaped between the two (F670). The read used to count that
+// as "not a zombie", so running, and a grandchild already seen gone came back
+// as running as init reaped it (ENOENT or ESRCH from the read). Where there is
+// no /proc (macOS), the signal check alone decides, as before.
+const HAS_PROC = fs.existsSync('/proc/self/stat');
 const isRunning = (pid) => {
   try { process.kill(pid, 0); } catch (e) { return e.code !== 'ESRCH'; }
-  return !isZombie(pid);
+  if (!HAS_PROC) return true;
+  try { return !/^\d+ \(.*\) [ZX] /.test(fs.readFileSync(`/proc/${pid}/stat`, 'utf8')); } catch { return false; }
 };
 const strayPids = new Set();
 // F340: the sweep once found a grandchild running that the test's own check had
