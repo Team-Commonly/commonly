@@ -18,7 +18,8 @@
  */
 import mongoose from 'mongoose';
 import Integration from '../models/Integration';
-import HostedMcpDcrRegistration from '../models/HostedMcpDcrRegistration';
+import { listCurrentDcrRegistrations } from '../repositories/hostedMcpDcrRegistrationRepository';
+import { storeMode } from '../repositories/dualStore';
 import { HOSTED_MCP_ENTRIES } from '../integrations/hostedMcp/entries';
 import { isOAuthEntry } from '../services/hostedMcpEntryService';
 import { discoverAuthorizationServer } from '../services/hostedMcpIntakeService';
@@ -46,7 +47,7 @@ const main = async (): Promise<void> => {
 
   await mongoose.connect(uri);
   try {
-    const current = await HostedMcpDcrRegistration.find({ current: true }).sort({ entryId: 1 }).lean();
+    const current = await listCurrentDcrRegistrations();
     for (const registration of current) {
       const entry = entries.get(registration.entryId);
       if (!entry || entry.issuer !== registration.issuer) {
@@ -91,6 +92,11 @@ const main = async (): Promise<void> => {
     if (!APPLY) console.log('DRY RUN — pass --apply to write.');
   } finally {
     await mongoose.disconnect();
+    // Outside mongo the registrations' writes are copied to Postgres (ADR-034); close that pool too.
+    if (storeMode('HostedMcpDcrRegistration') !== 'mongo') {
+      // eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
+      await (require('../config/db-pg') as { pool: { end: () => Promise<void> } | null }).pool?.end();
+    }
   }
 };
 

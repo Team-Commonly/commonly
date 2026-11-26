@@ -656,14 +656,29 @@ describe('instance-scoped hosted MCP DCR registry', () => {
     test('a store failure reaches the caller, before or after the ask', async () => {
       const fetch = vendor([], () => answer(401, { error: 'invalid_client' }));
       await ensureDcrClient(entry, metadata, callback, fetch);
-      const claim = jest.spyOn(Model, 'findOneAndUpdate').mockRejectedValueOnce(new Error('mongo unavailable'));
+      // The store fails as Mongo would, at the query's exec, so the same test
+      // holds in every ADR-034 store mode. Outside mongo the retire is the
+      // helper's setWhere, a findOneAndUpdate after the claim's.
+      const mongoMode = !process.env.STORE_MODE_HOSTED_MCP_DCR_REGISTRATION
+        || process.env.STORE_MODE_HOSTED_MCP_DCR_REGISTRATION === 'mongo';
+      const failCall = (method, nth) => {
+        const original = Model[method];
+        let calls = 0;
+        return jest.spyOn(Model, method).mockImplementation(function failing(...args) {
+          const query = original.apply(this, args);
+          calls += 1;
+          if (calls === nth) query.exec = () => Promise.reject(new Error('mongo unavailable'));
+          return query;
+        });
+      };
+      const claim = failCall('findOneAndUpdate', 1);
       try {
         await expect(retireDcrClientIfUnknown(entry, metadata, 'registered-1', fetch, after()))
           .rejects.toThrow('mongo unavailable');
       } finally {
         claim.mockRestore();
       }
-      const retire = jest.spyOn(Model, 'updateOne').mockRejectedValueOnce(new Error('mongo unavailable'));
+      const retire = mongoMode ? failCall('updateOne', 1) : failCall('findOneAndUpdate', 2);
       try {
         await expect(retireDcrClientIfUnknown(entry, metadata, 'registered-1', fetch, after(1)))
           .rejects.toThrow('mongo unavailable');
