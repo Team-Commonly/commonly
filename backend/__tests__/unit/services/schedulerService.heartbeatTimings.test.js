@@ -52,6 +52,8 @@ const mockFind = () => {
 
 const STEP_KEYS = [
   'total', 'lease', 'schedules', 'heartbeats', 'installs', 'aggregate', 'globalPick', 'perInstall', 'unread',
+  // F635: inside the unread step.
+  'unreadEvents', 'unreadFold', 'unreadInstalls', 'unreadAllowed', 'unreadChecks', 'unreadEnqueue',
 ];
 
 describe('dispatchScheduledAgentHeartbeats step timings', () => {
@@ -78,6 +80,23 @@ describe('dispatchScheduledAgentHeartbeats step timings', () => {
     expect(result.checked).toBe(2);
     // The global pick really ran, so its timing measures something.
     expect(PGMessage.findMostRecentPodActivity).toHaveBeenCalled();
+  });
+
+  it('passes a sink to the unread step and reports its sub-steps and due count (F635)', async () => {
+    const filled = {
+      unreadEvents: 20, unreadFold: 286, unreadInstalls: 184, unreadAllowed: 53, unreadChecks: 90, unreadEnqueue: 40,
+    };
+    SchedulerService.dispatchUnreadDigestHeartbeats.mockImplementation(async (now, sink) => {
+      expect(now).toBe(NOW);
+      Object.assign(sink, filled, { due: 82 });
+      return 3;
+    });
+
+    const result = await SchedulerService.dispatchScheduledAgentHeartbeats({ now: NOW });
+
+    expect(result.due).toBe(82);
+    expect(result.enqueued).toBe(2 + 3);
+    expect(result.timingsMs).toEqual(expect.objectContaining(filled));
   });
 
   it('keeps every existing field as it was', async () => {
@@ -116,6 +135,29 @@ describe('formatHeartbeatDispatchLine', () => {
     expect(line).toBe(
       'Agent heartbeats enqueued: 0 (ms total=12345 lease=3 schedules=10 heartbeats=11972'
       + ' installs=40 aggregate=32 globalPick=900 perInstall=11000 unread=200; checked=37)',
+    );
+  });
+
+  it('prints the unread sub-steps after unread, and due next to checked (F635)', () => {
+    const line = SchedulerService.formatHeartbeatDispatchLine({
+      scanned: 37,
+      enqueued: 4,
+      skippedByInterval: 30,
+      skippedByLease: false,
+      checked: 37,
+      due: 82,
+      timingsMs: {
+        total: 4300.6, lease: 3, schedules: 10, heartbeats: 120, installs: 40,
+        aggregate: 32, globalPick: 9, perInstall: 30, unread: 4100.2,
+        unreadEvents: 20.4, unreadFold: 286.5, unreadInstalls: 184, unreadAllowed: 53,
+        unreadChecks: 3500, unreadEnqueue: 2100.49,
+      },
+    });
+    expect(line).toBe(
+      'Agent heartbeats enqueued: 4 (ms total=4301 lease=3 schedules=10 heartbeats=120'
+      + ' installs=40 aggregate=32 globalPick=9 perInstall=30 unread=4100'
+      + ' unreadEvents=20 unreadFold=287 unreadInstalls=184 unreadAllowed=53 unreadChecks=3500 unreadEnqueue=2100'
+      + '; checked=37 due=82)',
     );
   });
 
