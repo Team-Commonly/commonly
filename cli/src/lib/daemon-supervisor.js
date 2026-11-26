@@ -85,6 +85,12 @@ export const recordKeyFor = (row, loadToken) => {
   return scoped;
 };
 
+// F637: how long a 429 holds both loops off, at the least.
+export const RATE_LIMIT_MIN_WAIT_MS = 60_000;
+// ...and at the most, whatever Retry-After says.
+export const RATE_LIMIT_MAX_WAIT_MS = 10 * 60_000;
+export const RATE_LIMIT_NOTICE = "the server is rate-limiting this computer's daemon key; more than one Commonly daemon may be running on it";
+
 export const createDaemonSupervisor = ({
   record,
   client,
@@ -112,6 +118,10 @@ export const createDaemonSupervisor = ({
   let reconnectAfter = 0;
   const recentStarts = [];
 
+  // F637: true from a 429 until the next success, so the duplicate-daemon
+  // notice is logged once per stretch of rate limiting.
+  let rateLimited = false;
+
   const connectionFailure = (error, label) => {
     if (isTerminalAuthError(error)) {
       stopped = true;
@@ -119,13 +129,31 @@ export const createDaemonSupervisor = ({
       return;
     }
     reconnectFailures += 1;
-    reconnectAfter = now() + reconnectDelayMs(reconnectFailures, random);
+    if (error?.status === 429) {
+      // The server's limiter keys on this computer's daemon key. Retrying in
+      // a second or two keeps it shut, for every copy sharing the key, so wait
+      // at least a minute, or longer if the server asked for longer, but never
+      // past 10 minutes: a proxy or self-hosted limiter sending
+      // `Retry-After: 86400` must not silence the poll and heartbeat for a day.
+      const wait = Math.min(
+        Math.max(Number(error.retryAfterMs) || 0, RATE_LIMIT_MIN_WAIT_MS),
+        RATE_LIMIT_MAX_WAIT_MS,
+      );
+      reconnectAfter = Math.max(reconnectAfter, now() + wait);
+      if (!rateLimited) {
+        rateLimited = true;
+        log(RATE_LIMIT_NOTICE);
+      }
+    } else {
+      reconnectAfter = now() + reconnectDelayMs(reconnectFailures, random);
+    }
     log(`${label}: ${error.message}; reconnect after ${Math.round((reconnectAfter - now()) / 1000)}s`);
   };
 
   const connectionRestored = () => {
     reconnectFailures = 0;
     reconnectAfter = 0;
+    rateLimited = false;
   };
 
   const persist = () => {

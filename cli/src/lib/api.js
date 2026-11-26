@@ -38,6 +38,17 @@ const summarizeTextError = (text, status) => {
   return line.length > MAX_TEXT_ERROR ? `${line.slice(0, MAX_TEXT_ERROR)}…` : line;
 };
 
+// F637: a 429's Retry-After, in ms, from delta-seconds or an HTTP date (RFC
+// 9110 10.2.3). A date already past is 0; anything unreadable is undefined.
+export const parseRetryAfterMs = (value, nowMs = Date.now()) => {
+  const text = String(value ?? '').trim();
+  if (!text) return undefined;
+  if (/^\d+$/.test(text)) return Number(text) * 1000;
+  if (/^[+-]?\d/.test(text)) return undefined;
+  const at = Date.parse(text);
+  return Number.isNaN(at) ? undefined : Math.max(0, at - nowMs);
+};
+
 const handleResponse = async (res, session = null) => {
   const text = await res.text();
   let body;
@@ -53,6 +64,8 @@ const handleResponse = async (res, session = null) => {
     const err = new Error(msg);
     err.status = res.status;
     err.body = body;
+    const retryAfterMs = parseRetryAfterMs(res.headers?.get?.('retry-after'));
+    if (retryAfterMs !== undefined) err.retryAfterMs = retryAfterMs;
     throw err;
   }
   return body;

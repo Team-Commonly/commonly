@@ -29,6 +29,10 @@ watchdog does not restart a daemon that was told to stop. These are the codes sy
 `RestartPreventExitStatus=77 78` exempts. Task Scheduler's own "restart on failure" setting fires only
 when a task fails to *start*, not when its program exits non-zero, so it cannot be the keep-alive.
 
+**Exit 79: another daemon already runs for this computer.** The launcher sleeps 30 s and tries again.
+It never disables the task or exits for 79, so the task stays running and takes over once the other
+copy dies. See *One daemon per computer* below.
+
 Ending the task (`schtasks /End`, and so `stop`, `restart`, a reinstall and `uninstall`) terminates the
 launcher only, never the node it started; on windows-latest that left a stopped task's daemon checking
 in. So the launcher passes its pid in `COMMONLY_DAEMON_LAUNCHER_PID`, and the daemon polls it every 2 s
@@ -42,6 +46,43 @@ console code page and the log reads `ΓÇö` for `—`.
 | `commonly daemon start` | Enables the task and runs it (also undoes a 77/78 park). |
 | `commonly daemon restart` | Ends, enables, runs. |
 | `commonly daemon uninstall` | Ends and deletes the task, removes its three files and the unsandboxed marker. |
+
+## One daemon per computer (F637)
+
+One Windows 10 machine on CLI 0.1.390 ran ~140 copies of `daemon run` on one machine key, one more
+each minute, and the server's limiter rejected ~5 requests a second on each daemon route. Nothing
+refused a second copy. A launcher that died while its node survived left that node running, and the
+watchdog started a new launcher a minute later. An orphan also outlived its watch because `EPERM`
+on the launcher's (reused) pid counted as alive, and its dead stdout pipe was swallowed silently.
+
+- **The lock.** `daemon run` takes a lock after its stop-marker and record checks and before its first
+  request (`cli/src/lib/daemon-lock.js`). It is a listening local socket the OS frees when the
+  process dies, never a pid file: the named pipe `\\.\pipe\commonly-daemon-<id>` on Windows, the unix
+  socket `~/.commonly/daemon/daemon-<id>.sock` elsewhere, where `<id>` is the first 16 hex of
+  `sha256(home)`. It is keyed by the home alone because a home holds one machine record and
+  `run --instance` refuses any other instance, so an old daemon still running across a
+  `daemon register` blocks the new one. On POSIX a socket file nobody answers on is stale and is
+  reclaimed. The holder answers a connection with `{"pid":<n>}` and hangs up.
+- **Refused.** A daemon that can't take the lock retries for ~10 s (a restart's old node exits within
+  ~2 s of its launcher), then logs one line naming the holder's pid and the machine and **exits 79**.
+  It has made no request. Under launchd and systemd a 79 restarts like any other failure.
+- **The watch.** Under the launcher, `EPERM` on the launcher's pid now counts as gone (the launcher is
+  the same user at least privilege, so `EPERM` means the pid was reused), and an `EPIPE` or a write
+  to a destroyed stdout/stderr stops the daemon through the same path, once.
+- **429.** The CLI keeps a 429's `Retry-After` on the error (`err.retryAfterMs`); the supervisor then
+  holds both its work-list poll and its heartbeat off for `max(Retry-After, 60 s)`, capped at 10
+  minutes, and logs
+  once per stretch of 429s that more than one daemon may be running. `express-rate-limit` already
+  sends `Retry-After` on both daemon-route limiters.
+- **What old CLIs see.** The 429 on the heartbeat and on `GET /api/agent-binding/assigned` carries an
+  `error` field (old CLIs print `error` before `message`) telling the user to update the CLI and run
+  `npx @commonlyai/cli@latest daemon setup`; other routes under the same limiters are unchanged.
+- **`DAEMON_MIN_CLI_VERSION_WIN32`** (server env, unset by default). When set, `POST /api/machines`
+  refuses with 400 a registration whose host says `win32` with a CLI below it, or with no valid
+  version. That is the path an old daemon takes back after its key is revoked. Set it only once a
+  fixed CLI has published.
+- **Clearing leftover copies.** Old copies don't know about the lock. Reboot, or run
+  `npx @commonlyai/cli@latest daemon setup`, which ends the task and starts one daemon on the new CLI.
 
 ## No sandbox on Windows, and the opt-in
 

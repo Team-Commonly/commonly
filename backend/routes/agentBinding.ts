@@ -19,6 +19,7 @@ import { ownsRuntimeIdentity, OwnershipFailure, describeRuntimeIdentityBlockers 
 import { logAgentInstallRefusal } from '../middleware/logAgentInstallRefusal';
 import { machineHasLiveAuthorization } from '../services/machineService';
 import { createRateLimitRejectionLog, RateLimitedRequest } from '../utils/rateLimitLog';
+import { DUPLICATE_DAEMON_429_ERROR } from '../utils/daemonDuplicates';
 
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const auth = require('../middleware/auth');
@@ -54,7 +55,12 @@ const bindingRateLimit = rateLimit({
   },
   handler: (req: RateLimitedRequest, res: { status: (n: number) => { json: (b: unknown) => void } }) => {
     logBindingRejection(req);
-    res.status(429).json({ msg: 'rate limit exceeded: 120 binding ops per 60s' });
+    // F637: GET /assigned is what a daemon polls; old CLIs print `error` first.
+    const assigned = req.method === 'GET' && req.route?.path === '/assigned';
+    res.status(429).json({
+      msg: 'rate limit exceeded: 120 binding ops per 60s',
+      ...(assigned ? { error: DUPLICATE_DAEMON_429_ERROR } : {}),
+    });
   },
 });
 

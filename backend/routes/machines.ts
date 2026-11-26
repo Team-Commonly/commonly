@@ -12,6 +12,7 @@ import {
 } from '../services/machineService';
 import daemonAuth, { DaemonAuthedRequest } from '../middleware/daemonAuth';
 import { createRateLimitRejectionLog } from '../utils/rateLimitLog';
+import { DUPLICATE_DAEMON_429_ERROR, win32RegistrationRefusal } from '../utils/daemonDuplicates';
 
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const auth = require('../middleware/auth');
@@ -45,7 +46,12 @@ const machineRateLimit = rateLimit({
   },
   handler: (req: express.Request, res: express.Response) => {
     logMachineRejection(req);
-    res.status(429).json({ message: 'rate limit exceeded: 60 machine requests per 60s' });
+    // F637: the heartbeat is what a daemon polls; old CLIs print `error` first.
+    const heartbeat = req.method === 'POST' && req.route?.path === '/:id/heartbeat';
+    res.status(429).json({
+      message: 'rate limit exceeded: 60 machine requests per 60s',
+      ...(heartbeat ? { error: DUPLICATE_DAEMON_429_ERROR } : {}),
+    });
   },
 });
 
@@ -55,6 +61,11 @@ router.post('/', machineRateLimit, auth, async (req: AuthReq, res: express.Respo
   try {
     const ownerUserId = req.user?.id;
     if (!ownerUserId) return res.status(401).json({ message: 'Unauthorized' });
+    // F637: a Windows CLI old enough to pile up daemons is refused here, once
+    // DAEMON_MIN_CLI_VERSION_WIN32 is set. This is the path an old daemon
+    // takes to come back after its key is revoked.
+    const tooOld = win32RegistrationRefusal(req.body?.host);
+    if (tooOld) return res.status(400).json({ message: tooOld });
     const { machine, token } = await registerMachine({
       ownerUserId,
       name: req.body?.name,

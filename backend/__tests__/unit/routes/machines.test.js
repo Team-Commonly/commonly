@@ -212,3 +212,64 @@ describe('machine lifecycle routes', () => {
     expect(mockRecordMachineHeartbeat).not.toHaveBeenCalled();
   });
 });
+
+// F637: a CLI old enough to start duplicate daemons on Windows is refused at
+// registration once DAEMON_MIN_CLI_VERSION_WIN32 is set (after the fix ships).
+// Unset, nothing changes.
+describe('F637: the Windows minimum CLI version on registration', () => {
+  const ENV = 'DAEMON_MIN_CLI_VERSION_WIN32';
+  const REFUSAL = 'This CLI version can start duplicate daemons on Windows. '
+    + 'Update it, then set the daemon up again: npx @commonlyai/cli@latest daemon setup';
+  const register = (host) => request(app).post('/api/machines').send({ name: 'Box', ...(host ? { host } : {}) });
+  const saved = process.env[ENV];
+
+  beforeEach(() => {
+    mockRegisterMachine.mockResolvedValue({
+      machine: { id: 'm1', name: 'Box', machineId: 'daemon-machine', status: 'online' },
+      token: 'cm_daemon_once',
+    });
+  });
+  afterEach(() => {
+    if (saved === undefined) delete process.env[ENV];
+    else process.env[ENV] = saved;
+  });
+
+  it('refuses an older win32 CLI, and a win32 CLI that names no version', async () => {
+    process.env[ENV] = '0.1.391';
+    for (const host of [
+      { platform: 'win32', cliVersion: '0.1.390' },
+      { platform: 'win32', cliVersion: '0.1.99' },
+      { platform: 'win32' },
+      { platform: 'win32', cliVersion: 'not-a-version' },
+    ]) {
+      // eslint-disable-next-line no-await-in-loop
+      const res = await register(host);
+      expect(res.status).toBe(400);
+      expect(res.body).toEqual({ message: REFUSAL });
+    }
+    expect(mockRegisterMachine).not.toHaveBeenCalled();
+  });
+
+  it('accepts the minimum or newer on win32 (compared per part, not as text), and any other platform', async () => {
+    process.env[ENV] = '0.1.391';
+    for (const host of [
+      { platform: 'win32', cliVersion: '0.1.391' },
+      { platform: 'win32', cliVersion: '0.1.1000' },
+      { platform: 'win32', cliVersion: '0.2.0' },
+      { platform: 'darwin', cliVersion: '0.1.100' },
+      { platform: 'linux' },
+    ]) {
+      // eslint-disable-next-line no-await-in-loop
+      const res = await register(host);
+      expect(res.status).toBe(201);
+    }
+    // No host at all: an older CLI sent none, and its platform is unknown.
+    expect((await register()).status).toBe(201);
+  });
+
+  it('changes nothing while the variable is unset', async () => {
+    delete process.env[ENV];
+    const res = await register({ platform: 'win32', cliVersion: '0.1.1' });
+    expect(res.status).toBe(201);
+  });
+});

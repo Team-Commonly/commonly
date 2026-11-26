@@ -46,6 +46,9 @@ import {
 import { daemonLogsDir, daemonSeatLogPath, readLogTail } from '../lib/daemon-logs.js';
 import { watchWindowsLauncher } from '../lib/daemon-service-windows.js';
 import {
+  DAEMON_LOCK_EXIT, acquireDaemonLock, daemonLockPath, daemonLockWaitMs,
+} from '../lib/daemon-lock.js';
+import {
   UNSANDBOXED_FLAG, clearUnsandboxedOptIn, hostSandboxReport, loadUnsandboxedOptIn, saveUnsandboxedOptIn, unsandboxedFlagRefusal,
 } from '../lib/sandbox/windows-unsandboxed.js';
 import { loadDaemonState, saveDaemonState } from '../lib/daemon-state.js';
@@ -727,6 +730,20 @@ Examples:
           process.exitCode = process.platform === 'darwin' ? 0 : stopped.exitCode;
           return;
         }
+        // F637: one daemon per machine credential. Taken before the first
+        // request, so a refused copy never touches the server. It waits ~10 s
+        // first: a restart's old daemon is still exiting when the new one starts.
+        const lock = await acquireDaemonLock({
+          lockPath: daemonLockPath({ home: homedir() }),
+          waitMs: daemonLockWaitMs(),
+        });
+        if (!lock.ok) {
+          const holder = lock.holderPid ? `pid ${lock.holderPid}` : 'another process';
+          console.error(`${new Date().toISOString()} another Commonly daemon (${holder}) is already running for ${record.machineName}; this copy exits (${DAEMON_LOCK_EXIT}).`);
+          process.exitCode = DAEMON_LOCK_EXIT;
+          return;
+        }
+        const releaseLock = () => { void lock.release(); };
         const client = createClient({ instance: record.instanceUrl, token: record.daemonToken });
         const logsDir = daemonLogsDir();
         if (!existsSync(logsDir)) mkdirSync(logsDir, { recursive: true });
@@ -775,6 +792,7 @@ Examples:
           clearInterval(pollTimer);
           clearInterval(heartbeatTimer);
           supervisor.stop();
+          releaseLock();
           // Without the marker launchd would restart forever. A successful
           // exit parks it on macOS; systemd honors 77 directly.
           process.exitCode = saved || process.platform !== 'darwin' ? 77 : 0;
@@ -825,6 +843,7 @@ Examples:
           clearInterval(pollTimer);
           clearInterval(heartbeatTimer);
           supervisor.stop();
+          releaseLock();
           process.exit(0);
         };
         // Under the Windows launcher, the launcher's exit is the stop
@@ -839,7 +858,10 @@ Examples:
           },
           isEnded: () => terminalEnded,
         });
-        if (!started) return;
+        if (!started) {
+          releaseLock();
+          return;
+        }
         const runtimeFailure = (error) => {
           if (terminalEnded) return;
           terminalEnded = true;
@@ -847,6 +869,7 @@ Examples:
           clearInterval(pollTimer);
           clearInterval(heartbeatTimer);
           supervisor.stop();
+          releaseLock();
           process.exitCode = 75;
         };
         pollTimer = setInterval(() => { void supervisor.tick().catch(runtimeFailure); }, Number(opts.poll) || DEFAULT_POLL_MS);
