@@ -191,8 +191,9 @@ describe('registry install — a hosted agent joins with one post', () => {
     expect(introPosts()).toHaveLength(1);
     expect(introPosts()[0][0].authorKind).toBe('kernel');
     // F140: stored on the row, so the agent's send-time read gate can tell
-    // its own intro from a notice it has to read.
-    expect(introPosts()[0][0].payload).toEqual({ kind: 'install-intro' });
+    // its own intro from a notice it has to read. In the listening form, so
+    // the shell stacks no "is connected now" line under it (F651).
+    expect(introPosts()[0][0].payload).toEqual({ kind: 'install-intro', introState: 'listening' });
   });
 
   it('in a personal room, the greeting gets no handle, since plain replies are auto-routed there', async () => {

@@ -20,13 +20,25 @@ jest.mock('../../config/socket', () => ({
 }));
 
 const { composeInstallIntro } = require('../../routes/registry/helpers');
+const { snapshotPointer } = require('../../services/installIntroCopy');
 const { settleInstallIntroOnFirstListen, isFirstListen } = require('../../services/installIntroOnListen');
 
 const AGENT = 'agent-user-1';
 const POD = 'pod-1';
-const intro = (state) => composeInstallIntro({
-  displayName: 'Rivet', blurb: 'I review pull requests.', handle: 'rivet', state, fixCommand: 'npx x agent run rivet',
-});
+// The state-scoped intros installs wrote before F651, which stopped posting
+// them; rows like these stay in pods, and the first listen still settles them.
+const LEGACY_CLAIMS = {
+  'never-connected': "As I post this, nothing is running me yet, so mentioning me won't reach anyone. "
+    + "If I'm meant to answer mentions, whoever installed me can start me with `npx x agent run rivet` on the machine "
+    + 'where I should live — then @rivet will get through.',
+  'gone-dark': "As I post this I don't look connected — I was running earlier and have gone quiet, so a mention "
+    + 'may not reach me. Whoever installed me can start me again with `npx x agent run rivet` — then @rivet will get through.',
+};
+const intro = (state) => (LEGACY_CLAIMS[state]
+  ? `Hi all — I'm Rivet. I review pull requests. ${LEGACY_CLAIMS[state]} ${snapshotPointer('rivet')}`
+  : composeInstallIntro({
+    displayName: 'Rivet', blurb: 'I review pull requests.', handle: 'rivet', state,
+  }));
 const insert = (content, { userId = AGENT, podId = POD, kind = 'install-intro', authorKind = 'kernel' } = {}) => mockPool.query(
   'INSERT INTO messages (pod_id, user_id, content, author_kind, payload) VALUES ($1, $2, $3, $4, $5) RETURNING id',
   [podId, userId, content, authorKind, kind ? JSON.stringify({ kind }) : null],
@@ -69,7 +81,7 @@ describe('first-listen intro rewrite on Postgres (F576)', () => {
   it('leaves a listening intro, a no-listener intro, another agent\'s intro and other pods alone', async () => {
     const live = await insert(intro('listening'));
     const noListener = await insert(composeInstallIntro({
-      displayName: 'Rivet', handle: 'rivet', state: 'never-connected', fixCommand: 'x', listens: false,
+      displayName: 'Rivet', handle: 'rivet', state: 'never-connected', listens: false,
     }));
     const others = await insert(intro('never-connected'), { userId: 'agent-user-2' });
     const elsewhere = await insert(intro('never-connected'), { podId: 'pod-2' });

@@ -86,6 +86,11 @@ const introText = () => {
   return posts[0][0].content;
 };
 
+// A running agent's hello is the only intro that posts (F651).
+const listening = () => User.findOne.mockImplementation((query) => buildSelectLeanChain(
+  query && query['botMetadata.agentName'] ? { agentRuntimeTokens: [{ lastListenedAt: new Date() }] } : null,
+));
+
 describe('registry install: the intro names the handle that routes in this pod', () => {
   const installHandler = getInstallHandler();
   // The pod's active installs after this install lands, as mention routing reads them.
@@ -130,24 +135,22 @@ describe('registry install: the intro names the handle that routes in this pod',
     Activity.create.mockResolvedValue(true);
   });
 
-  it('sends an agent made on the page to its Settings', async () => {
-    await installHandler(makeReq('default', 'Rivet'), makeRes());
-    expect(introText()).toContain('connect me from my Settings');
-    expect(introText()).not.toContain('agent run');
-  });
-
-  it('keeps the command for an agent init bot, whose key is saved', async () => {
-    await installHandler(makeReq('default', 'Rivet', { runtimeType: 'webhook' }), makeRes());
-    expect(introText()).toContain('npx -y @commonlyai/cli@latest agent run acme-bot');
-  });
-
-  it('sends a second instance made on the page to its Settings too (F306)', async () => {
-    await installHandler(makeReq('swe-page', 'Rivet'), makeRes());
-    expect(introText()).toContain('connect me from my Settings');
-    expect(introText()).not.toContain('agent run');
+  // F651: an agent nothing runs yet posts no intro, so the Settings-vs-command
+  // choice for page-made and init agents lives on the installer's own
+  // surfaces (the roster's fixCommand), not in the room.
+  it.each([
+    ['made on the page', 'default', undefined],
+    ['made by agent init', 'default', { runtimeType: 'webhook' }],
+    ['a second instance made on the page', 'swe-page', undefined],
+  ])('an agent %s that nothing runs yet posts no intro', async (_label, instanceId, runtime) => {
+    await installHandler(makeReq(instanceId, 'Rivet', runtime), makeRes());
+    const intros = AgentMessageService.postMessage.mock.calls
+      .filter(([args]) => args?.metadata?.kind === 'install-intro');
+    expect(intros).toHaveLength(0);
   });
 
   it('names the username, not the display name or the bare instance id', async () => {
+    listening();
     const res = makeRes();
     await installHandler(makeReq('swe-dogfood', 'Rivet'), res);
 
@@ -164,6 +167,7 @@ describe('registry install: the intro names the handle that routes in this pod',
     podInstalls.push({
       agentName: AGENT, podId: 'a0000000000000000000000a', instanceId: 'swe-dogfood', displayName: 'Rivet', status: 'active',
     });
+    listening();
     const res = makeRes();
     await installHandler(makeReq('default', 'Default bot'), res);
 

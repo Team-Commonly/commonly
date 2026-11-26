@@ -11,40 +11,41 @@
  *   ngoc-tran   2026-08-10  "@ngoc-tran-agent what modal you use"  → silence
  *
  * None of the four returned. The promise is made in the AGENT'S OWN VOICE,
- * which is why it matters more than the connect page's honesty copy (#887) —
- * that fix never touched this sentence.
+ * which is why it matters more than the connect page's honesty copy (#887).
+ *
+ * F651 (prod, 11-26): the fix for that used to post the opposite sentence in
+ * the same voice, "As I post this, nothing is running me yet" plus a start
+ * command, at the top of every new pod. A seat nothing runs now gets no intro
+ * at all; the installer's own surfaces carry the command.
  */
 
-const { composeInstallIntro } = require('../../../routes/registry/helpers');
+const { composeInstallIntro, installIntroPlan } = require('../../../routes/registry/helpers');
 
 const base = {
   displayName: 'Ngoc Tran Agent',
   handle: 'ngoc-tran-agent',
-  fixCommand: 'commonly agent run ngoc-tran-agent',
 };
 
 describe('install intro — the promise matches reality', () => {
-  test('a seat with nothing running it does NOT invite a mention', () => {
-    const intro = composeInstallIntro({ ...base, state: 'never-connected' });
-
-    // The exact sentence the four casualties acted on must be absent.
-    expect(intro).not.toMatch(/Mention me with @ngoc-tran-agent when you need me/);
-    // It must say plainly that a mention goes nowhere...
-    expect(intro).toMatch(/won't reach anyone/);
-    // ...and hand over the one command that fixes it.
-    expect(intro).toMatch(/commonly agent run ngoc-tran-agent/);
+  test('a seat with nothing running it posts no intro, rather than one saying so', () => {
+    // Certain (never ran) and inferred (gone quiet) alike: nothing in the
+    // agent's voice about its own state, and no command for the whole room.
+    ['never-connected', 'gone-dark'].forEach((state) => {
+      expect(composeInstallIntro({ ...base, state })).toBeNull();
+      expect(composeInstallIntro({ ...base, state, blurb: 'I review pull requests.' })).toBeNull();
+      expect(installIntroPlan({ state })).toBe('none');
+    });
   });
 
   test('an identity declared with no listener gets no command to start one', () => {
-    // An identity that only calls the API was told "start me with commonly
-    // agent run", the wrong program, and the greeting was the other builder's
-    // first unseen message.
+    // A stable declaration, true whenever it is read, so it still posts.
     ['never-connected', 'gone-dark', 'unknown'].forEach((state) => {
       const intro = composeInstallIntro({ ...base, state, listens: false });
       expect(intro).toMatch(/run no listener, so mentioning me won't wake me/);
       expect(intro).not.toMatch(/commonly agent run/);
       expect(intro).not.toMatch(/Mention me with @ngoc-tran-agent when you need me/);
       expect(intro).not.toMatch(/nothing is running me/);
+      expect(installIntroPlan({ state, listens: false })).toBe('no-listener');
     });
   });
 
@@ -52,48 +53,21 @@ describe('install intro — the promise matches reality', () => {
     ['listening', 'reachable'].forEach((state) => {
       const intro = composeInstallIntro({ ...base, state, listens: false });
       expect(intro).toMatch(/Mention me with @ngoc-tran-agent when you need me/);
+      expect(installIntroPlan({ state, listens: false })).toBe('invite');
     });
   });
 
-  test('an undeclared seat with nothing running makes the start instruction conditional', () => {
-    // It may be an identity that only calls the API and never said so.
-    const intro = composeInstallIntro({ ...base, state: 'never-connected' });
-    expect(intro).toMatch(/If I'm meant to answer mentions, whoever installed me can start me with `commonly agent run ngoc-tran-agent`/);
-  });
-
-  test('an agent made on the page points at Settings: its key is on no computer yet', () => {
-    const intro = composeInstallIntro({ ...base, state: 'never-connected', connectable: true });
-
-    expect(intro).toMatch(/won't reach anyone/);
-    expect(intro).toMatch(/connect me from my Settings/);
-    expect(intro).not.toMatch(/commonly agent run/);
-  });
-
   test('a live seat still invites the mention — the fix must not lie the other way', () => {
-    // A running agent installed into a NEW pod is genuinely reachable. Telling
-    // that room "nothing is running me" would be the opposite defect, which is
-    // why the caller derives state instead of assuming a fresh seat is dead.
+    // A running agent installed into a NEW pod is genuinely reachable, which
+    // is why the caller derives state instead of assuming a fresh seat is dead.
     const intro = composeInstallIntro({ ...base, state: 'listening' });
 
     expect(intro).toMatch(/Mention me with @ngoc-tran-agent when you need me/);
     expect(intro).not.toMatch(/won't reach anyone/);
-    expect(intro).not.toMatch(/commonly agent run/);
-  });
-
-  test('gone-dark hedges instead of asserting — it is inferred, and the agent DID run', () => {
-    // ux-lead, fleet review 2026-08-14. An earlier draft took a boolean, which
-    // collapsed `never-connected` (structurally certain: no token ever used)
-    // into `gone-dark` (inferred from staleness). A gone-dark reused agent was
-    // then told "Nothing is running me yet" — flat-certain and factually
-    // wrong. Asserting an inference in the agent's own voice is the same
-    // defect this whole function exists to remove.
-    const intro = composeInstallIntro({ ...base, state: 'gone-dark' });
-
-    expect(intro).not.toMatch(/Nothing is running me yet/);
-    expect(intro).toMatch(/don't look connected|may not reach/);
-    // The instruction still has to be there — hedging the claim must not cost
-    // the reader the fix.
-    expect(intro).toMatch(/commonly agent run ngoc-tran-agent/);
+    expect(intro).not.toMatch(/agent run/);
+    // Asserts no state, so it carries no "as I post this" caveat to age.
+    expect(intro).not.toMatch(/never updates/);
+    expect(intro).not.toMatch(/As I post this/);
   });
 
   test('an unknown state keeps the invitation — we only warn about what we can show', () => {
@@ -103,25 +77,22 @@ describe('install intro — the promise matches reality', () => {
     const intro = composeInstallIntro({ ...base, state: 'unknown' });
 
     expect(intro).toMatch(/Mention me with @ngoc-tran-agent when you need me/);
-    expect(intro).not.toMatch(/commonly agent run/);
+    expect(intro).not.toMatch(/agent run/);
+    expect(installIntroPlan({ state: 'unknown' })).toBe('invite');
   });
 
   test('the handle, not the agent name, is what gets mentioned', () => {
     // A BYO user is told their agent is named "sam-agent" while the mention
-    // handle is the instanceId (GH smoke finding 2026-07-05). Both branches
-    // must use the handle.
+    // handle is the instanceId (GH smoke finding 2026-07-05).
     const live = composeInstallIntro({ ...base, handle: 'scout', state: 'listening' });
-    const dead = composeInstallIntro({ ...base, handle: 'scout', state: 'never-connected' });
 
     expect(live).toMatch(/@scout/);
-    expect(dead).toMatch(/@scout/);
   });
 
-  test('a meaningful blurb survives in both branches', () => {
-    const opts = { ...base, blurb: 'I review pull requests.' };
+  test('a meaningful blurb survives', () => {
+    const intro = composeInstallIntro({ ...base, blurb: 'I review pull requests.', state: 'listening' });
 
-    expect(composeInstallIntro({ ...opts, state: 'listening' })).toMatch(/I review pull requests\./);
-    expect(composeInstallIntro({ ...opts, state: 'never-connected' })).toMatch(/I review pull requests\./);
+    expect(intro).toMatch(/I review pull requests\./);
   });
 
   test('a blurb that just repeats the name is dropped, not echoed', () => {
@@ -137,53 +108,12 @@ describe('install intro — the promise matches reality', () => {
 
   test('a placeholder description is not read as a claim', () => {
     // The self-serve path writes "A connected agent." on an agent that may
-    // never have connected, and the sentence after it says nothing runs it.
+    // never have connected.
     const intro = composeInstallIntro({
-      ...base, blurb: 'A connected agent.', state: 'never-connected',
+      ...base, blurb: 'A connected agent.', state: 'unknown',
     });
 
     expect(intro).not.toMatch(/connected agent/i);
     expect(intro).toMatch(/just joined the pod/);
-  });
-
-  test('the dead-seat copy never blames the reader', () => {
-    // Whoever reads this in a shared pod usually cannot run the command. The
-    // instruction names the installer rather than commanding the room — the
-    // same split agentStateService makes between state and fixCommand.
-    const intro = composeInstallIntro({ ...base, state: 'never-connected' });
-
-    expect(intro).toMatch(/[Ww]hoever installed me/);
-  });
-
-  test('a state claim is scoped to its posting and points at what changes', () => {
-    // TASK-178. This intro is posted once and nothing supersedes it, so a
-    // present-tense reachability sentence is accurate for minutes and false
-    // forever after — and it is in the seat's own voice, which is why the
-    // reader believes it over an absent signal. Measured 2026-09-29: the seat
-    // attached at 11:15:3xZ posted this line, its runner started, its first
-    // turn posted at 11:15:52, and at ~11:5xZ a peer routed a PR away from it
-    // because "it isn't running" — 53 minutes of live process, contradicted by
-    // one sentence, while the derived state had said otherwise throughout.
-    //
-    // Both arms that assert a state carry both halves. The first assertion is
-    // what makes the sentence timeless; the second is what makes the reader's
-    // next move the right one. Either alone leaves the trap open: a scoped
-    // claim with no pointer still ends the reader's search, and a pointer with
-    // no scoping still reads as present tense.
-    const never = composeInstallIntro({ ...base, state: 'never-connected' });
-    const dark = composeInstallIntro({ ...base, state: 'gone-dark' });
-
-    [never, dark].forEach((intro) => {
-      expect(intro).toMatch(/As I post this/);
-      expect(intro).toMatch(/never updates/);
-      expect(intro).toMatch(/type @ngoc-tran-agent and the pod shows my current state/);
-    });
-
-    // The invitation arm asserts no state, so it makes no claim that can age
-    // and gets no pointer — the fix must not add the caveat where there is
-    // nothing to caveat.
-    const live = composeInstallIntro({ ...base, state: 'listening' });
-    expect(live).not.toMatch(/never updates/);
-    expect(live).not.toMatch(/As I post this/);
   });
 });

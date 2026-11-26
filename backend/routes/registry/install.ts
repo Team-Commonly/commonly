@@ -35,7 +35,7 @@ const {
 };
 const AgentMessageService = require('../../services/agentMessageService');
 const { loadPodMentionMap, routedMentionHandle } = require('../../services/agentMentionService');
-const { deriveAgentState, keyOnlyOnPage, runInstructionFor } = require('../../services/agentStateService');
+const { deriveAgentState } = require('../../services/agentStateService');
 const FirstContactService = require('../../services/firstContactService');
 const HostedRuntime = require('../../services/hostedRuntimeService');
 const HostedEngine = require('../../services/hostedEngine');
@@ -58,6 +58,7 @@ const {
   sanitizeRuntimeConfig,
   buildAgentProfileId,
   composeInstallIntro,
+  installIntroPlan,
 } = require('./helpers');
 const {
   AUTO_GRANTED_INTEGRATION_SCOPES,
@@ -1206,22 +1207,13 @@ const installAgent = async (req: any, res: any, addition?: { alreadyInPod: Recor
         // been announced as dead. Same identity match the pod roster uses
         // (routes/pods.ts:437).
         let state = 'unknown';
-        let connectable = false;
-        // The default is what the seat's own runtime needs. It used to be the
-        // BYO command for every seat, so a webhook agent's intro told its
-        // owner to run a command that starts the wrong program.
-        let fixCommand: string | null = runInstructionFor({
-          agentName: safeAgentName,
-          config: normalizeConfigMap(installation.config) || {},
-        });
         try {
           const botRow = await User.findOne({
             isBot: true,
             'botMetadata.agentName': agent.agentName,
             'botMetadata.instanceId': normalizedInstanceId,
-          }).select('agentRuntimeTokens.lastListenedAt botMetadata.machineId').lean() as {
+          }).select('agentRuntimeTokens.lastListenedAt').lean() as {
             agentRuntimeTokens?: { lastListenedAt?: Date | string | null }[];
-            botMetadata?: { machineId?: unknown };
           } | null;
           // `config` is `{ type: Map, of: Mixed }` (AgentRegistry.ts:235), so
           // on a LIVE Mongoose document `installation.config.runtime` is
@@ -1254,11 +1246,6 @@ const installAgent = async (req: any, res: any, addition?: { alreadyInPod: Recor
             String(userId),
           );
           state = derived.state;
-          if (derived.fixCommand) fixCommand = derived.fixCommand;
-          connectable = keyOnlyOnPage(
-            { instanceId: normalizedInstanceId, config: normalizeConfigMap(installation.config) || {} },
-            botRow?.botMetadata?.machineId,
-          );
         } catch (stateErr: unknown) {
           // Fail toward the invitation: wrongly telling a LIVE agent's room
           // that nothing is listening is a worse lie than the one being fixed.
@@ -1269,27 +1256,34 @@ const installAgent = async (req: any, res: any, addition?: { alreadyInPod: Recor
             error: (stateErr as Error).message,
           });
         }
+        const listens = normalizeConfigMap(installation.config)?.runtime?.listens !== false;
+        // F651: decided once, here, from the derived state. Nothing running
+        // the agent means no note in its voice (the installer's own surfaces
+        // carry the start command), and the listening hello is marked so the
+        // shell's "is connected now" line (F509) never stacks under it.
         const intro = composeInstallIntro({
           displayName,
           blurb: isMeaninglessBlurb ? '' : blurb,
           handle,
           state,
-          fixCommand,
-          connectable,
-          listens: normalizeConfigMap(installation.config)?.runtime?.listens !== false,
+          listens,
         });
-        await AgentMessageService.postMessage({
-          agentName: agent.agentName,
-          instanceId: normalizedInstanceId,
-          displayName,
-          podId,
-          content: intro,
-          metadata: { kind: 'install-intro' },
-          // Stored on the row: the agent's send-time read gate does not count
-          // its own intro as unseen (F140).
-          payload: { kind: 'install-intro' },
-          authorKind: 'kernel',
-        });
+        if (intro) {
+          const listeningForm = installIntroPlan({ state, listens }) === 'invite';
+          await AgentMessageService.postMessage({
+            agentName: agent.agentName,
+            instanceId: normalizedInstanceId,
+            displayName,
+            podId,
+            content: intro,
+            metadata: { kind: 'install-intro' },
+            // Stored on the row: the agent's send-time read gate does not count
+            // its own intro as unseen (F140). `introState` is the marker the
+            // first-listen rewrite (F576) and the shell read.
+            payload: { kind: 'install-intro', ...(listeningForm ? { introState: 'listening' } : {}) },
+            authorKind: 'kernel',
+          });
+        }
       }
     } catch (introError: unknown) {
       console.warn('Failed to post install intro:', (introError as Error).message);

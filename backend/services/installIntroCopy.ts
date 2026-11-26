@@ -2,12 +2,14 @@
  * The install intro's copy pieces that outlive the install request.
  *
  * `composeInstallIntro` (routes/registry/helpers.ts) writes the intro once, at
- * install. Its state-scoped arms (never-connected, gone-dark) end on the
- * snapshot pointer, "That was true as I posted it and it never updates". The
- * first time the agent listens, that intro is rewritten to the composer's own
- * listening arm (F576), so the agent's first turn reads nothing it has to
- * correct. Both writers use the same pieces from here, so the rewrite invents
- * no copy.
+ * install, and since F651 it writes only the listening hello or the
+ * no-listener note; an agent nothing runs gets no intro. Intros posted before
+ * F651 for never-connected and gone-dark seats remain in pods: they end on the
+ * snapshot pointer, "That was true as I posted it and it never updates", and
+ * nothing new composes them. The first time such an agent listens, the
+ * first-listen rewrite (F576) still settles those legacy rows to the listening
+ * arm, so its first turn reads nothing it has to correct. Both writers use the
+ * listening pieces from here, so the rewrite invents no copy.
  */
 
 /** The composer's listening arm, after the lead. */

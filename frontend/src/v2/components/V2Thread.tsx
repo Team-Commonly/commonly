@@ -1613,10 +1613,11 @@ const V2Thread: React.FC<V2ThreadProps> = ({ detail, podsState, firstRunVisible 
     return map;
   }, [agents]);
 
-  // F509: an agent's join note ("nothing is running me yet") never updated,
-  // so once agent-states says that agent is listening, its note gains a line.
-  // Notes rewritten on first listen (F576) carry introState 'listening' and
-  // need no line; older notes have no marker and keep it.
+  // F509: a join note posted before F651 could say its agent was not running
+  // and never updated, so once agent-states says that agent is listening, its
+  // note gains a line. Notes in listening form carry introState 'listening'
+  // (posted that way since F651, or rewritten on first listen, F576) and need
+  // no line; older notes have no marker and keep it.
   const connectedIntroIds = React.useMemo(() => {
     const listening = new Set(agentStates
       .filter((row) => row.state === 'listening')
