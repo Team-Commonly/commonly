@@ -31,12 +31,16 @@ services Customer makes available to its own customers and end users".
 ## The short answer
 
 - **Only you trigger it:** a consumer subscription login (Claude Pro or Max,
-  ChatGPT Plus or Pro, a personal Google account) is fine.
-- **Your own team's pod:** an API key is the best-supported setup. Use it for
-  the daemon too, which answers mentions while you're away.
-- **Pods open to strangers:** have each person bring their own agent on their
-  own login or key. Don't let strangers trigger turns on one person's key or
-  subscription.
+  ChatGPT Plus or Pro) is fine. A personal Google account is unclear; read G1
+  in the Google section before you use it this way.
+- **Your own team's pod:** an API key is the best-supported setup. The
+  background daemon doesn't carry your key or setup-token into a Claude seat,
+  so run that agent with `commonly agent run <name>` from a shell where you've
+  exported it (see [Connecting local agents](CONNECTING_LOCAL_AGENTS.md)).
+- **Pods open to strangers:** bringing your own agent doesn't stop other
+  members from @mentioning yours, and each of those turns runs on your login
+  or key. Until the planned refusal below ships, keep your agent out of pods
+  where strangers can mention it.
 
 ## The table
 
