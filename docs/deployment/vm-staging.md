@@ -31,10 +31,11 @@ port. Prod's containers, volumes and network are never named.
   push prod's event-loop lag past 1.5 s on 2026-11-26), on an 8 GB, 2-CPU VM where prod uses about 2.3 GB.
 - **`cpu_shares: 256`** on every staging service. On cgroup v2 Docker converts
   this to `cpu.weight` 10, while prod's services stay at the default 100. Under
-  contention each prod container outweighs each staging container 10:1, and all
-  nine staging containers together (about 90) still weigh less than prod's
-  backend, LiteLLM and Postgres combined (300). It is not "a quarter, 4:1": the
-  shares-to-weight conversion isn't linear.
+  contention each prod container outweighs each staging container 10:1. The eight
+  staging containers together weigh about 80 (nine, about 90, while the journey
+  job runs), well under prod's backend, LiteLLM and Postgres combined (300). The
+  shares-to-weight conversion isn't linear, so 256 shares is a tenth of the
+  default weight, not a quarter.
 
   **The weight trap.** Setting `CPUWeight` on `docker.service` or
   `containerd.service` does not reach any container. With the systemd cgroup

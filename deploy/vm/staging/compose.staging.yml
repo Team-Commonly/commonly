@@ -6,9 +6,9 @@
 #
 # What this file changes:
 # - Caps on every service. Staging can never starve prod: hard memory and CPU
-#   ceilings (CPU at most 1.2 in total, well under the 2-CPU VM), a quarter of
-#   prod's CPU weight under contention, and a high OOM score so the kernel kills
-#   staging first.
+#   ceilings (CPU at most 1.2 in total, well under the 2-CPU VM), a tenth of
+#   prod's CPU weight under contention (cpu_shares 256 is cpu.weight 10 on
+#   cgroup v2), and a high OOM score so the kernel kills staging first.
 # - Its own databases: MongoDB as a container here (prod's Mongo is Atlas), and
 #   the prod file's Postgres, in this project's own volume.
 # - An in-project email sink in place of SMTP2GO, so no staging mail leaves the VM.
