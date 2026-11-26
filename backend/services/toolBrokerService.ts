@@ -1559,6 +1559,15 @@ const lookupToolDefinition = (name: string): ToolDefinition | undefined => (
   (toolEnabled(name) ? TOOL_DEFINITIONS[name] : undefined) || findHostedToolDefinition(name)
 );
 
+/**
+ * The catalogue-owned name an agent is told untrusted content came from. GitHub's
+ * text is as outsider-writable as a catalogue vendor's: anyone can file an issue
+ * or comment on a public repository.
+ */
+const untrustedSourceTitleOf = (definition: ToolDefinition): string => (
+  definition.connectionType === 'hosted-mcp' ? definition.entryTitle : 'GitHub'
+);
+
 const safeReason = (error: unknown): string => {
   if (error instanceof RoomGrantError) return error.code;
   const code = (error as { code?: unknown })?.code;
@@ -1785,6 +1794,9 @@ export const callTool = async (input: BrokerCallInput): Promise<BrokerCallResult
   let credentialOwnerId: string | undefined;
   let providerRepo: string | undefined;
   let callerConfinement: CallerConfinement | undefined;
+  // True while the provider call runs: a failure thrown from it may carry the
+  // provider's own words (a JSON-RPC error message), so it is marked like a result.
+  let inProviderCall = false;
 
   try {
     grant = await loadGrantForAgent({ grantId: input.grantId, agentUserId: input.agentUserId });
@@ -2029,7 +2041,9 @@ export const callTool = async (input: BrokerCallInput): Promise<BrokerCallResult
       );
     }
 
+    inProviderCall = true;
     const result = await runDefinition(definition, parsedArgs, connection, input.agentUserId);
+    inProviderCall = false;
     const recorded = await recordExecutionResult(
       input,
       grant,
@@ -2037,13 +2051,7 @@ export const callTool = async (input: BrokerCallInput): Promise<BrokerCallResult
       startedAt,
       { credentialOwnerId, providerRepo, callerConfinement },
     );
-    return {
-      ...recorded,
-      result,
-      // GitHub's text is as outsider-writable as a catalogue vendor's: anyone can
-      // file an issue or comment on a public repository.
-      untrustedSourceTitle: definition.connectionType === 'hosted-mcp' ? definition.entryTitle : 'GitHub',
-    };
+    return { ...recorded, result, untrustedSourceTitle: untrustedSourceTitleOf(definition) };
   } catch (error) {
     const reason = safeReason(error);
     // Audit refusals and failures with the token-derived identity. If the
@@ -2066,6 +2074,9 @@ export const callTool = async (input: BrokerCallInput): Promise<BrokerCallResult
       Object.assign(error, { details: { ...(error.details || {}), ...(callId ? { callId } : {}) } });
     }
     stripVendorDiagnostics(error);
+    if (inProviderCall && definition && outcome === 'failed' && error && typeof error === 'object') {
+      Object.assign(error, { untrustedSourceTitle: untrustedSourceTitleOf(definition) });
+    }
     throw error;
   }
 };

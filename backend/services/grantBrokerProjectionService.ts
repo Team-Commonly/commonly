@@ -370,7 +370,9 @@ export const dispatchHostedBrokerTool = async (
         ? { untrustedSourceTitle: result.untrustedSourceTitle } : {}),
     };
   } catch (error) {
-    const e = error as { code?: string; message?: string; details?: Record<string, unknown> };
+    const e = error as {
+      code?: string; message?: string; details?: Record<string, unknown>; untrustedSourceTitle?: unknown;
+    };
     const callId = typeof e.details?.callId === 'string' ? e.details.callId : undefined;
     if (e.code === 'approval_required') {
       return {
@@ -391,6 +393,9 @@ export const dispatchHostedBrokerTool = async (
       },
       callId,
       outcome: executionErrorOutcome(error),
+      // A failure thrown from the provider call may carry the provider's words.
+      ...(typeof e.untrustedSourceTitle === 'string' && e.untrustedSourceTitle
+        ? { untrustedSourceTitle: e.untrustedSourceTitle } : {}),
     };
   }
 };
