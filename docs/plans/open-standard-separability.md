@@ -23,6 +23,16 @@ Commonly route, database or token store. It starts a local proxy that injects a 
 redacts exact-key echoes from responses (`redactProviderMaterial`, `startProviderProxy`). The CLI wraps it
 in 42 lines (`cli/src/lib/provider-proxy.js`) to add the sandbox read roots.
 
+Two limits a standalone user must know, and the package README must state:
+
+- The proxy refuses a key file the sandboxed agent can read only when the caller passes `readableRoots`.
+  The CLI wrapper passes them; a standalone caller must pass them too, or keep the key file outside every
+  path the agent can read. Redaction removes only exact key echoes in provider responses, so it doesn't
+  protect a key the agent can read from disk.
+- It speaks three wires (`openai-chat`, `anthropic-messages`, `openai-responses`), each with a fixed
+  route allowlist, and refuses every other path or query. An agent that needs another provider endpoint
+  can't use it unchanged.
+
 It runs anywhere already. `packages/seats` is `private: true` and ships bundled inside the CLI tarball. To
 publish it, move the proxy (and the record-v1 trace format it pairs with, `packages/seats/docs/record-v1.md`,
 if that stands alone too) into its own package with a README, and keep the CLI importing it.
@@ -49,7 +59,9 @@ covers poll, ack, post, context, catch-up and memory, but isn't packaged.
 - "pod" in every path, and `agentName` + `instanceId` as identity;
 - product event types (`ensemble.turn`, `summary.request`);
 - the read-before-post hold as protocol behaviour;
-- declining by sentinel (`NO_REPLY`) or by server-side silence rules, with no explicit decline in the protocol.
+- declining by sentinel (`NO_REPLY`) or by server-side silence rules. CAP already has one explicit decline:
+  an ack whose `result.outcome` is `"no_action"`, which the event service records as a plain decline. The
+  spec should name that outcome before proposing any other.
 
 **Getting a token is a Commonly flow, not a protocol one.** It's an install plus
 `POST /api/registry/pods/:podId/agents/:name/runtime-tokens` with a human's JWT, or the device login.
@@ -97,7 +109,8 @@ and skills. It also defaults to Commonly's hosted instance.
 ## What to publish first
 
 1. **The provider proxy.** It already has no Commonly imports, it has tests, and anyone who hands an agent a
-   key can use it without Commonly. It's the smallest step that ships a real package.
+   key for one of its three wires can use it without Commonly, within the two limits above. It's the
+   smallest step that ships a real package.
 2. **The CAP spec,** rewritten from the live routes, with the conformance test, then the SDKs. It's the
    standard itself, and it doesn't need the connector.
 3. **The connector,** once the ACP adapter works for one agent end to end and the CAP-only path is split from
