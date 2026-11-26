@@ -2,10 +2,11 @@ import { escapeHtml } from '../utils/escape';
 import crypto from 'crypto';
 import { isReservedEmailDomain } from '../utils/reservedEmailDomain';
 import { claimEmailSlot } from '../repositories/needsYouEmailQuotaRepository';
+import {
+  claimNeedsYouEmail, setNeedsYouEmailStatus, findNeedsYouClick, markNeedsYouClicked,
+} from '../repositories/needsYouEmailRepository';
 // eslint-disable-next-line global-require
 const User = require('../models/User');
-// eslint-disable-next-line global-require
-const NeedsYouEmail = require('../models/NeedsYouEmail');
 // eslint-disable-next-line global-require
 const { sendEmail } = require('./emailService');
 // eslint-disable-next-line global-require
@@ -41,23 +42,18 @@ export const sendNeedsYouEmail = async (item: EmailItem): Promise<void> => {
     if (!process.env.SMTP2GO_API_KEY || !process.env.SMTP2GO_FROM_EMAIL) return;
 
     const clickToken = crypto.randomBytes(24).toString('hex');
-    let claim;
-    try {
-      claim = await NeedsYouEmail.create({
-        attentionItemId: item._id, recipientUserId: item.recipientUserId,
-        clickToken, status: 'claimed',
-      });
-    } catch (error) {
-      if ((error as { code?: number }).code === 11000) return;
-      throw error;
-    }
-    claimedId = claim._id;
+    // Null when the item was already claimed: a retry never sends twice.
+    const claimId = await claimNeedsYouEmail({
+      attentionItemId: item._id, recipientUserId: item.recipientUserId, clickToken,
+    });
+    if (!claimId) return;
+    claimedId = claimId;
 
     const day = now.toISOString().slice(0, 10);
     // At most three per recipient per UTC day; racing workers never claim a fourth.
     const slot = await claimEmailSlot(item.recipientUserId, day, 3);
     if (!slot) {
-      await NeedsYouEmail.updateOne({ _id: claim._id }, { $set: { status: 'overflow' } });
+      await setNeedsYouEmailStatus(claimId, { status: 'overflow' });
       return;
     }
 
@@ -86,7 +82,7 @@ export const sendNeedsYouEmail = async (item: EmailItem): Promise<void> => {
       textBody: `${subject}\n\nOpen Commonly to see what needs your attention: ${clickUrl}\n\nTurn off needs-you emails: ${unsubscribeUrl}`,
       htmlBody: `<!doctype html><html><body style="margin:0;background:#eef0f4;font-family:Arial,sans-serif;color:#101828"><main style="max-width:560px;margin:0 auto;padding:32px 20px"><section style="background:#fff;border:1px solid #d0d5dd;border-radius:6px;padding:24px"><h1 style="font-size:24px;margin:0 0 16px">Your agent needs you</h1><p>Open Commonly to see what needs your attention.</p><p><a href="${escapeHtml(clickUrl)}" style="color:#1d3fd1">Open the item</a></p></section><p style="font-size:12px;color:#667085"><a href="${escapeHtml(unsubscribeUrl)}" style="color:#1d3fd1">Turn off needs-you emails</a></p></main></body></html>`,
     });
-    await NeedsYouEmail.updateOne({ _id: claim._id }, { $set: { status: 'sent', sentAt: now } });
+    await setNeedsYouEmailStatus(claimId, { status: 'sent', sentAt: now });
     if (providerAccepted(response)) {
       await emailReturns.noteSend({
         sendId, kind: 'needs-you', recipientUserId: item.recipientUserId, podId: item.podId, sentAt: now,
@@ -95,7 +91,7 @@ export const sendNeedsYouEmail = async (item: EmailItem): Promise<void> => {
   } catch (error) {
     if (claimedId) {
       try {
-        await NeedsYouEmail.updateOne({ _id: claimedId }, { $set: { status: 'failed' } });
+        await setNeedsYouEmailStatus(claimedId, { status: 'failed' });
       } catch (markError) {
         console.warn('[needs-you-email] failure stamp could not be saved:', (markError as Error).message);
       }
@@ -107,9 +103,9 @@ export const sendNeedsYouEmail = async (item: EmailItem): Promise<void> => {
 // F519: `returnTag` is the link's ?em=; only a well-formed tag is handed on.
 export const recordNeedsYouClick = async (token: string, returnTag?: unknown): Promise<string | null> => {
   if (!/^[a-f0-9]{48}$/.test(token)) return null;
-  const row = await NeedsYouEmail.findOne({ clickToken: token }).select('+clickToken attentionItemId');
+  const row = await findNeedsYouClick(token);
   if (!row) return null;
-  await NeedsYouEmail.updateOne({ _id: row._id, clickedAt: { $exists: false } }, { $set: { clickedAt: new Date() } });
+  await markNeedsYouClicked(row._id);
   const frontendUrl = primaryUrl(process.env.FRONTEND_URL, 'http://localhost:3000');
   const url = `${frontendUrl}/v2/activity?item=${encodeURIComponent(String(row.attentionItemId))}`;
   const tag = emailReturns.parseTag(returnTag);

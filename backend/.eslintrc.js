@@ -96,6 +96,9 @@ module.exports = {
           }, {
             group: ['**/models/DiscordSummaryHistory', '**/models/DiscordSummaryHistory.*'],
             message: 'Use repositories/discordSummaryHistoryRepository.',
+          }, {
+            group: ['**/models/NeedsYouEmail', '**/models/NeedsYouEmail.*'],
+            message: 'Use repositories/needsYouEmailRepository.',
           }],
         }],
         'no-restricted-modules': ['error', {
@@ -108,6 +111,7 @@ module.exports = {
             '**/models/AgentComputerTakeover', '**/models/AgentComputerTakeover.*',
             '**/models/BillingEvent', '**/models/BillingEvent.*',
             '**/models/DiscordSummaryHistory', '**/models/DiscordSummaryHistory.*',
+            '**/models/NeedsYouEmail', '**/models/NeedsYouEmail.*',
           ],
         }],
       },

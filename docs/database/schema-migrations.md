@@ -252,6 +252,39 @@ validation, defaults and timestamps) with the version and the marker; a copy
 that fails after the insert still resolves, with the marker left for `repair`.
 `pg` refuses before any write until step 4.
 
+## Ninth model: NeedsYouEmail
+
+`NeedsYouEmail` (one needs-you email per attention item) follows the same
+template. Its table is `needs_you_emails` (`0024`): the Mongo `_id` (hex) as
+`id`, `attention_item_id` (unique, as in Mongo), `recipient_user_id`
+(indexed), `click_token` (unique), `status`, nullable `sent_at`, `clicked_at`
+and `included_in_digest_at`, and nullable `created_at` and `updated_at`.
+`STORE_MODE_NEEDS_YOU_EMAIL` selects the store. Its callers,
+`services/needsYouEmailService.ts` and `services/digestEmailService.ts`,
+import `repositories/needsYouEmailRepository`; ESLint fences the model.
+`0024` must be applied after `0023`, never before it (the runner matches
+history by position).
+
+- `claimNeedsYouEmail` claims an item: the claim's id, or null when the item
+  was already claimed. `setNeedsYouEmailStatus` sets `overflow`, `sent` (with
+  `sentAt`) or `failed`.
+- `findNeedsYouClick(token)` and `markNeedsYouClicked(id)` serve the email
+  link; only the first click stamps `clickedAt`.
+- `listUndigestedOverflow(userId)` and `markIncludedInDigest(ids, at)` serve
+  the daily digest.
+
+In `mongo` each makes its pre-step-2 Mongoose call. In `dual` and `pg-read`
+the claim is the helper's `create` (a copy that fails after the insert still
+claims), status changes are `update`, the click stamp is `updateWhere` on
+`clickedAt: { $exists: false }`, and the digest mark is `updateManyWhere`.
+`clickedAt` and `includedInDigestAt` are declared presence columns, since
+their writers never store null, so `$exists` on them runs on Postgres too.
+`clickToken` is `select: false`: the helper names it in every read it copies
+from and drops it from what it returns, and each read here names its
+fields, so a Postgres read never returns the token where Mongo wouldn't.
+The click lookup reads Mongo in every mode but `pg`. `pg` mode refuses the
+writes until step 4, before any write.
+
 For the next aggregate, expose its domain operations, keep Mongoose queries
 inside its repository, and return plain values. Do not expose `find`, `save`,
 `populate`, or a generic query builder. Extract without changing storage first,
