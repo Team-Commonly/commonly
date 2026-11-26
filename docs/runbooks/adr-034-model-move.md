@@ -44,11 +44,37 @@ step 0 also counts documents with no `createdAt`, and that count must be 0.** In
 decides a first write by a missing `createdAt` and gives a new row its defaults, so a document without
 one would lose its `failures`, `stoppedAt` and outcome on its next stamp. Every document Mongoose wrote
 has `createdAt` (the model has had timestamps from the start), so only a raw insert could be missing it.
+The eleventh is `AgentProviderKey` (table `agent_provider_keys`, migration `0026`,
+`STORE_MODE_AGENT_PROVIDER_KEY`), the binding of an agent's own model-provider key to its owner and
+destination. Its reads use `findOneWhere` (the owner read) and, for a launch and for the orphaned-secret sweep,
+`findPageMongo` with `limit: 1`. Its set is the helper's `findOneAndUpdateWhere` twice: an `$inc` +
+`$setOnInsert` upsert returning the post-image, whose generation is the lock, then a `$set` filtered on that
+generation. Its remove is `findOneAndUpdateWhere` returning the pre-image, which names the secret to delete,
+and its launch stamp is `setWhere` on `_id`, `secretRef` and `generation`. `secretRef` is not key material:
+it is the id of the `ConnectorSecret` that holds the key encrypted, so the copy puts a reference in
+Postgres, never a key. No path is `select: false`. **A launch and the sweep read Mongo in `pg-read`:** the sweep
+revokes any secret no binding names, so a Postgres row that lags a set would delete a live key; a launch
+that read one would answer `set: false` for a key that is set, or a false 409 after a replace.
+**Before its step 1, step 0 also counts, and each must be 0:**
+- documents whose `secretRef` is set and is not a 24-hex ObjectId string
+  (`{ secretRef: { $ne: null, $not: /^[0-9a-f]{24}$/ } }`). Anything else could be material, and it would
+  be copied to a second store;
+- documents whose `generation` is not a number (`{ generation: { $not: { $type: 'number' } } }`). The
+  helper's `$inc` fails on one, as Mongo's does, so every set of that agent would fail;
+- `agentUserId` values on more than one document. Mongo's index is unique; check it exists
+  (`getIndexes()` shows `agentUserId_1` with `unique: true`), because `0026`'s unique index would refuse
+  the second copy.
 
-**Migration order: `0024` must not be applied before `0023`, nor `0025` before `0024`.** The migration
+Its watch must see a set, a remove and a launch, on staging by hand if no real user makes one in the hour:
+`mismatch`/`repair` lines for `model=AgentProviderKey`, any `post-image read failed model=AgentProviderKey`
+(a remove whose copy was left to repair), any `findOneAndUpdateWhere lost 5 races`, no rise in
+`provider_key_changed` 409s, and the installable reconciler's `orphanedSecrets` count no higher than
+before the switch.
+
+**Migration order: `0024` must not be applied before `0023`, `0025` before `0024`, nor `0026` before `0025`.** The migration
 runner matches history to the sorted file list by position, so an instance that has run `0024` refuses to
 boot once a `0023` file appears. `0023` (`DiscordSummaryHistory`) is on main, so `0024` follows it, and
-`0025` (`AgentTaskRowWakeState`) follows `0024`.
+`0025` (`AgentTaskRowWakeState`) follows `0024`, and `0026` (`AgentProviderKey`) follows `0025`.
 
 **A model whose callers delete does not enter dual yet.** A completed delete removes the document and its
 row, and the version with them, so a recreated id starts again at version 1 and a late copy, a pg-mode
@@ -56,9 +82,10 @@ compare-and-set or a backfill of the old document can land on it. The prerequisi
 in both stores that keep the version. Until then the helper's `remove` throws outside `mongo` unless the
 store was created with `allowDeletes: true`, which is unsafe for exactly that reason.
 None of `AgentPodReadCursor`, `AgentFirstContact`, `AgentDigestState`, `AgentTaskWakeState`,
-`NeedsYouEmailQuota`, `AgentComputerTakeover`, `BillingEvent`, `DiscordSummaryHistory`, `NeedsYouEmail`
-and `AgentTaskRowWakeState` has a delete path (and neither `NeedsYouEmail` nor `AgentTaskRowWakeState` has
-a TTL index).
+`NeedsYouEmailQuota`, `AgentComputerTakeover`, `BillingEvent`, `DiscordSummaryHistory`, `NeedsYouEmail`,
+`AgentTaskRowWakeState` and `AgentProviderKey` has a delete path (and neither `NeedsYouEmail` nor
+`AgentTaskRowWakeState` has a TTL index). `AgentProviderKey`'s remove clears the binding's fields and keeps
+the document; what it deletes is the `ConnectorSecret`, a model that has not moved.
 
 The mode variable is `STORE_MODE_` plus the model name in upper snake case:
 `AgentPodReadCursor` reads `STORE_MODE_AGENT_POD_READ_CURSOR`. Unset means `mongo`, which makes no
@@ -141,8 +168,8 @@ only a rollback from `pg` can produce. That case is out of scope until step 4 is
 
 ## Helper shapes for AgentProviderKey, HostedMcpDcrRegistration and WaitlistRequest
 
-These three models are not moved yet. The helper has the shapes their callers use, so each one can move
-in its own change:
+`AgentProviderKey` has moved (the eleventh model, above); the other two have not. The helper has the shapes
+their callers use, so each one can move in its own change:
 
 - **`findOneAndUpdateWhere(filter, update, { returnDocument, upsert })`** is Mongoose's `findOneAndUpdate`.
   `update` may use `$set`, `$inc` and, with `upsert`, `$setOnInsert`, all on top-level schema paths, and never
@@ -177,6 +204,19 @@ The other calls these models make are already covered by `findById`, `findOneWhe
 `update` and `setWhere`. The DCR script's sorted `find` can sort in JS or use `findPageMongo`.
 
 ## Before step 4 (held until after 2026-11-30)
+
+- **`AgentProviderKey` cannot run in `pg` yet.** `clearProviderKey`, `bumpProviderKeyGeneration`,
+  `commitProviderKey` and `markProviderKeyUsed` refuse in `pg` before any write; `findProviderKey` already
+  reads Postgres in `pg-read` and `pg`. Before this model runs in `pg`, each write needs a single-statement
+  Postgres form, bumping `pg_version` and tested on real Postgres with a racing set and remove:
+  - the set's start: `INSERT … ON CONFLICT (agent_user_id) DO UPDATE SET generation =
+    agent_provider_keys.generation + 1 WHERE agent_provider_keys.owner_user_id = $owner RETURNING *` (no row
+    back means another owner's binding, which must fail as Mongo's duplicate key does);
+  - the commit: `UPDATE … WHERE agent_user_id = $1 AND owner_user_id = $2 AND generation = $g RETURNING *`;
+  - the remove: the pre-image and the clear in one statement, through a CTE that reads the row `FOR UPDATE`;
+  - the stamp: `UPDATE … SET last_used_at = $now WHERE id = $1 AND secret_ref = $ref AND generation = $g`.
+
+  Until then, don't set it to `pg`: every set, remove and launch would fail.
 
 - **`AgentPodReadCursor` needs a single-statement upsert in pg mode.** The helper's pg-mode `upsert` is
   optimistic: it reads, merges, and writes at the version it read, retrying 5 times. More than 5 writers

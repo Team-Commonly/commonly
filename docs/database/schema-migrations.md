@@ -315,6 +315,38 @@ gets the schema defaults, `createdAt` and `__v`), and the compensation is
 marker is left for `repair`. `pg` refuses the writes until step 4, the record
 before any write.
 
+## Eleventh model: AgentProviderKey
+
+`AgentProviderKey` (the binding of an agent's own model-provider key to its
+owner and destination) follows the same template. Its table is
+`agent_provider_keys` (`0026`): the Mongo `_id` as `id`, `agent_user_id`
+(unique, as Mongo's index is), `owner_user_id` and `set_by` (User ObjectIds as
+hex text, read back as ObjectIds), `provider_id`, `base_url`, `generation`,
+`secret_ref`, nullable `set_at` and `last_used_at`, and nullable `created_at`
+and `updated_at`. `secret_ref` is the id of the `ConnectorSecret` that holds
+the key encrypted, never the key. `STORE_MODE_AGENT_PROVIDER_KEY` selects the
+store. Its callers, `services/agentProviderKey.ts` and the orphaned-secret
+sweep in `services/installable/installableReconciler.ts`, import
+`repositories/agentProviderKeyRepository`; ESLint fences the model. `0026`
+must be applied after `0025`, never before it.
+
+- `findProviderKey(owner)` reads the binding (owner GET, machine launch).
+- `findProviderKeyBySecretRef(ref)` tells the sweep whether a binding still
+  names a secret; it reads Mongo in every mode but `pg`.
+- `bumpProviderKeyGeneration` and `commitProviderKey` are a set's two steps:
+  the `$inc` upsert whose generation is the lock, then the `$set` only at that
+  generation.
+- `clearProviderKey` is the remove, returning the pre-image that names the
+  secret to delete.
+- `markProviderKeyUsed(row, at)` stamps a launch only while the binding still
+  has the read's secret and generation.
+
+In `mongo` each makes its pre-step-2 Mongoose call. In `dual` and `pg-read`
+the owner read is `findOneWhere`, the sweep's is `findPageMongo`, the set,
+commit and remove are `findOneAndUpdateWhere` (decided on Mongo, the whole
+document copied, so an `$inc` lands in Postgres as Mongo computed it), and the
+stamp is `setWhere`. `pg` refuses the writes until step 4, before any write.
+
 For the next aggregate, expose its domain operations, keep Mongoose queries
 inside its repository, and return plain values. Do not expose `find`, `save`,
 `populate`, or a generic query builder. Extract without changing storage first,

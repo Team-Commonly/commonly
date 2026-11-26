@@ -86,6 +86,21 @@ it('another installer cannot read/set/remove the key and removal prevents later 
   const res = response(); await launchProviderKey(launch(), res);
   expect(res.body).toEqual({ set: false });
 });
+it('removing with no key set answers as before: 200 unset metadata, no write, no secret delete', async () => {
+  const before = await manage('GET');
+  const deleteOne = jest.spyOn(Secret, 'deleteOne');
+  try {
+    const res = await manage('DELETE');
+    expect(res.statusCode).toBe(200);
+    expect(res.body).toEqual(before.body);
+    expect(res.body.set).toBe(false);
+    expect(deleteOne).not.toHaveBeenCalled();
+  } finally {
+    deleteOne.mockRestore();
+  }
+  expect(await Key.countDocuments()).toBe(0);
+});
+
 it('a late set cannot undo a remove followed by a newer set', async () => {
   const store = require('../../services/connectorSecrets');
   const original = store.put;
