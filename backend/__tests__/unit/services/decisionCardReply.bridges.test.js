@@ -178,23 +178,34 @@ describe.each(['telegram', 'slack'])('%s decision reply', (provider) => {
 
     await receive('Accept because the plan is fine');
     expect(messages).toHaveLength(0);
+    expect(enqueue).not.toHaveBeenCalled();
     await assertOpen();
     expect(confirmation()).toContain("isn't one of the choices (Accept, Refuse)");
   });
 
   test('a withdrawn (closed) card is answered as withdrawn and the verb is not called', async () => {
     await Decision.updateOne({ _id: decision._id }, { $set: { status: 'closed', closedAt: new Date() } });
+    const decisionBefore = await Decision.findById(decision._id).lean();
+    const ledgerBefore = await ledger();
+    const [receiptBefore] = await receipts();
     await receive('1');
     expect(choose).not.toHaveBeenCalled();
     expect(messages).toHaveLength(0);
+    expect(enqueue).not.toHaveBeenCalled();
     expect(confirmation()).toContain('withdrawn');
-    expect((await receipts())[0].closedAt).toEqual(expect.any(Date));
+    // The card and the verdict ledger are untouched; only the receipt closes.
+    expect(await Decision.findById(decision._id).lean()).toEqual(decisionBefore);
+    expect(await ledger()).toEqual(ledgerBefore);
+    const [receiptAfter] = await receipts();
+    expect(receiptAfter.closedAt).toEqual(expect.any(Date));
+    expect({ ...receiptAfter, closedAt: undefined }).toEqual({ ...receiptBefore, closedAt: undefined });
   });
 
   test('a stage mismatch from the verb records nothing and says the card moved on', async () => {
     choose.mockResolvedValueOnce({ status: 409, body: { code: 'subject_stage_mismatch' } });
     await receive();
     expect(messages).toHaveLength(0);
+    expect(enqueue).not.toHaveBeenCalled();
     await assertOpen();
     expect(confirmation()).toContain('moved on');
   });

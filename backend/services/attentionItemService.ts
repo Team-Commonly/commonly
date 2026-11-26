@@ -584,6 +584,12 @@ export const recordDecision = async (decision: any, options: RecordOptions = {})
       threadRootId: String(decision.threadRootId || decision.messageId || ''), options: choiceOptions,
       emailRecipientId, suppressEmail: options.suppressEmail,
     });
+    // A card closed or ruled while the rows above were written: its own
+    // resolve may have run before they existed, so resolve them again now.
+    // eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
+    const DecisionRequest = require('../models/DecisionRequest');
+    const current = await DecisionRequest.findById(String(id)).select('status').lean();
+    if (current && current.status !== 'pending') await resolve('decision_request', id);
   } catch (error) {
     console.warn('[attention] decision materialization failed:', (error as Error).message);
   }

@@ -26,6 +26,8 @@ jest.mock('../../../models/pg/Message', () => ({
   hasReplyByUserAfter: mockPgMessageHasReplyByUserAfter,
 }));
 
+const mockDecisionFindById = jest.fn();
+jest.mock('../../../models/DecisionRequest', () => ({ findById: mockDecisionFindById }));
 const mockLiveClaims = jest.fn();
 jest.mock('../../../services/messageClaimService', () => ({ liveClaimsHeldBy: (...args) => mockLiveClaims(...args) }));
 
@@ -36,6 +38,7 @@ describe('attentionItemService', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     mockInstallationFindOne.mockReturnValue(chain(null));
+    mockDecisionFindById.mockReturnValue(chain(null));
     mockUpdateOne.mockResolvedValue({ modifiedCount: 1 });
     mockUpdateMany.mockResolvedValue({ modifiedCount: 1 });
   });
@@ -181,42 +184,81 @@ describe('attentionItemService', () => {
   });
 
   // ADR-037 §2: deciderFallback 'none' and the closed status.
+  const POD = '6a1f000000000000000000a1';
+  const SAM = '6a1f000000000000000000b1';
+  const LEE = '6a1f000000000000000000b2';
+  const GONE = '6a1f000000000000000000b3';
+  const SCOUT = '6a1f000000000000000000c1';
+  const DECISION = '6a1f000000000000000000d1';
   it('with deciderFallback none and its decider gone, queues the card for nobody', async () => {
-    mockPodFindById.mockReturnValue(chain({ _id: 'pod-1', name: 'Ship room', members: ['sam', 'lee'] }));
+    mockPodFindById.mockReturnValue(chain({ _id: POD, name: 'Ship room', members: [SAM, LEE] }));
     mockUserFind.mockReturnValue(chain([
-      { _id: 'sam', username: 'Sam', isBot: false },
-      { _id: 'lee', username: 'Lee', isBot: false },
+      { _id: SAM, username: 'Sam', isBot: false },
+      { _id: LEE, username: 'Lee', isBot: false },
     ]));
     mockUserFindById.mockReturnValue(chain(null));
     mockUpdateOne.mockResolvedValue({ upsertedId: 'attention-1' });
 
     await AttentionItemService.recordDecision({
-      _id: 'decision-1', podId: 'pod-1', agentUserId: 'scout', title: 'Review the plan',
+      _id: DECISION, podId: POD, agentUserId: SCOUT, title: 'Review the plan',
       options: [{ label: 'Accept' }, { label: 'Refuse' }],
-      deciders: [{ userId: 'gone', username: 'Gone' }], deciderFallback: 'none',
+      deciders: [{ userId: GONE, username: 'Gone' }], deciderFallback: 'none',
     });
     expect(mockUpdateOne).not.toHaveBeenCalled();
     expect(mockSendNeedsYouEmail).not.toHaveBeenCalled();
 
     // The same card with its decider present still queues for that decider alone.
     await AttentionItemService.recordDecision({
-      _id: 'decision-1', podId: 'pod-1', agentUserId: 'scout', title: 'Review the plan',
+      _id: DECISION, podId: POD, agentUserId: SCOUT, title: 'Review the plan',
       options: [{ label: 'Accept' }, { label: 'Refuse' }],
-      deciders: [{ userId: 'lee', username: 'Lee' }], deciderFallback: 'none',
+      deciders: [{ userId: LEE, username: 'Lee' }], deciderFallback: 'none',
     });
     expect(mockUpdateOne).toHaveBeenCalledTimes(1);
-    expect(JSON.stringify(mockUpdateOne.mock.calls[0])).toContain('lee');
+    expect(JSON.stringify(mockUpdateOne.mock.calls[0])).toContain(LEE);
+    expect(JSON.stringify(mockUpdateOne.mock.calls[0])).not.toContain(SAM);
   });
 
   it('never queues a closed card', async () => {
-    mockPodFindById.mockReturnValue(chain({ _id: 'pod-1', name: 'Ship room', members: ['sam'] }));
-    mockUserFind.mockReturnValue(chain([{ _id: 'sam', username: 'Sam', isBot: false }]));
+    mockPodFindById.mockReturnValue(chain({ _id: POD, name: 'Ship room', members: [SAM] }));
+    mockUserFind.mockReturnValue(chain([{ _id: SAM, username: 'Sam', isBot: false }]));
     mockUserFindById.mockReturnValue(chain(null));
     await AttentionItemService.recordDecision({
-      _id: 'decision-1', podId: 'pod-1', agentUserId: 'scout', title: 'Review the plan', status: 'closed',
+      _id: DECISION, podId: POD, agentUserId: SCOUT, title: 'Review the plan', status: 'closed',
       options: [{ label: 'Accept' }, { label: 'Refuse' }],
     });
     expect(mockUpdateOne).not.toHaveBeenCalled();
+  });
+
+  it('resolves the rows it just wrote when the card closed while they were being written', async () => {
+    mockPodFindById.mockReturnValue(chain({ _id: POD, name: 'Ship room', members: [SAM] }));
+    mockUserFind.mockReturnValue(chain([{ _id: SAM, username: 'Sam', isBot: false }]));
+    mockUserFindById.mockReturnValue(chain(null));
+    mockUpdateOne.mockResolvedValue({ upsertedId: 'attention-1' });
+    mockDecisionFindById.mockReturnValueOnce(chain({ _id: DECISION, status: 'closed' }));
+    await AttentionItemService.recordDecision({
+      _id: DECISION, podId: POD, agentUserId: SCOUT, title: 'Review the plan', status: 'pending',
+      options: [{ label: 'Accept' }, { label: 'Refuse' }],
+    });
+    expect(mockUpdateOne).toHaveBeenCalledTimes(1);
+    expect(mockUpdateMany).toHaveBeenCalledWith(
+      expect.objectContaining({ 'source.type': 'decision_request', status: 'open' }),
+      expect.objectContaining({ $set: expect.objectContaining({ status: 'resolved' }) }),
+    );
+  });
+
+  it('leaves the rows open when the card is still pending after they were written', async () => {
+    mockPodFindById.mockReturnValue(chain({ _id: POD, name: 'Ship room', members: [SAM] }));
+    mockUserFind.mockReturnValue(chain([{ _id: SAM, username: 'Sam', isBot: false }]));
+    mockUserFindById.mockReturnValue(chain(null));
+    mockUpdateOne.mockResolvedValue({ upsertedId: 'attention-1' });
+    mockDecisionFindById.mockReturnValueOnce(chain({ _id: DECISION, status: 'pending' }));
+    await AttentionItemService.recordDecision({
+      _id: DECISION, podId: POD, agentUserId: SCOUT, title: 'Review the plan', status: 'pending',
+      options: [{ label: 'Accept' }, { label: 'Refuse' }],
+    });
+    expect(mockUpdateOne).toHaveBeenCalledTimes(1);
+    expect(mockDecisionFindById).toHaveBeenCalledWith(DECISION);
+    expect(mockUpdateMany).not.toHaveBeenCalled();
   });
 
   it('emails the installer when they are a decider, else the first named decider', async () => {

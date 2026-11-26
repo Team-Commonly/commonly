@@ -742,6 +742,63 @@ describe('V2ActivityPage', () => {
     expect(await screen.findByText('You ruled: Accept. Clock pin is right')).toBeInTheDocument();
   });
 
+  test('a ruled card keeps its reason when history is read back, after a ruling and after a remount', async () => {
+    const ruledItem = {
+      ...handBackQueue.items[0], ruling: { value: 'Refuse', by: 'bob', byName: 'Bob', reason: 'Fix the race, not the clock' },
+    };
+    let history: unknown[] = [];
+    mockGet.mockImplementation((url: string) => {
+      if (url === '/api/activity/decision-queue') {
+        return Promise.resolve({ data: history.length ? { items: [], count: 0, composePodId: 'pod-1' } : handBackQueue });
+      }
+      if (url === '/api/activity/decision-history') return Promise.resolve({ data: { items: history, count: history.length } });
+      return Promise.resolve({ data: recap });
+    });
+    mockPost.mockImplementation(async () => {
+      history = [ruledItem];
+      return { data: { ok: true, decision: { ruling: ruledItem.ruling } } };
+    });
+    const { unmount } = renderPage();
+    fireEvent.change(await screen.findByLabelText('Your reason (required)'), { target: { value: 'Fix the race, not the clock' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Rule: Refuse' }));
+    await waitFor(() => expect(mockGet.mock.calls.filter(([url]) => url === '/api/activity/decision-history').length)
+      .toBeGreaterThan(1));
+    expect(await screen.findByText('Bob ruled: Refuse. Fix the race, not the clock')).toBeInTheDocument();
+    unmount();
+    renderPage();
+    expect(await screen.findByText('Bob ruled: Refuse. Fix the race, not the clock')).toBeInTheDocument();
+  });
+
+  test('a ruling that lost to another tab shows the standing reason', async () => {
+    serveHandBackQueue();
+    mockPost.mockRejectedValue({
+      response: { status: 409, data: { decision: { ruling: { value: 'Refuse', byName: 'Bob', reason: 'Fix the race, not the clock' } } } },
+    });
+    renderPage();
+    fireEvent.change(await screen.findByLabelText('Your reason (required)'), { target: { value: 'looks fine' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Rule: Accept' }));
+    expect(await screen.findByText('Bob ruled: Refuse. Fix the race, not the clock')).toBeInTheDocument();
+  });
+
+  test('reordered allowed values keep each choice paired with its own description', async () => {
+    const reordered = {
+      ...handBackQueue,
+      items: [{
+        ...handBackQueue.items[0],
+        options: [{ label: 'Accept', description: 'Go ahead with the plan' }, { label: 'Refuse', description: 'Stop and rethink' }],
+        allowedValues: [{ value: 'Refuse' }, { value: 'Accept' }],
+      }],
+    };
+    mockGet.mockImplementation((url: string) => {
+      if (url === '/api/activity/decision-queue') return Promise.resolve({ data: reordered });
+      if (url === '/api/activity/decision-history') return Promise.resolve({ data: { items: [] } });
+      return Promise.resolve({ data: recap });
+    });
+    renderPage();
+    expect(await screen.findByRole('button', { name: 'Rule: Refuse' })).toHaveAccessibleDescription('Stop and rethink');
+    expect(screen.getByRole('button', { name: 'Rule: Accept' })).toHaveAccessibleDescription('Go ahead with the plan');
+  });
+
   test.each([
     ['decision_closed', 409, 'This card was withdrawn. Nothing to rule.'],
     ['subject_stage_mismatch', 409, 'This card has moved on. Reload to see where it stands.'],

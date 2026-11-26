@@ -157,6 +157,9 @@ describe('decision-card extensions (ADR-037 §2)', () => {
     expect(result).toMatchObject({ status: 409, body: { code: 'subject_stage_mismatch' } });
     expect(checkStage).toHaveBeenCalled();
     expect(mockPGMessage.create).not.toHaveBeenCalled();
+    // Refused before the lock: no claim was taken, so none is left behind.
+    expect(mockDecision.findOneAndUpdate).not.toHaveBeenCalled();
+    expect(mockDecision.updateOne).not.toHaveBeenCalled();
   });
 
   test('a check that throws counts as a mismatch, and one that flips under the lock releases it', async () => {
@@ -166,6 +169,8 @@ describe('decision-card extensions (ADR-037 §2)', () => {
     jest.spyOn(console, 'warn').mockImplementation(() => {});
     expect((await chooseDecision({ decisionId: 'decision-1', callerUserId: 'lee', value: 'Accept', reason: 'ok' })).body.code)
       .toBe('subject_stage_mismatch');
+    expect(mockDecision.findOneAndUpdate).not.toHaveBeenCalled();
+    expect(mockDecision.updateOne).not.toHaveBeenCalled();
 
     const flips = jest.fn().mockResolvedValueOnce(true).mockResolvedValueOnce(false);
     registerDecisionSubject('test_subject', { checkStage: flips });
@@ -173,8 +178,12 @@ describe('decision-card extensions (ADR-037 §2)', () => {
     const result = await chooseDecision({ decisionId: 'decision-1', callerUserId: 'lee', value: 'Accept', reason: 'ok' });
     expect(result.body.code).toBe('subject_stage_mismatch');
     expect(mockPGMessage.create).not.toHaveBeenCalled();
+    // The release names the exact token this ruling claimed, so it can never
+    // clear a lock a later ruling took after this one expired.
+    const claimedToken = mockDecision.findOneAndUpdate.mock.calls[0][1].$set.rulingLock.token;
+    expect(claimedToken).toEqual(expect.any(String));
     expect(mockDecision.updateOne).toHaveBeenCalledWith(
-      expect.objectContaining({ _id: 'decision-1', status: 'pending' }),
+      { _id: 'decision-1', status: 'pending', 'rulingLock.token': claimedToken },
       { $unset: { rulingLock: 1 } },
     );
   });

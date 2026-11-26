@@ -497,4 +497,40 @@ describe('V2Thread decision cards', () => {
     expect(screen.getByLabelText('Your reason (required)')).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Other…' })).not.toBeInTheDocument();
   });
+  test('hand-back records are read in batches of 100, so a card past the first 100 still shows its record', async () => {
+    const card = (index: number, messageId: string) => ({
+      id: `decision-${index}`, kind: 'decision', podId: 'pod-1', messageId,
+      actorName: 'claude', title: `Plan ${index}`,
+      options: [{ label: 'Accept' }, { label: 'Refuse' }],
+      allowedValues: [{ value: 'Accept', reasonRequired: true }, { value: 'Refuse', reasonRequired: true }],
+      subject: { type: 'hand_back', id: `hb-${index}`, stage: 'plan' },
+    });
+    // 100 other open hand-back cards come first; the one in this thread is the 101st.
+    const items = [...Array.from({ length: 100 }, (_, index) => card(index, String(5000 + index))), card(100, '42')];
+    const batches: string[][] = [];
+    mockGet.mockImplementation((url, config) => {
+      if (url === '/api/activity/decision-queue') return Promise.resolve({ data: { items } });
+      if (url === '/api/activity/decision-history') return Promise.resolve({ data: { items: [] } });
+      if (url === '/api/pods/pod-1/hand-backs') {
+        const ids = String(config?.params?.ids || '').split(',').filter(Boolean);
+        batches.push(ids);
+        return Promise.resolve({ data: {
+          handBacks: ids.map((id) => ({
+            id, status: 'plan_sent', asked: { text: `Asked for ${id}`, provenance: 'task', requesterUserId: `person-${id}` },
+            plan: { text: `Plan for ${id}` },
+          })),
+          people: Object.fromEntries(ids.map((id) => [`person-${id}`, `name-${id}`])),
+        } });
+      }
+      return Promise.resolve({ data: {} });
+    });
+    render(
+      <AuthContext.Provider value={auth}>
+        <MemoryRouter><V2Thread detail={detail} /></MemoryRouter>
+      </AuthContext.Provider>,
+    );
+    expect(await screen.findByText('Requester: name-hb-100, who created the task.')).toBeInTheDocument();
+    expect(screen.getByText('Plan for hb-100')).toBeInTheDocument();
+    expect(batches.slice(0, 2).map((ids) => ids.length)).toEqual([100, 1]);
+  });
 });

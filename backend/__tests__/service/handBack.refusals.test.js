@@ -193,10 +193,15 @@ describe('hand-back people rules (ADR-037 §3, §4)', () => {
     }
     // Control: the same message delivered as a wake in this pod is accepted as the source.
     await delivered(pod._id, '614', bob._id);
+    jest.spyOn(require('../../services/decisionRequestService'), 'requestDecision')
+      .mockResolvedValue({ decisionId: '0123456789abcdef01234567', messageId: '1' });
     const ok = await sendPlan(claude.raw, pod._id, {
       reviewerUserId: String(carol._id), asked: { text: 'Fix it', sourceMessageId: '614' },
     });
-    expect(ok.body.code).not.toBe('source_not_delivered');
+    expect(ok.status).toBe(201);
+    expect((await repo.findById(ok.body.handBack.id)).asked).toMatchObject({
+      provenance: 'message', requesterUserId: String(bob._id), sourceMessageId: '614',
+    });
   });
 
   // Review note 5: a task the author agent made itself does not name who asked.
@@ -305,18 +310,51 @@ describe('hand-back people rules (ADR-037 §3, §4)', () => {
       asked: { text: 'Fix it', requesterUserId: String(alice._id), provenance: 'owner' },
       reviewerUserId: String(bob._id), plan: { text: 'Plan' }, next: null, supersedes: null, now: new Date(),
     });
+    const initial = await repo.findById(id);
     const asBob = await request(app).post(`/api/hand-backs/${id}/withdraw`).set('Authorization', `Bearer ${tokenFor(bob)}`);
     expect(asBob.status).toBe(403);
+    expect(await repo.findById(id)).toEqual(initial);
     const asCodex = await request(app).post(`/api/hand-backs/${id}/withdraw`).set('Authorization', `Bearer ${codex.raw}`);
     expect(asCodex.status).toBe(403);
+    expect(await repo.findById(id)).toEqual(initial);
     const asAlice = await request(app).post(`/api/hand-backs/${id}/withdraw`)
       .set('Authorization', `Bearer ${tokenFor(alice)}`).send({ reason: 'Wrong approach' });
     expect(asAlice.status).toBe(200);
     expect(asAlice.body).toEqual({ handBack: { id, status: 'withdrawn' } });
+    const withdrawn = await repo.findById(id);
     const again = await request(app).post(`/api/hand-backs/${id}/withdraw`).set('Authorization', `Bearer ${claude.raw}`);
     expect(again.status).toBe(409);
     expect(again.body.code).toBe('stale_state');
+    expect(await repo.findById(id)).toEqual(withdrawn);
     const stored = await repo.findById(id);
     expect(stored).toMatchObject({ status: 'withdrawn', withdrawnBy: { kind: 'owner', userId: String(alice._id), reason: 'Wrong approach' } });
+  });
+  test('an uppercase reviewer id is the same reviewer: accepted and stored in canonical form', async () => {
+    const { carol, claude, pod } = await teamPod();
+    const spy = jest.spyOn(require('../../services/decisionRequestService'), 'requestDecision')
+      .mockResolvedValue({ decisionId: '0123456789abcdef01234567', messageId: '1' });
+    const res = await sendPlan(claude.raw, pod._id, { reviewerUserId: String(carol._id).toUpperCase() });
+    expect(res.status).toBe(201);
+    expect((await repo.findById(res.body.handBack.id)).reviewerUserId).toBe(String(carol._id));
+    expect(spy.mock.calls[0][0].deciderUserIds).toEqual([String(carol._id)]);
+  });
+
+  test('next.instanceId is normalised the way the installer stores it', async () => {
+    const { alice, carol, claude, pod } = await teamPod();
+    seq += 1;
+    await User.create({
+      username: `bot${seq}reviewer`, email: `bot${seq}reviewer@agents.example.com`, password: 'unused', isBot: true,
+      botMetadata: { agentName: 'reviewer', instanceId: 'team-a' },
+    });
+    await AgentInstallation.create({
+      agentName: 'reviewer', instanceId: 'team-a', podId: pod._id, installedBy: alice._id, version: '1.0.0', status: 'active',
+    });
+    jest.spyOn(require('../../services/decisionRequestService'), 'requestDecision')
+      .mockResolvedValue({ decisionId: '0123456789abcdef01234567', messageId: '1' });
+    const res = await sendPlan(claude.raw, pod._id, {
+      reviewerUserId: String(carol._id), next: { agentName: 'reviewer', instanceId: 'Team_A' },
+    });
+    expect(res.status).toBe(201);
+    expect((await repo.findById(res.body.handBack.id)).next).toMatchObject({ agentName: 'reviewer', instanceId: 'team-a' });
   });
 });

@@ -1085,6 +1085,12 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     expect(ruleBody(v2, '.v2-decision-card__options')).toContain('gap: 12px');
     expect(ruleBody(v2, '.v2-decision-card__option')).toContain('display: grid');
     expect(ruleBody(v2, '.v2-decision-card__option')).toContain('gap: 4px');
+    // Hand-back cards (ADR-037): long record text wraps inside the card, and
+    // the reason editor can shrink with it.
+    const handBack = ruleBody(v2, '.v2-decision-card__handback');
+    expect(handBack).toContain('min-width: 0');
+    expect(handBack).toContain('overflow-wrap: anywhere');
+    expect(ruleBody(v2, '.v2-decision-card__reason textarea')).toContain('min-width: 0');
     expect(thread).toContain("loadDecisionPages<T>(");
     expect(thread).toContain("'/api/activity/decision-queue'");
     expect(thread).toContain("'/api/activity/decision-history'");

@@ -271,6 +271,16 @@ const provenanceLine = async (asked: HandBackRecord['asked'], taskId: string | n
   return `Requester: the agent's owner (${handle}), no source message.`;
 };
 
+// The card's context limit (DecisionRequest). The requester line goes first,
+// so a long ask is what gets shortened, never who asked; the record keeps the
+// whole ask.
+const CONTEXT_MAX = 2000;
+const planContext = async (asked: HandBackRecord['asked'], taskId: string | null): Promise<string> => {
+  const provenance = await provenanceLine(asked, taskId);
+  const prefix = `${provenance}\n\nAsked: `;
+  return `${prefix}${bound(asked.text, Math.max(CONTEXT_MAX - prefix.length, 1))}`;
+};
+
 const OPTIONS = [
   { label: 'Accept', description: 'Go ahead. Say why.' },
   { label: 'Refuse', description: 'Stop here. Say why.' },
@@ -285,8 +295,10 @@ export const sendPlan = async (input: {
   const { author, podId } = input;
   const body = plainObject(input.body || {}, 'body');
   closedKeys(body, ['reviewerUserId', 'asked', 'plan', 'threadRootId', 'next', 'supersedes'], 'plan');
-  const reviewerUserId = text(body.reviewerUserId, 'reviewerUserId', 24);
-  if (!OBJECT_ID.test(reviewerUserId)) fail('reviewerUserId must be a user id', 400, 'invalid_hand_back');
+  const reviewerRaw = text(body.reviewerUserId, 'reviewerUserId', 24);
+  if (!OBJECT_ID.test(reviewerRaw)) fail('reviewerUserId must be a user id', 400, 'invalid_hand_back');
+  // Stored ids are lowercase hex; compare, store and post in that form.
+  const reviewerUserId = reviewerRaw.toLowerCase();
   const askedRaw = plainObject(body.asked, 'asked');
   closedKeys(askedRaw, ['text', 'sourceMessageId', 'taskId'], 'asked');
   const askedText = text(askedRaw.text, 'asked.text', CAPS.askedText);
@@ -299,9 +311,12 @@ export const sendPlan = async (input: {
   if (body.next !== undefined && body.next !== null) {
     const raw = plainObject(body.next, 'next');
     closedKeys(raw, ['agentName', 'instanceId'], 'next');
+    // The same instance-id form the installer stores (registry helpers).
+    // eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
+    const { normalizeInstanceId } = require('../routes/registry/helpers');
     nextInput = {
       agentName: text(raw.agentName, 'next.agentName', 120).toLowerCase(),
-      instanceId: (text(raw.instanceId, 'next.instanceId', 120, { required: false }) || 'default').toLowerCase(),
+      instanceId: normalizeInstanceId(text(raw.instanceId, 'next.instanceId', 120, { required: false }) || 'default'),
     };
   }
 
@@ -368,7 +383,7 @@ export const sendPlan = async (input: {
       decisionClass: 'implementation',
       title: bound(`Plan for review: ${askedText.split('\n')[0]}`, 160),
       question: bound(planText, 1000),
-      context: bound([`Asked: ${askedText}`, await provenanceLine(asked, taskId || null)].join('\n\n'), 2000),
+      context: await planContext(asked, taskId || null),
       options: OPTIONS,
       ...(threadRootId ? { threadRootId } : {}),
       deciderUserIds: [reviewerUserId],
@@ -433,16 +448,19 @@ const postedCardResult = async (
   const decisionId = String(card.decisionId);
   const messageId = String(card.messageId);
   if (record.status === 'withdrawn') {
+    let cardClosed = false;
     try {
       // eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
-      await require('./decisionRequestService').closeDecision(decisionId);
+      cardClosed = (await require('./decisionRequestService').closeDecision(decisionId)) === true;
     } catch (error) {
       console.warn('[hand-back] closing a card posted after a withdraw failed; the sweep retries:', (error as Error).message);
     }
     return {
       handBack: {
-        id: record.id, status: 'withdrawn', decisionId, messageId, withdrawnBy: record.withdrawnBy,
-        note: 'The record was withdrawn while its card was posted; the card has been closed.',
+        id: record.id, status: 'withdrawn', decisionId, messageId, withdrawnBy: record.withdrawnBy, cardClosed,
+        note: cardClosed
+          ? 'The record was withdrawn while its card was posted; the card has been closed.'
+          : 'The record was withdrawn while its card was posted; the card could not be closed yet and will be closed shortly.',
       },
     };
   }
@@ -535,22 +553,29 @@ const enqueueReceived = async (record: HandBackRecord): Promise<void> => {
 };
 
 /**
- * Tell the next agent, then stamp the record (WHERE received_enqueued_at IS
- * NULL). Only the ruling's CAS winner and the sweep call this; the sweep also
- * looks for an event already queued, so a crash between the two steps does
- * not queue a second one.
+ * Claim the record (stamp WHERE received_enqueued_at IS NULL), then tell the
+ * next agent. Only the claim's winner enqueues, so two overlapping sweeps, or
+ * a sweep and the ruling's writer, never queue it twice. A failed enqueue
+ * gives the claim back for the sweep to retry. The sweep also looks for an
+ * event already queued (by a writer that stamped after enqueueing). Known
+ * residual: a crash between the claim and the enqueue loses the event.
  */
 const deliverReceived = async (record: HandBackRecord, opts: { checkQueued?: boolean } = {}): Promise<boolean> => {
   if (!record.next || record.receivedEnqueuedAt) return false;
+  const claimedAt = new Date();
+  if (!(await repo.markReceivedEnqueued(record.id, claimedAt))) return false;
   if (opts.checkQueued) {
     const queued = await AgentEvent.exists({ type: 'handback.received', 'payload.handBackId': record.id });
-    if (queued) {
-      await repo.markReceivedEnqueued(record.id, new Date());
-      return false;
-    }
+    if (queued) return false;
   }
-  await enqueueReceived(record);
-  await repo.markReceivedEnqueued(record.id, new Date());
+  try {
+    await enqueueReceived(record);
+  } catch (error) {
+    await repo.clearReceivedEnqueued(record.id, claimedAt).catch((clearError: Error) => {
+      console.warn('[hand-back] giving back the handback.received claim failed:', clearError.message);
+    });
+    throw error;
+  }
   return true;
 };
 
@@ -911,11 +936,18 @@ export const sweepHandBacks = async (now: Date = new Date()): Promise<{
   let closed = 0;
   // eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
   const { closeDecision } = require('./decisionRequestService');
+  // eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
+  const { resolve: resolveAttention } = require('./attentionItemService');
   for (const record of records) {
     try {
       if (record.status === 'withdrawn') {
         for (const cardId of [record.planDecisionId, record.handbackDecisionId]) {
-          if (cardId && cards.get(cardId)?.status === 'pending' && await closeDecision(cardId)) closed += 1;
+          const status = cardId ? cards.get(cardId)?.status : null;
+          if (status === 'pending' && await closeDecision(cardId)) closed += 1;
+          // closeDecision commits the close before it resolves the card's
+          // attention rows, and that resolve swallows its own failure: retry
+          // it for a closed card, so a withdrawn card leaves nobody's queue.
+          if (status === 'closed') await resolveAttention('decision_request', cardId);
         }
       } else {
         const after = await reconcile(record, cards, now);

@@ -685,6 +685,7 @@ const V2ActivityPage: React.FC = () => {
                 value: String(item.ruling?.value),
                 // F645: people read the ruler's display name; the handle is only a fallback.
                 ...(item.ruling?.byName || item.ruling?.by ? { by: item.ruling.byName || item.ruling.by } : {}),
+                ...(item.ruling?.reason ? { reason: item.ruling.reason } : {}),
               };
             });
             return next;
@@ -969,6 +970,7 @@ const V2ActivityPage: React.FC = () => {
               value: String(item.ruling?.value),
               // F645: people read the ruler's display name; the handle is only a fallback.
               ...(item.ruling?.byName || item.ruling?.by ? { by: item.ruling.byName || item.ruling.by } : {}),
+              ...(item.ruling?.reason ? { reason: item.ruling.reason } : {}),
             };
           });
           return next;
@@ -1207,10 +1209,14 @@ const V2ActivityPage: React.FC = () => {
       // Read the response off any error shape: a refusal's code matters even
       // where the HTTP client is not axios's own (tests, a wrapper).
       const standing = (error as {
-        response?: { data?: { decision?: { ruling?: { value?: string; by?: string; byName?: string } | null } } };
+        response?: { data?: { decision?: { ruling?: { value?: string; by?: string; byName?: string; reason?: string } | null } } };
       })?.response?.data?.decision?.ruling;
       if (standing?.value) {
-        const ruling = { value: standing.value, ...(standing.byName || standing.by ? { by: standing.byName || standing.by } : {}) };
+        const ruling = {
+          value: standing.value,
+          ...(standing.byName || standing.by ? { by: standing.byName || standing.by } : {}),
+          ...(standing.reason ? { reason: standing.reason } : {}),
+        };
         setRuledDecisions((current) => ({
           ...current,
           [item.id]: ruling,
@@ -1645,9 +1651,10 @@ const V2ActivityPage: React.FC = () => {
                                     </button>
                                   )}
                                 </div>
-                                {(item.options || []).some((option) => option.description) && (
+                                {decisionChoices(item).some((option) => option.description) && (
                                   <ul className="v2-activity__option-notes">
-                                    {(item.options || []).map((option, index) => option.description && (
+                                    {/* The same ordered list as the buttons, so each description id pairs with its own button. */}
+                                    {decisionChoices(item).map((option, index) => option.description && (
                                       <li key={option.label}>
                                         <b>{option.label}</b>
                                         {' '}

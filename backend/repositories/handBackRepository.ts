@@ -209,12 +209,22 @@ export const listReceivedPending = async (ruledBefore: Date, limit = 100): Promi
   return rows.map(toRecord);
 };
 
-/** Stamp handback.received as queued, once. False when it was already stamped. */
+/** Claim handback.received for one sender (the stamp), once. False when already claimed. */
 export const markReceivedEnqueued = async (id: string, now: Date): Promise<boolean> => {
   const { rows } = await requirePool().query(
     `UPDATE hand_backs SET received_enqueued_at = $2
       WHERE id = $1 AND received_enqueued_at IS NULL RETURNING id`,
     [id, now],
+  );
+  return rows.length > 0;
+};
+
+/** Give back a handback.received claim whose enqueue failed: only the stamp that claim wrote. */
+export const clearReceivedEnqueued = async (id: string, stampedAt: Date): Promise<boolean> => {
+  const { rows } = await requirePool().query(
+    `UPDATE hand_backs SET received_enqueued_at = NULL
+      WHERE id = $1 AND received_enqueued_at = $2 RETURNING id`,
+    [id, stampedAt],
   );
   return rows.length > 0;
 };
@@ -310,9 +320,9 @@ export const attachHandbackDecision = async (
 
 export default {
   isAvailable, insertPlan, deleteUnposted, findById, findByIds, listForPod, listForReconcile, listReceivedPending,
-  markReceivedEnqueued, transition, attachPlanDecision, attachHandbackDecision, OPEN_STATUSES,
+  markReceivedEnqueued, clearReceivedEnqueued, transition, attachPlanDecision, attachHandbackDecision, OPEN_STATUSES,
 };
 module.exports = {
   isAvailable, insertPlan, deleteUnposted, findById, findByIds, listForPod, listForReconcile, listReceivedPending,
-  markReceivedEnqueued, transition, attachPlanDecision, attachHandbackDecision, OPEN_STATUSES,
+  markReceivedEnqueued, clearReceivedEnqueued, transition, attachPlanDecision, attachHandbackDecision, OPEN_STATUSES,
 };

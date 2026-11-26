@@ -231,18 +231,32 @@ describeTier1('hand-back loop on real Mongo + PostgreSQL (ADR-037 Phase 1)', () 
     expect((await record(redo.body.handBack.id)).supersedes).toBe(id);
   });
 
+  // What a refused ruling must leave alone: the card (status, ruling, lock),
+  // the record, the pod's messages and the agent events.
+  const persisted = async (id, decisionId) => ({
+    card: await DecisionRequest.findById(decisionId).lean(),
+    record: await record(id),
+    messages: (await pg.query('SELECT COUNT(*)::int AS n FROM messages WHERE pod_id = $1', [String(pod._id)])).rows[0].n,
+    events: await AgentEvent.countDocuments({}),
+  });
+
   test('the web ruling path refuses a missing reason, a disallowed value and another member', async () => {
-    const { decisionId } = (await sendPlan()).body.handBack;
+    const { id, decisionId } = (await sendPlan()).body.handBack;
+    const before = await persisted(id, decisionId);
     const noReason = await choose(bob, decisionId, { value: 'Accept' });
     expect(noReason.status).toBe(400);
     expect(noReason.body.code).toBe('reason_required');
+    expect(await persisted(id, decisionId)).toEqual(before);
     const blank = await choose(bob, decisionId, { value: 'Refuse', reason: '   ' });
     expect(blank.body.code).toBe('reason_required');
+    expect(await persisted(id, decisionId)).toEqual(before);
     const other = await choose(bob, decisionId, { value: 'Ship it anyway', reason: 'why not' });
     expect(other.status).toBe(400);
     expect(other.body.code).toBe('value_not_allowed');
+    expect(await persisted(id, decisionId)).toEqual(before);
     const notReviewer = await choose(carol, decisionId, { value: 'Accept', reason: 'looks fine' });
     expect(notReviewer.status).toBe(403);
+    expect(await persisted(id, decisionId)).toEqual(before);
     expect((await DecisionRequest.findById(decisionId).lean()).status).toBe('pending');
   });
 
@@ -262,9 +276,11 @@ describeTier1('hand-back loop on real Mongo + PostgreSQL (ADR-037 Phase 1)', () 
     const { id, decisionId } = (await sendPlan()).body.handBack;
     // The record is withdrawn, but the card's close step "failed": still pending.
     await repo.transition({ id, from: 'plan_sent', to: 'withdrawn', set: { withdrawn_at: new Date() }, now: new Date() });
+    const beforeStale = await persisted(id, decisionId);
     const ruling = await choose(bob, decisionId, { value: 'Accept', reason: 'ok' });
     expect(ruling.status).toBe(409);
     expect(ruling.body.code).toBe('subject_stage_mismatch');
+    expect(await persisted(id, decisionId)).toEqual(beforeStale);
     // The sweep re-closes the pending card of a withdrawn record.
     expect(await handBacks.sweepHandBacks()).toMatchObject({ closed: 1 });
     expect((await DecisionRequest.findById(decisionId).lean()).status).toBe('closed');
@@ -272,9 +288,11 @@ describeTier1('hand-back loop on real Mongo + PostgreSQL (ADR-037 Phase 1)', () 
     const second = (await sendPlan()).body.handBack;
     require('../../services/decisionSubjectRegistry').unregisterDecisionSubject('hand_back');
     try {
+      const beforeMissing = await persisted(second.id, second.decisionId);
       const refused = await choose(bob, second.decisionId, { value: 'Accept', reason: 'ok' });
       expect(refused.status).toBe(409);
       expect(refused.body.code).toBe('subject_check_missing');
+      expect(await persisted(second.id, second.decisionId)).toEqual(beforeMissing);
     } finally {
       // Re-register through the registry: the service's own guard says it already did.
       require('../../services/decisionSubjectRegistry').registerDecisionSubject('hand_back', {
@@ -286,7 +304,28 @@ describeTier1('hand-back loop on real Mongo + PostgreSQL (ADR-037 Phase 1)', () 
   test('double hand-back race: exactly one wins, the other gets stale_state', async () => {
     const { id, decisionId } = (await sendPlan()).body.handBack;
     await choose(bob, decisionId, { value: 'Accept', reason: 'go' }).expect(200);
-    const results = await Promise.all([handBack(id), handBack(id)]);
+    // A barrier at the compare-and-set: both requests have read plan_accepted
+    // and reached the UPDATE before either runs it, so only the UPDATE's own
+    // status predicate can pick the winner.
+    const original = repo.transition;
+    let arrived = 0;
+    let releaseBoth;
+    const bothArrived = new Promise((resolve) => { releaseBoth = resolve; });
+    const barrier = jest.spyOn(repo, 'transition').mockImplementation(async (input) => {
+      if (input.to === 'handed_back') {
+        arrived += 1;
+        if (arrived === 2) releaseBoth();
+        await bothArrived;
+      }
+      return original(input);
+    });
+    let results;
+    try {
+      results = await Promise.all([handBack(id), handBack(id)]);
+    } finally {
+      barrier.mockRestore();
+    }
+    expect(arrived).toBe(2);
     expect(results.map((res) => res.status).sort()).toEqual([200, 409]);
     expect(results.find((res) => res.status === 409).body.code).toBe('stale_state');
     expect(await DecisionRequest.countDocuments({ 'subject.id': id, 'subject.stage': 'result' })).toBe(1);

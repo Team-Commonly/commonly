@@ -657,19 +657,27 @@ const V2Thread: React.FC<V2ThreadProps> = ({ detail, podsState, firstRunVisible 
         // disappear during a transient 429/network failure.
         // Read the hand-back records behind the open hand-back cards, by id,
         // so a card older than the pod's newest page still shows its record.
-        const handBackIds = [...new Set((pendingData?.items || [])
+        const handBackIds = [...new Set<string>((pendingData?.items || [])
           .filter((item) => item.subject?.type === 'hand_back' && item.subject.id)
           .map((item) => String(item.subject?.id)))];
         if (handBackIds.length) {
-          const records = await api.get<{ handBacks?: HandBackRecordWire[]; people?: Record<string, string> }>(
+          // The route reads at most 100 ids per request, so ask in batches
+          // and merge them; a failed batch keeps what is already shown.
+          const batches: string[][] = [];
+          for (let index = 0; index < handBackIds.length; index += 100) {
+            batches.push(handBackIds.slice(index, index + 100));
+          }
+          const pages = await Promise.all(batches.map((ids) => api.get<{
+            handBacks?: HandBackRecordWire[]; people?: Record<string, string>;
+          }>(
             `/api/pods/${encodeURIComponent(podId)}/hand-backs`,
-            { params: { ids: handBackIds.slice(0, 100).join(',') } },
-          ).catch(() => null);
+            { params: { ids: ids.join(',') } },
+          ).catch(() => null)));
           if (!active) return;
-          if (records) {
+          if (pages.every(Boolean)) {
             setHandBacks({
-              byId: new Map((records.handBacks || []).map((record) => [String(record.id), record])),
-              people: records.people || {},
+              byId: new Map(pages.flatMap((page) => page?.handBacks || []).map((record) => [String(record.id), record])),
+              people: Object.assign({}, ...pages.map((page) => page?.people || {})),
             });
           }
         }

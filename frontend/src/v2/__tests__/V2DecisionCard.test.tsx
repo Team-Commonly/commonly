@@ -78,7 +78,11 @@ describe('V2DecisionCard', () => {
 
   test('a hand-back card needs a reason, hides Other, and posts the value with the reason', async () => {
     mockPost.mockResolvedValue({ decision: { ruling: { value: 'Accept', by: 'bob', reason: 'Green 50 times' } } });
-    render(<V2DecisionCard decision={handBackCard} />);
+    // An option the card's allowed values leave out is never offered.
+    render(<V2DecisionCard decision={{ ...handBackCard, options: [...handBackCard.options, { label: 'Ship it anyway' }] }} />);
+    expect(screen.queryByRole('button', { name: 'Ship it anyway' })).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Accept' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Refuse' })).toBeInTheDocument();
 
     expect(screen.getByText('Fix the flaky login test')).toBeInTheDocument();
     expect(screen.getByText('Requester: alice, from the message that asked.')).toBeInTheDocument();
