@@ -128,7 +128,9 @@ None of `AgentPodReadCursor`, `AgentFirstContact`, `AgentDigestState`, `AgentTas
 `AgentTaskRowWakeState`, `AgentProviderKey` and `HostedMcpDcrRegistration` has a delete path (and neither
 `NeedsYouEmail`, `AgentTaskRowWakeState` nor `HostedMcpDcrRegistration` has a TTL index).
 `AgentProviderKey`'s remove clears the binding's fields and keeps the document, and a refused or retired
-DCR client keeps its document; what either deletes is the `ConnectorSecret`, a model that has not moved.
+DCR client keeps its document. What the key's remove and a DCR refusal delete is the `ConnectorSecret`, a
+model that has not moved. Retiring a DCR client only stops new starts from using it: its secret stays, because
+the connections it already minted keep using it until the vendor refuses one of their token calls.
 
 The mode variable is `STORE_MODE_` plus the model name in upper snake case:
 `AgentPodReadCursor` reads `STORE_MODE_AGENT_POD_READ_CURSOR`. Unset means `mongo`, which makes no
