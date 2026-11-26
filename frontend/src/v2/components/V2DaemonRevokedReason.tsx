@@ -10,12 +10,17 @@ export const hasDaemonRevokedReasonText = (reason: unknown): boolean => reason =
 
 // The fix is the computer setup command. Where the page already shows it just
 // below (commandBelow), the line points there; otherwise it links to Bring
-// your own agent, which shows the command for such a computer.
+// your own agent, which shows the command for such a computer. Setup registers
+// a NEW computer, and nothing rebinds the agent by itself (adopt takes only an
+// unbound agent), so the line ends with the move step this panel offers.
 const V2DaemonRevokedReason: React.FC<{ reason?: string | null; commandBelow?: boolean }> = ({ reason, commandBelow = false }) => {
   if (reason !== 'cli_duplicate_daemons') return null;
-  return commandBelow
-    ? <Trans i18nKey="agentManage.runtime.machineRevokedCliBugBelow" />
-    : <Trans i18nKey="agentManage.runtime.machineRevokedCliBug" components={{ byo: <Link to="/v2/agents/byo" /> }} />;
+  return <>
+    {commandBelow
+      ? <Trans i18nKey="agentManage.runtime.machineRevokedCliBugBelow" />
+      : <Trans i18nKey="agentManage.runtime.machineRevokedCliBug" components={{ byo: <Link to="/v2/agents/byo" /> }} />}
+    {' '}<Trans i18nKey="agentManage.runtime.machineRevokedMoveAfter" />
+  </>;
 };
 
 // What the server keeps about the revoked computer: the OS its daemon last

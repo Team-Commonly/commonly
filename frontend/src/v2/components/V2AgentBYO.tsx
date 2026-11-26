@@ -2462,6 +2462,8 @@ const V2AgentBYO: React.FC = () => {
               </button>
               {revokedSetup.keepsUnsandboxed && <>{' '}<V2KeepsUnsandboxedNote /></>}
               {revokedSetup.unsandboxedUnknown && <>{' '}<V2UnsandboxedUnknownNote /></>}
+              {/* Setup registers a NEW computer; agents bound to this one stay until moved. */}
+              {' '}{t('agentByo.machine.revokedMoveAgents')}
             </p>
           )}
           {mode === 'machine' && (

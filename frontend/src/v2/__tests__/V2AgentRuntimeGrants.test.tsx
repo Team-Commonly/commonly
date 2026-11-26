@@ -94,6 +94,7 @@ test('a computer revoked because of a CLI bug points at the setup command on Bri
   renderSection();
   const line = await screen.findByTestId('agent-machine-revoked-reason');
   expect(line).toHaveTextContent('This computer was disconnected because of a bug in our CLI. Run the computer setup command again from Bring your own agent to get the fixed version.');
+  expect(line).toHaveTextContent('Setup adds it as a new computer, and this agent stays on the old one until you move it: then choose the new computer under Run on and select Move agent.');
   expect(within(line).getByRole('link', { name: 'Bring your own agent' })).toHaveAttribute('href', '/v2/agents/byo');
   expect(line.closest('summary')).toBeNull();
   expect(screen.getByTestId('agent-machine-placement').querySelector('summary'))
@@ -107,6 +108,7 @@ test('with no computer left, the reason points at the setup command the panel al
   renderSection();
   const line = await screen.findByTestId('agent-machine-revoked-reason');
   expect(line).toHaveTextContent('This computer was disconnected because of a bug in our CLI. Run the computer setup command below on it again to get the fixed version.');
+  expect(line).toHaveTextContent('Setup adds it as a new computer, and this agent stays on the old one until you move it: then choose the new computer under Run on and select Move agent.');
   expect(within(line).queryByRole('link')).not.toBeInTheDocument();
   expect(screen.getByTestId('agent-machine-placement')).toHaveTextContent(daemonSetupCommandFor('unix'));
 });

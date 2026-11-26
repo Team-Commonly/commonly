@@ -109,6 +109,9 @@ describe('BYO on-my-computer mode', () => {
     const note = screen.getByTestId('byo-machine-revoked-reason');
     expect(note).toHaveTextContent('This computer was disconnected because of a bug in our CLI. Run this setup command on it again to get the fixed version:');
     expect(note.querySelector('code')).toHaveTextContent(/daemon setup/);
+    // Setup registers a NEW computer, and nothing rebinds an agent by itself
+    // (adopt takes only an unbound agent), so the notice names the move step.
+    expect(note).toHaveTextContent('Setup adds it back as a new computer, and agents that ran on this one stay on it until you move them: open each agent’s settings, choose the new computer under Run on, and select Move agent.');
     expect(note.closest('label')).toBeNull();
     // The add-a-computer block, with the same command, shows for such a computer too.
     expect(screen.getByTestId('byo-add-computer')).toBeInTheDocument();
