@@ -42,11 +42,11 @@ const DIFF = [
   '-old',
   '+new',
   '+added',
-  'diff --git a/docs/new.md b/docs/new.md',
+  'diff --git a/notes/new.md b/notes/new.md',
   'new file mode 100644',
   'index 000..333',
   '--- /dev/null',
-  '+++ b/docs/new.md',
+  '+++ b/notes/new.md',
   '@@ -0,0 +1 @@',
   '+hello',
   '',
@@ -135,7 +135,7 @@ describe('readPublicPullRequest', () => {
       deletions: 1,
       files: [
         { path: 'src/a.js', status: 'modified', additions: 2, deletions: 1 },
-        { path: 'docs/new.md', status: 'added', additions: 1, deletions: 0 },
+        { path: 'notes/new.md', status: 'added', additions: 1, deletions: 0 },
       ],
       diff: DIFF,
       truncated: false,
@@ -147,9 +147,10 @@ describe('readPublicPullRequest', () => {
     fetchSpy.mockImplementation(github());
     await readPublicPullRequest({ owner: 'acme', repo: 'widgets', number: 7 });
     const urls = fetchSpy.mock.calls.map(([url]) => String(url));
+    // An open PR's diff is read at the revision the PR answer named.
     expect(urls).toEqual([
       'https://api.github.com/repos/acme/widgets/pulls/7',
-      'https://api.github.com/repos/acme/widgets/pulls/7',
+      `https://api.github.com/repos/acme/widgets/compare/${'b'.repeat(40)}...${'a'.repeat(40)}`,
     ]);
     expect(fetchSpy.mock.calls[1][1].headers.Accept).toBe('application/vnd.github.diff');
     for (const [, init] of fetchSpy.mock.calls) {
@@ -294,8 +295,8 @@ describe('readPublicPullRequest', () => {
     });
 
     test('with room for a whole read above the floor, reads carry on', async () => {
-      // A read can send 5 requests, so it starts only with floor + 5 left.
-      fetchSpy.mockImplementation(withBudget(GITHUB_HEADROOM_FLOOR + 5));
+      // A read can send 6 requests, so it starts only with floor + 6 left.
+      fetchSpy.mockImplementation(withBudget(GITHUB_HEADROOM_FLOOR + 6));
       await readPublicPullRequest({ owner: 'acme', repo: 'widgets', number: 7 });
       await readPublicPullRequest({ owner: 'acme', repo: 'other', number: 2 });
       expect(fetchSpy).toHaveBeenCalledTimes(4);
@@ -404,13 +405,13 @@ describe('bounds in time and memory', () => {
   });
 
   test('parallel reads reserve requests against the last known budget', async () => {
-    // Learn remaining = 20 from one read, then start three together.
+    // Learn remaining = 22 from one read, then start three together.
     const reset = String(Math.floor(Date.now() / 1000) + 600);
-    fetchSpy.mockImplementation(answer(DIFF, { 'x-ratelimit-remaining': '20', 'x-ratelimit-reset': reset }));
+    fetchSpy.mockImplementation(answer(DIFF, { 'x-ratelimit-remaining': '22', 'x-ratelimit-reset': reset }));
     await readPublicPullRequest({ owner: 'acme', repo: 'widgets', number: 1 });
     const settled = await Promise.allSettled([2, 3, 4]
       .map((number) => readPublicPullRequest({ owner: 'acme', repo: 'widgets', number })));
-    // Each read reserves 5 requests; two fit between 20 and the floor of 10.
+    // Each read reserves 6 requests; two fit between 22 and the floor of 10.
     expect(settled.filter((s) => s.status === 'fulfilled')).toHaveLength(2);
     const refused = settled.find((s) => s.status === 'rejected').reason;
     expect(refused.code).toBe('github_rate_limited');
@@ -420,10 +421,16 @@ describe('bounds in time and memory', () => {
   test('a secondary limit hold is not lifted by an in-flight answer with budget left', async () => {
     // Read 1 is in flight when read 2 hits a secondary limit; read 1's answer
     // then reports budget left, which must not lift read 2's retry-after.
+    // The budget is learned first, so both reads are admitted together
+    // rather than read 2 waiting on read 1 as the unknown-budget probe.
+    const reset = String(Math.floor(Date.now() / 1000) + 600);
+    fetchSpy.mockImplementation(answer(DIFF, { 'x-ratelimit-remaining': '40', 'x-ratelimit-reset': reset }));
+    await readPublicPullRequest({ owner: 'acme', repo: 'widgets', number: 9 });
     let releaseFirst;
     const firstAnswer = new Promise((resolve) => { releaseFirst = resolve; });
     fetchSpy.mockImplementation(async (url, init) => {
-      if (String(url).includes('/pulls/1')) {
+      // Read 1's PR and its diff (an open PR's diff is read by revision).
+      if (String(url).includes('/pulls/1') || String(url).includes('/compare/')) {
         await firstAnswer;
         return answer(DIFF, { 'x-ratelimit-remaining': '40' })(url, init);
       }
@@ -436,5 +443,133 @@ describe('bounds in time and memory', () => {
     const error = await refusalOf(readPublicPullRequest({ owner: 'acme', repo: 'widgets', number: 3 }));
     expect(error.code).toBe('github_rate_limited');
     expect(error.sentGithubNothing).toBe(true);
+  });
+});
+
+describe('rate limits, admission and revisions', () => {
+  let fetchSpy;
+  beforeEach(() => {
+    resetPublicPrStateForTests();
+    fetchSpy = jest.spyOn(global, 'fetch');
+  });
+  afterEach(() => {
+    fetchSpy.mockRestore();
+    jest.restoreAllMocks();
+  });
+
+  const SHA_A = 'a'.repeat(40);
+  const SHA_B = 'c'.repeat(40);
+  const flush = () => new Promise((resolve) => { setImmediate(resolve); });
+
+  test('a secondary-limit 403 with budget left holds, and the next read sends GitHub nothing', async () => {
+    fetchSpy.mockResolvedValue(jsonResponse(
+      { message: 'You have exceeded a secondary rate limit. Please wait a few minutes before you try again.' },
+      { status: 403, headers: { 'x-ratelimit-remaining': '42' } },
+    ));
+    const first = await refusalOf(readPublicPullRequest({ owner: 'acme', repo: 'widgets', number: 7 }));
+    expect(first.status).toBe(503);
+    expect(first.code).toBe('github_rate_limited');
+    expect(first.retryAfterSeconds).toBeGreaterThanOrEqual(60);
+    fetchSpy.mockClear();
+    const next = await refusalOf(readPublicPullRequest({ owner: 'acme', repo: 'other', number: 2 }));
+    expect(next.code).toBe('github_rate_limited');
+    expect(next.sentGithubNothing).toBe(true);
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
+  test('a 429 with no Retry-After holds for at least 60 seconds, even with a near primary reset', async () => {
+    const soon = String(Math.floor(Date.now() / 1000) + 5);
+    fetchSpy.mockResolvedValue(jsonResponse({}, {
+      status: 429, headers: { 'x-ratelimit-remaining': '50', 'x-ratelimit-reset': soon },
+    }));
+    const first = await refusalOf(readPublicPullRequest({ owner: 'acme', repo: 'widgets', number: 7 }));
+    expect(first.retryAfterSeconds).toBeGreaterThanOrEqual(60);
+    fetchSpy.mockClear();
+    const later = Date.now() + 59 * 1000;
+    jest.spyOn(Date, 'now').mockImplementation(() => later);
+    const next = await refusalOf(readPublicPullRequest({ owner: 'acme', repo: 'other', number: 2 }));
+    expect(next.sentGithubNothing).toBe(true);
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
+  test('with an unknown budget, two concurrent reads make one network probe before admission', async () => {
+    const reset = String(Math.floor(Date.now() / 1000) + 600);
+    const headers = { 'x-ratelimit-remaining': '50', 'x-ratelimit-reset': reset };
+    let releaseProbe;
+    const probeAnswer = new Promise((resolve) => { releaseProbe = resolve; });
+    let calls = 0;
+    fetchSpy.mockImplementation(async (_url, init) => {
+      calls += 1;
+      if (calls === 1) await probeAnswer;
+      return init.headers.Accept.includes('diff')
+        ? new Response(DIFF, { headers })
+        : new Response(JSON.stringify(PR_JSON), { headers });
+    });
+    const reads = [1, 2].map((number) => readPublicPullRequest({ owner: 'acme', repo: 'widgets', number }));
+    await flush();
+    await flush();
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
+    releaseProbe();
+    const settled = await Promise.allSettled(reads);
+    expect(settled.map((s) => s.status)).toEqual(['fulfilled', 'fulfilled']);
+    expect(fetchSpy).toHaveBeenCalledTimes(4);
+  });
+
+  test('a head-cache hit after a merge returns the fresh state with the cached diff', async () => {
+    fetchSpy.mockImplementation(github());
+    await readPublicPullRequest({ owner: 'acme', repo: 'widgets', number: 7 });
+    // Past the minute a head is trusted without asking; same head, now merged.
+    const later = Date.now() + 2 * 60 * 1000;
+    jest.spyOn(Date, 'now').mockImplementation(() => later);
+    fetchSpy.mockReset();
+    fetchSpy.mockImplementation(github({
+      pr: {
+        ...PR_JSON, state: 'closed', merged: true, merged_at: '2026-11-26T00:00:00Z', title: 'Add a thing (merged)',
+      },
+      diff: () => { throw new Error('the diff must come from the cache'); },
+    }));
+    const { pr } = await readPublicPullRequest({ owner: 'acme', repo: 'widgets', number: 7 });
+    expect(pr.state).toBe('merged');
+    expect(pr.title).toBe('Add a thing (merged)');
+    expect(pr.diff).toBe(DIFF);
+    expect(pr.head.sha).toBe(SHA_A);
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
+  });
+
+  test('a head that moves mid-read: the returned diff is the one at the returned SHA', async () => {
+    // GitHub answers the PR at head A once, then at head B: a push lands
+    // between the metadata read and the diff read.
+    const DIFF_B = DIFF.replace('+hello', '+hello from B');
+    let prReads = 0;
+    fetchSpy.mockImplementation(async (url, init) => {
+      if (init.headers.Accept.includes('diff')) {
+        return textResponse(String(url).includes(`...${SHA_A}`) ? DIFF : DIFF_B);
+      }
+      prReads += 1;
+      const sha = prReads === 1 ? SHA_A : SHA_B;
+      return jsonResponse({ ...PR_JSON, head: { ...PR_JSON.head, sha } });
+    });
+    const { pr } = await readPublicPullRequest({ owner: 'acme', repo: 'widgets', number: 7 });
+    expect(pr.head.sha).toBe(SHA_A);
+    expect(pr.diff).toBe(DIFF);
+    expect(fetchSpy.mock.calls.length).toBeLessThanOrEqual(6);
+  });
+
+  test('a head that moves during the /files fallback is refused and nothing is cached', async () => {
+    let prReads = 0;
+    fetchSpy.mockImplementation(async (url, init) => {
+      if (String(url).includes('/files')) {
+        return jsonResponse([{ filename: 'big.bin', status: 'modified', additions: 1, deletions: 0 }]);
+      }
+      if (init.headers.Accept.includes('diff')) return jsonResponse({ message: 'too large' }, { status: 406 });
+      prReads += 1;
+      const sha = prReads === 1 ? SHA_A : SHA_B;
+      return jsonResponse({ ...PR_JSON, head: { ...PR_JSON.head, sha } });
+    });
+    const error = await refusalOf(readPublicPullRequest({ owner: 'acme', repo: 'widgets', number: 7 }));
+    expect(error).toBeInstanceOf(PublicPrError);
+    expect(error.code).toBe('pr_changed_during_read');
+    expect(publicPrCacheSizeForTests().results).toBe(0);
+    expect(fetchSpy.mock.calls.length).toBeLessThanOrEqual(6);
   });
 });

@@ -19,7 +19,13 @@
  * every agent on this server shares that address. So a read costs two requests
  * (the PR, then its diff, from which the file list is parsed), a repeat read
  * of the same head is served from memory, and once GitHub says the budget is
- * spent no request is sent until its reset.
+ * spent no request is sent until its reset. A read GitHub will not render a
+ * diff for costs at most six (REQUESTS_PER_READ).
+ *
+ * The diff of an open PR is read by revision (`compare/<base>...<head>` at the
+ * SHAs the PR answer named), so a push between the two requests cannot pair
+ * one revision's diff with another's head. A closed or merged PR's head no
+ * longer moves, so its own diff endpoint is read.
  */
 import { isOutboundUrlRefused, readTextFromAllowedHost } from './outboundUrlGuard';
 import { logOutboundFailure } from '../utils/safeErrorLog';
@@ -140,17 +146,29 @@ let holdUntil = 0;
 // primary limit, or a secondary limit's retry-after) runs out its time.
 let holdKind: 'floor' | 'limit' = 'floor';
 export const GITHUB_HEADROOM_FLOOR = 10;
-// The most requests one read can send: the PR, its diff, and three /files pages.
-const REQUESTS_PER_READ = 5;
+// The most requests one read can send: the PR, its diff, three /files pages
+// when GitHub will not render the diff, and one re-read of the PR's head after
+// those pages (they are not pinned to a revision).
+const REQUESTS_PER_READ = 6;
 // What GitHub last said was left, and when that window resets. Reads in flight
 // each reserve REQUESTS_PER_READ against it, so parallel reads cannot all start
 // on one count and overrun the floor together.
 let lastRemaining: number | null = null;
 let lastResetAt = 0;
 let readsInFlight = 0;
+// While the budget is unknown (never seen, or its window has rolled over) one
+// read goes alone to learn it; others wait for its first answer's headers.
+let probe: Promise<void> | null = null;
+let endProbe: (() => void) | null = null;
 
 const MAX_RETRY_AFTER_SECONDS = 3600;
 const clampRetry = (seconds: number) => Math.min(MAX_RETRY_AFTER_SECONDS, Math.max(1, Math.ceil(seconds)));
+// GitHub: on a secondary limit with no retry-after and primary budget left,
+// wait at least a minute.
+const MIN_SECONDARY_HOLD_SECONDS = 60;
+// Only this much of an error body is read, to classify it.
+const ERROR_BODY_SCAN_BYTES = 4096;
+const SECONDARY_LIMIT_PATTERN = /secondary rate limit|abuse detection/i;
 
 const rateLimitedError = (seconds: number) => new PublicPrError(
   503,
@@ -159,16 +177,32 @@ const rateLimitedError = (seconds: number) => new PublicPrError(
   seconds,
 );
 
-/** Seconds until GitHub accepts another request, when this answer is a rate limit; else null. */
-const rateLimitSeconds = (status: number, headers: Headers): number | null => {
+/** Retry-After in seconds (delta-seconds or an HTTP date), or null when absent or unusable. */
+const retryAfterSeconds = (value: string | null): number | null => {
+  if (value === null || value.trim() === '') return null;
+  const text = value.trim();
+  if (/^\d{1,9}$/.test(text)) return Number(text);
+  const at = Date.parse(text);
+  if (!Number.isFinite(at)) return null;
+  return Math.max(0, (at - Date.now()) / 1000);
+};
+
+/**
+ * Seconds until GitHub accepts another request, when this answer is a rate
+ * limit; else null. A primary limit (403 with none remaining) waits for its
+ * reset. A secondary limit (a 429, or a 403 whose body says so) honours
+ * Retry-After, else waits for the reset when none remain, else a minute.
+ */
+const rateLimitSeconds = (status: number, headers: Headers, bodyHead: string): number | null => {
   if (status !== 403 && status !== 429) return null;
-  const retryAfter = headers.get('retry-after');
-  const remaining = headers.get('x-ratelimit-remaining');
-  if (status === 403 && remaining !== '0' && retryAfter === null) return null;
-  if (retryAfter !== null && Number.isFinite(Number(retryAfter))) return clampRetry(Number(retryAfter));
+  const retryAfter = retryAfterSeconds(headers.get('retry-after'));
+  const noneRemaining = headers.get('x-ratelimit-remaining') === '0';
+  const secondary = status === 429 || SECONDARY_LIMIT_PATTERN.test(bodyHead);
+  if (!secondary && !noneRemaining && retryAfter === null) return null;
+  if (retryAfter !== null) return clampRetry(retryAfter);
   const reset = Number(headers.get('x-ratelimit-reset'));
-  if (Number.isFinite(reset) && reset > 0) return clampRetry(reset - Date.now() / 1000);
-  return 60;
+  if (noneRemaining && Number.isFinite(reset) && reset > 0) return clampRetry(reset - Date.now() / 1000);
+  return MIN_SECONDARY_HOLD_SECONDS;
 };
 
 const holding = () => holdUntil > Date.now();
@@ -179,6 +213,15 @@ const holdFor = (kind: 'floor' | 'limit', until: number) => {
   const active = holding();
   holdUntil = active ? Math.max(holdUntil, until) : until;
   if (!active || kind === 'limit') holdKind = kind;
+};
+
+/** End the unknown-budget probe (only `owned`, when given), releasing the reads waiting on it. */
+const finishProbe = (owned?: Promise<void>) => {
+  if (!probe || (owned && probe !== owned)) return;
+  const end = endProbe;
+  probe = null;
+  endProbe = null;
+  if (end) end();
 };
 
 /**
@@ -199,6 +242,8 @@ const noteBudget = (headers: Headers) => {
   } else if (holding() && holdKind === 'floor' && resetAt > holdUntil) {
     holdUntil = 0;
   }
+  // The budget is known again: reads waiting on the probe are admitted normally.
+  finishProbe();
 };
 
 const heldError = (seconds: number) => {
@@ -207,19 +252,40 @@ const heldError = (seconds: number) => {
   return error;
 };
 
+const startProbe = (): Promise<void> => {
+  probe = new Promise<void>((resolve) => { endProbe = resolve; });
+  return probe;
+};
+
+const budgetKnown = (now: number) => lastRemaining !== null && lastResetAt > now;
+
 /**
  * Admit a new uncached read, or refuse it while GitHub's budget is spent, down
- * to the floor, or reserved by reads already in flight. The caller releases
- * the reservation when the read ends.
+ * to the floor, or reserved by reads already in flight. While the budget is
+ * unknown, the first read is admitted alone as a probe and the rest wait for
+ * it to record GitHub's headers (or to end), then are admitted or refused on
+ * what it learned. Returns the probe this read owns, if any, boxed: an async
+ * function returning the promise itself would make the caller's `await` wait
+ * for the probe to end. The caller ends it and releases the reservation when
+ * the read ends.
  */
-const reserveRead = () => {
-  const now = Date.now();
-  if (holding()) throw heldError((holdUntil - now) / 1000);
-  if (lastRemaining !== null && lastResetAt > now
-      && lastRemaining - (readsInFlight + 1) * REQUESTS_PER_READ < GITHUB_HEADROOM_FLOOR) {
-    throw heldError((lastResetAt - now) / 1000);
+const reserveRead = async (): Promise<{ ownProbe: Promise<void> | null }> => {
+  for (;;) {
+    const now = Date.now();
+    if (holding()) throw heldError((holdUntil - now) / 1000);
+    if (budgetKnown(now)) {
+      if (lastRemaining! - (readsInFlight + 1) * REQUESTS_PER_READ < GITHUB_HEADROOM_FLOOR) {
+        throw heldError((lastResetAt - now) / 1000);
+      }
+      readsInFlight += 1;
+      return { ownProbe: null };
+    }
+    if (!probe) {
+      readsInFlight += 1;
+      return { ownProbe: startProbe() };
+    }
+    await probe;
   }
-  readsInFlight += 1;
 };
 
 const upstreamError = () => new PublicPrError(502, 'github_unavailable', 'GitHub could not be read just now.');
@@ -241,6 +307,8 @@ const getFromGithub = async (
       allowedOrigins: GITHUB_API_ORIGINS,
       maxBytes,
       headers: { ...GITHUB_HEADERS, Accept: accept },
+      // Enough of an error body to tell a secondary limit's 403 from another.
+      maxErrorBytes: ERROR_BODY_SCAN_BYTES,
     });
   } catch (error) {
     if (isOutboundUrlRefused(error)) {
@@ -256,7 +324,8 @@ const getFromGithub = async (
   }
   noteBudget(response.headers);
   if (response.ok || passStatuses.includes(response.status)) return response;
-  const wait = rateLimitSeconds(response.status, response.headers);
+  // The error body is read only to its first ERROR_BODY_SCAN_BYTES.
+  const wait = rateLimitSeconds(response.status, response.headers, response.ok ? '' : response.text);
   if (wait !== null) {
     holdFor('limit', Date.now() + wait * 1000);
     throw rateLimitedError(wait);
@@ -430,6 +499,7 @@ export const resetPublicPrStateForTests = (): void => {
   lastRemaining = null;
   lastResetAt = 0;
   readsInFlight = 0;
+  finishProbe();
 };
 
 /** Test hook: how many heads and results the cache holds. */
@@ -455,38 +525,61 @@ export const readPublicPullRequest = async (
     const hit = cachedResult(key, head.sha);
     if (hit) return { pr: hit, fromCache: true };
   }
-  reserveRead();
+  const { ownProbe } = await reserveRead();
   try {
     return await readFromGithub({ owner, repo, number }, key);
   } finally {
     readsInFlight -= 1;
+    // A probe whose answers carried no budget headers still lets the next read go.
+    if (ownProbe) finishProbe(ownProbe);
   }
 };
 
-/** The uncached read: the PR, then its diff (or its /files pages). */
-const readFromGithub = async (
-  { owner, repo, number }: PublicPrRef,
-  key: string,
-): Promise<{ pr: PublicPr; fromCache: boolean }> => {
-  const prPath = `repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/pulls/${number}`;
-  const prResponse = await getFromGithub(prPath, JSON_ACCEPT, PUBLIC_PR_LIMITS.maxJsonBytes);
-  const raw = parseJson(prResponse.text, prResponse.truncated);
-  const headSha = detach(str(raw?.head?.sha, 64));
-  remember(heads, key, { sha: headSha, at: Date.now() });
-  const hit = cachedResult(key, headSha);
-  if (hit) return { pr: hit, fromCache: false };
+type ContentPart = 'files' | 'diff';
+interface PrContent { files: PublicPrFile[]; diff: string; truncatedParts: ContentPart[] }
 
-  const truncatedParts = new Set<'body' | 'files' | 'diff'>();
-  const changedFiles = count(raw?.changed_files);
+const SHA_PATTERN = /^[0-9a-f]{40}(?:[0-9a-f]{24})?$/;
 
-  const diffResponse = await getFromGithub(prPath, DIFF_ACCEPT, PUBLIC_PR_LIMITS.maxDiffParseBytes, [406]);
+const changedDuringRead = () => new PublicPrError(
+  503,
+  'pr_changed_during_read',
+  'The pull request was pushed to while it was being read. Try again.',
+  5,
+);
+
+/**
+ * The files and diff at `headSha`. An open PR's diff is read by revision, from
+ * the SHAs the PR answer named, so it cannot belong to a later push. When
+ * GitHub will not render the diff, the /files pages are read instead; those
+ * are not pinned, so an open PR's head is read once more after them, and a
+ * head that moved refuses the read rather than return (or cache) files from
+ * another revision. At most REQUESTS_PER_READ - 1 requests.
+ */
+const readContent = async (
+  { owner, repo, prPath }: { owner: string; repo: string; prPath: string },
+  raw: any,
+  headSha: string,
+  open: boolean,
+): Promise<PrContent> => {
+  const truncatedParts = new Set<ContentPart>();
+  const baseSha = str(raw?.base?.sha, 64);
+  if (open && (!SHA_PATTERN.test(baseSha) || !SHA_PATTERN.test(headSha))) throw upstreamError();
+  const diffPath = open
+    ? `repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/compare/${baseSha}...${headSha}`
+    : prPath;
+  const diffResponse = await getFromGithub(diffPath, DIFF_ACCEPT, PUBLIC_PR_LIMITS.maxDiffParseBytes, [406]);
   let files: PublicPrFile[];
   let diff = '';
   if (diffResponse.status === 406) {
     truncatedParts.add('diff');
-    const fallback = await readFilesFallback(prPath, changedFiles);
+    const fallback = await readFilesFallback(prPath, count(raw?.changed_files));
     ({ files } = fallback);
     if (fallback.cut) truncatedParts.add('files');
+    if (open) {
+      const again = await getFromGithub(prPath, JSON_ACCEPT, PUBLIC_PR_LIMITS.maxJsonBytes);
+      const latest = parseJson(again.text, again.truncated);
+      if (str(latest?.head?.sha, 64) !== headSha) throw changedDuringRead();
+    }
   } else {
     files = filesFromDiff(diffResponse.text);
     if (diffResponse.truncated) truncatedParts.add('files');
@@ -498,12 +591,38 @@ const readFromGithub = async (
     files = files.slice(0, PUBLIC_PR_LIMITS.maxFiles);
     truncatedParts.add('files');
   }
+  return { files, diff, truncatedParts: [...truncatedParts] };
+};
 
-  const fullBody = typeof raw?.body === 'string' ? raw.body : '';
-  if (fullBody.length > PUBLIC_PR_LIMITS.maxBodyChars) truncatedParts.add('body');
+/**
+ * The uncached read: the PR, then its diff (or its /files pages). The PR's own
+ * fields always come from this read's answer; only the files and diff are
+ * reused from the cache, when the head is one already read.
+ */
+const readFromGithub = async (
+  { owner, repo, number }: PublicPrRef,
+  key: string,
+): Promise<{ pr: PublicPr; fromCache: boolean }> => {
+  const prPath = `repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/pulls/${number}`;
+  const prResponse = await getFromGithub(prPath, JSON_ACCEPT, PUBLIC_PR_LIMITS.maxJsonBytes);
+  const raw = parseJson(prResponse.text, prResponse.truncated);
+  const headSha = detach(str(raw?.head?.sha, 64));
 
   let state: PublicPr['state'] = raw?.state === 'closed' ? 'closed' : 'open';
   if (raw?.merged === true || typeof raw?.merged_at === 'string') state = 'merged';
+
+  const hit = cachedResult(key, headSha);
+  const content: PrContent = hit
+    ? {
+      files: hit.files,
+      diff: hit.diff,
+      truncatedParts: hit.truncatedParts.filter((part): part is ContentPart => part !== 'body'),
+    }
+    : await readContent({ owner, repo, prPath }, raw, headSha, state === 'open');
+
+  const truncatedParts = new Set<'body' | 'files' | 'diff'>(content.truncatedParts);
+  const fullBody = typeof raw?.body === 'string' ? raw.body : '';
+  if (fullBody.length > PUBLIC_PR_LIMITS.maxBodyChars) truncatedParts.add('body');
 
   // Flattened, so the cached copy keeps none of the response buffers alive.
   const pr: PublicPr = detach({
@@ -518,14 +637,17 @@ const readFromGithub = async (
     base: { ref: str(raw?.base?.ref, 255), sha: str(raw?.base?.sha, 64) },
     head: { ref: str(raw?.head?.ref, 255), sha: headSha, repo: str(raw?.head?.repo?.full_name, 255) || null },
     body: fullBody.slice(0, PUBLIC_PR_LIMITS.maxBodyChars),
-    changedFiles,
+    changedFiles: count(raw?.changed_files),
     additions: count(raw?.additions),
     deletions: count(raw?.deletions),
-    files,
-    diff,
+    files: content.files,
+    diff: content.diff,
     truncated: truncatedParts.size > 0,
     truncatedParts: [...truncatedParts],
   });
+  // The head is remembered only with a result for it, so a refused read
+  // leaves no head pointing at nothing.
+  remember(heads, key, { sha: headSha, at: Date.now() });
   remember(results, `${key}@${headSha}`, { pr, at: Date.now() });
   return { pr, fromCache: false };
 };

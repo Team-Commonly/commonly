@@ -155,6 +155,11 @@ interface AllowedHostFetchOptions {
   allowedOrigins: ReadonlyMap<string, string>;
   maxBytes: number;
   headers?: Record<string, string>;
+  /**
+   * How much of a non-2xx body to keep (cut, never thrown), for a caller that
+   * classifies an error by its message. Default 0: the body is discarded.
+   */
+  maxErrorBytes?: number;
 }
 
 interface AllowedHostFetchResult {
@@ -167,7 +172,7 @@ interface AllowedHostFetchResult {
 interface AllowedHostBytesResult {
   ok: boolean;
   status: number;
-  /** The body, read up to `maxBytes`. Empty when `ok` is false. */
+  /** The body, read up to `maxBytes`. When `ok` is false, at most `maxErrorBytes` (default empty). */
   bytes: Buffer;
 }
 
@@ -185,7 +190,9 @@ interface AllowedHostReadResult extends AllowedHostBytesResult {
  */
 const getFromAllowedHost = async (
   rawUrl: string,
-  { allowedOrigins, maxBytes, headers }: AllowedHostFetchOptions,
+  {
+    allowedOrigins, maxBytes, headers, maxErrorBytes = 0,
+  }: AllowedHostFetchOptions,
   truncate = false,
 ): Promise<AllowedHostReadResult> => {
   const signal = AbortSignal.timeout(OUTBOUND_TIMEOUT_MS);
@@ -195,6 +202,12 @@ const getFromAllowedHost = async (
     const location = REDIRECT_STATUSES.has(response.status) ? response.headers.get('location') : null;
     if (location === null) {
       if (!response.ok) {
+        if (maxErrorBytes > 0) {
+          const { bytes } = await readBytesCapped(response, Math.min(maxErrorBytes, maxBytes), true);
+          return {
+            ok: false, status: response.status, bytes, headers: response.headers, truncated: false,
+          };
+        }
         await response.body?.cancel();
         return {
           ok: false, status: response.status, bytes: Buffer.alloc(0), headers: response.headers, truncated: false,
