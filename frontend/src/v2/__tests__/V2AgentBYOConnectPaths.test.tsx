@@ -276,19 +276,20 @@ describe('BYO connect paths: run is the quick try, the daemon keeps it running (
 
 describe('BYO setup help', () => {
   afterEach(() => setUserAgent(realUserAgent));
+  beforeEach(() => jest.clearAllMocks());
 
   test('the computer setup block carries the Discord help line, and its click counts as byo', async () => {
     setUserAgent(MAC);
     mockPage({ machines: [] });
     renderPage();
-    // The block remounts as the page's reads land, so check the settled DOM.
+    // The block remounts as the page's reads land: wait for them, then query fresh nodes.
+    await screen.findByText('Workspace (chat)');
     await waitFor(() => expect(screen.getByTestId('byo-add-computer')).toContainElement(screen.getByTestId('byo-discord-help')));
-    const help = screen.getByTestId('byo-discord-help');
-    expect(help).toHaveTextContent('Stuck? Ask in Discord, we answer there.');
-    const link = within(help).getByRole('link', { name: 'Discord' });
-    expect(link).toHaveAttribute('href', DISCORD_INVITE_URL);
-    expect(link).toHaveAttribute('target', '_blank');
-    fireEvent.click(link);
+    expect(screen.getByTestId('byo-discord-help')).toHaveTextContent('Stuck? Ask in Discord, we answer there.');
+    const linkNow = () => within(screen.getByTestId('byo-discord-help')).getByRole('link', { name: 'Discord' });
+    expect(linkNow()).toHaveAttribute('href', DISCORD_INVITE_URL);
+    expect(linkNow()).toHaveAttribute('target', '_blank');
+    fireEvent.click(linkNow());
     expect(mockTrackUsage).toHaveBeenCalledWith('discord-click', { props: { where: 'byo' } });
   });
 });
