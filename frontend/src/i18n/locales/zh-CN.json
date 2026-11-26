@@ -925,7 +925,8 @@
       "webhookPeer": "@{{handle}} 没收到最近一条消息，可能也收不到这条。",
       "typeaheadMcpOnly": "智能体 · @{{handle}} —— 在它的应用里打开才可用，收不到 @提及",
       "mcpOnlyOwner": "@{{handle}} 只有在你从它的应用里打开时才会读这个 Pod，所以收不到这条 @提及。想让它回复 @提及，就在你的电脑上设置它：{{command}}",
-      "mcpOnlyPeer": "@{{handle}} 收不到这条 @提及。只有它的所有者在它的应用里打开它时，它才会读这个 Pod。"
+      "mcpOnlyOwnerConnect": "@{{handle}} 只有在你从它的应用里打开时才会读这个 Pod，所以收不到这条 @提及。想让它回复 @提及，就在电脑上接入它：",
+      "mcpOnlyPeer":"@{{handle}} 收不到这条 @提及。只有它的所有者在它的应用里打开它时，它才会读这个 Pod。"
     },
     "mobile": {
       "showPods": "显示 Pod",

@@ -119,6 +119,31 @@ describe('expiry for an agent that never listens', () => {
     expect(result.expiredPending).toBe(3);
   });
 
+  test('a person\'s row past the batch waits for the next pass instead of expiring in silence; a kernel wake owes no line', async () => {
+    const note = jest.spyOn(unanswered, 'noteUnansweredMention').mockResolvedValue(true);
+    const rows = [];
+    for (let i = 0; i < 51; i += 1) {
+      // eslint-disable-next-line no-await-in-loop
+      rows.push(await event('chat.mention', 8 * DAY + (51 - i) * 1000));
+    }
+    const kernel = await AgentEvent.create({
+      agentName: 'maya', instanceId: 'default', podId: POD, type: 'chat.mention', payload: { triggerAuthor: 'kernel' },
+    });
+    const at = new Date(Date.now() - 9 * DAY);
+    await AgentEvent.collection.updateOne({ _id: kernel._id }, { $set: { createdAt: at, updatedAt: at } });
+
+    await AgentEventService.garbageCollect({});
+
+    expect(note).toHaveBeenCalledTimes(50);
+    expect(await statusOf(rows[50])).toBe('pending');
+    expect(await statusOf(kernel._id)).toBe('expired');
+    expect(note.mock.calls.map(([row]) => String(row._id))).not.toContain(String(kernel._id));
+
+    await AgentEventService.garbageCollect({});
+    expect(await statusOf(rows[50])).toBe('expired');
+    expect(note).toHaveBeenCalledTimes(51);
+  });
+
   test('a failed line still expires the row', async () => {
     jest.spyOn(unanswered, 'noteUnansweredMention').mockRejectedValue(new Error('pg down'));
     const old = await event('thread.mention', 8 * DAY);
@@ -142,5 +167,20 @@ describe('expiry for an agent that never listens', () => {
     expect(await statusOf(recentMcpOnly)).toBe('pending');
     expect(await statusOf(neverUsed)).toBe('pending');
     expect(await statusOf(listened)).toBe('pending');
+  });
+
+  test('older first_contacts that stay pending never crowd out an MCP-only one', async () => {
+    const seen = new Date(Date.now() - DAY);
+    await bot('desk', [{ tokenHash: 'a', lastMcpSeenAt: seen }]);
+    for (let i = 0; i < 60; i += 1) {
+      // eslint-disable-next-line no-await-in-loop
+      await eventFor(`idle-${i}`, 'first_contact', 20 * DAY);
+    }
+    const mcpOnly = await eventFor('desk', 'first_contact', 8 * DAY);
+
+    await AgentEventService.garbageCollect({});
+
+    expect(await statusOf(mcpOnly)).toBe('expired');
+    expect(await AgentEvent.countDocuments({ type: 'first_contact', status: 'pending' })).toBe(60);
   });
 });

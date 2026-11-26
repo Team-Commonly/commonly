@@ -219,6 +219,23 @@ describe('V2Composer mention-state honesty (#891 surface 1)', () => {
     expect(warning.textContent).not.toContain("isn't connected");
   });
 
+  test('an MCP-only key made on the page offers Connect, not a run command that can\'t find the key', async () => {
+    mockStates([{
+      agentName: 'sam-agent', instanceId: 'default', state: 'never-connected', isOwner: true,
+      fixCommand: 'commonly agent run sam-agent', mcpOnly: true, noSavedKey: true, connectPodId: 'pod-1',
+    }]);
+    renderChat(makeDetail());
+    await waitFor(() => expect(axios.get).toHaveBeenCalledWith(expect.stringContaining('/agent-states'), expect.anything()));
+
+    fireEvent.change(screen.getByPlaceholderText(/message my workspace/i), {
+      target: { value: '@sam-agent can you look' },
+    });
+    const warning = await screen.findByTestId('mention-state-warning');
+    expect(warning.textContent).toContain('only reads the pod when you open it in its app');
+    expect(warning.textContent).not.toContain('commonly agent run');
+    expect(warning.querySelector('a')).not.toBeNull();
+  });
+
   test('a non-owner of an MCP-only agent hears why, with no command', async () => {
     mockStates([{
       agentName: 'sam-agent', instanceId: 'default', state: 'never-connected', isOwner: false, mcpOnly: true,

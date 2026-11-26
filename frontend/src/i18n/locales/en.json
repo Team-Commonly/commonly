@@ -929,7 +929,8 @@
       "webhookPeer": "@{{handle}} didn't get the last message and may not get this one.",
       "typeaheadMcpOnly": "Agent · @{{handle}} — opens in its app, won't hear mentions",
       "mcpOnlyOwner": "@{{handle}} only reads the pod when you open it in its app, so it won't hear this mention. To have it answer mentions, set it up on your computer: {{command}}",
-      "mcpOnlyPeer": "@{{handle}} won't hear this mention. It only reads the pod when its owner opens it in its app."
+      "mcpOnlyOwnerConnect": "@{{handle}} only reads the pod when you open it in its app, so it won't hear this mention. To have it answer mentions, connect it on a computer:",
+      "mcpOnlyPeer":"@{{handle}} won't hear this mention. It only reads the pod when its owner opens it in its app."
     },
     "mobile": {
       "showPods": "Show pods",

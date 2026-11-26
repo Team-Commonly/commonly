@@ -3,7 +3,7 @@ import { Types } from 'mongoose';
 import Task from '../models/Task';
 import { foldExpiredDigests, readFoldedDigest, settleFoldedDigest } from './agentDigestFoldService';
 import { postToPublicAddress, RESPONSE_TOO_LARGE } from './outboundUrlGuard';
-import { usedOnlyOverMcp, webhookUrlHash } from './agentStateService';
+import { webhookUrlHash } from './agentStateService';
 import { hostedRunsNative, IN_PROCESS_RUNTIME_FILTER } from './hostedEngine';
 import { noteUnansweredMention, PERSON_WAITING_EVENT_TYPES, rowsPostedSince } from './unansweredMentionService';
 import { digestConversationFrame } from './digestFrame';
@@ -93,6 +93,8 @@ const NATIVE_RUNNER_LEASE_ID = 'native-turn-runner';
 // (TASK-656). 686 retirements of every type took 7 days, so 50 per 10-minute
 // pass keeps up with any realistic backlog.
 const UNANSWERED_MENTION_BATCH = 50;
+// Agents read per pass when retiring MCP-only first_contacts (a few dozen today).
+const MCP_ONLY_AGENT_BATCH = 500;
 const ABANDONED_RUN_MINUTES = 30;
 
 // TASK-265: an in-process event is born 'delivered', so one
@@ -1063,10 +1065,14 @@ class AgentEventService {
     // first_contact, which nothing will ever claim, is retired with it.
     let expiredWithLine = 0;
     try {
-      expiredWithLine = await this.expireUnansweredPending(deliveredThreshold);
-      expiredWithLine += await this.expireMcpOnlyFirstContacts(deliveredThreshold);
+      expiredWithLine += await this.expireUnansweredPending(deliveredThreshold);
     } catch (err) {
       console.warn('[agent-event] unanswered expiry pass failed:', (err as Error).message);
+    }
+    try {
+      expiredWithLine += await this.expireMcpOnlyFirstContacts(deliveredThreshold);
+    } catch (err) {
+      console.warn('[agent-event] MCP-only first_contact expiry failed:', (err as Error).message);
     }
     const [pendingResult, ackedResult, deliveredResult, failedResult] = await Promise.all([
       // #993: this used to run on a 30-minute `stalePendingThreshold`, which put
@@ -1096,12 +1102,15 @@ class AgentEventService {
       // F381: a pending event past the window is marked 'expired', never
       // deleted, so an unanswered wake stays on record and countable. A
       // first_contact is exempt: it is the one event a newly met person is
-      // owed, and it stays pending until an agent claims it.
+      // owed, and it stays pending until an agent claims it. A person's message
+      // not yet told is left to expireUnansweredPending above; one past its
+      // batch waits for the next pass rather than expiring in silence.
       AgentEvent.updateMany({
         status: 'pending',
         deliveryMode: { $ne: 'digest' },
         type: { $ne: 'first_contact' },
         createdAt: { $lt: deliveredThreshold },
+        $nor: [{ ...PERSON_WAITING_FILTER, unansweredNoticeAt: null }],
       }, { $set: { status: 'expired', expiredAt: new Date() } }),
       AgentEvent.deleteMany({
         status: 'acked', createdAt: { $lt: deliveredThreshold },
@@ -1187,7 +1196,7 @@ class AgentEventService {
       status: 'pending',
       deliveryMode: { $ne: 'digest' },
       createdAt: { $lt: threshold },
-      type: { $in: PERSON_WAITING_EVENT_TYPES },
+      ...PERSON_WAITING_FILTER,
       unansweredNoticeAt: null,
     }).sort({ createdAt: 1 }).limit(UNANSWERED_MENTION_BATCH).lean() as EventDoc[];
     let expiredCount = 0;
@@ -1221,33 +1230,38 @@ class AgentEventService {
    * Past the window, one whose agent's key was seen over MCP and never
    * listened is expired. A key never used at all keeps it: that agent may
    * still be set up on a computer.
+   *
+   * It starts from the MCP-only agents, not from the oldest first_contacts:
+   * the rows it keeps never leave, so a page of the oldest would fill with
+   * them and never reach an MCP-only one. An agent whose MCP use sits only on
+   * an install's token, not its bot user's, is not found here.
    */
   static async expireMcpOnlyFirstContacts(threshold: Date): Promise<number> {
-    const stale = await AgentEvent.find({
-      status: 'pending',
-      type: 'first_contact',
-      createdAt: { $lt: threshold },
-    }).select('_id agentName instanceId podId').sort({ createdAt: 1 }).limit(UNANSWERED_MENTION_BATCH)
-      .lean() as Array<{ _id: unknown; agentName?: string; instanceId?: string; podId?: unknown }>;
-    const mcpOnly = new Map<string, boolean>();
+    const agents = await User.find({
+      isBot: true,
+      'agentRuntimeTokens.lastMcpSeenAt': { $ne: null },
+      agentRuntimeTokens: { $not: { $elemMatch: { lastListenedAt: { $ne: null } } } },
+    }).select('botMetadata.agentName botMetadata.instanceId').limit(MCP_ONLY_AGENT_BATCH)
+      .lean() as Array<{ botMetadata?: { agentName?: string; instanceId?: string } }>;
     const expire: unknown[] = [];
-    for (const event of stale) {
-      const agentName = AgentIdentityService.resolveAgentType(String(event.agentName || ''));
-      const instanceId = String(event.instanceId || 'default');
-      const key = `${agentName}:${instanceId}:${String(event.podId)}`;
-      if (!mcpOnly.has(key)) {
-        // eslint-disable-next-line no-await-in-loop -- bounded by UNANSWERED_MENTION_BATCH
-        const [agent, install] = await Promise.all([
-          User.findOne({ isBot: true, 'botMetadata.agentName': agentName, 'botMetadata.instanceId': instanceId })
-            .select('agentRuntimeTokens.lastListenedAt agentRuntimeTokens.lastMcpSeenAt').lean(),
-          AgentInstallation.findOne({ agentName: event.agentName, instanceId, podId: event.podId })
-            .select('runtimeTokens.lastListenedAt runtimeTokens.lastMcpSeenAt').lean(),
-        ]) as Array<{ agentRuntimeTokens?: unknown[]; runtimeTokens?: unknown[] } | null>;
-        mcpOnly.set(key, usedOnlyOverMcp([
-          (agent?.agentRuntimeTokens || []) as never[], (install?.runtimeTokens || []) as never[],
-        ]));
+    for (const agent of agents) {
+      const agentName = String(agent.botMetadata?.agentName || '');
+      const instanceId = String(agent.botMetadata?.instanceId || 'default');
+      if (!agentName) continue;
+      // eslint-disable-next-line no-await-in-loop -- bounded by MCP_ONLY_AGENT_BATCH
+      const stale = await AgentEvent.find({
+        status: 'pending', type: 'first_contact', agentName, instanceId, createdAt: { $lt: threshold },
+      }).select('_id podId').lean() as Array<{ _id: unknown; podId?: unknown }>;
+      for (const event of stale) {
+        // A wrapper that listened on this pod's install token is not MCP-only.
+        // eslint-disable-next-line no-await-in-loop -- a handful of pods per agent
+        const install = await AgentInstallation.findOne({ agentName, instanceId, podId: event.podId })
+          .select('runtimeTokens.lastListenedAt runtimeTokens.lastMcpSeenAt')
+          .lean() as { runtimeTokens?: unknown[] } | null;
+        const listened = (install?.runtimeTokens || [])
+          .some((row) => Boolean((row as { lastListenedAt?: unknown })?.lastListenedAt));
+        if (!listened) expire.push(event._id);
       }
-      if (mcpOnly.get(key)) expire.push(event._id);
     }
     if (expire.length === 0) return 0;
     const result = await AgentEvent.updateMany(
