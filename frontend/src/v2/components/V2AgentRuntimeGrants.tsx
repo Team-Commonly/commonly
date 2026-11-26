@@ -194,12 +194,21 @@ const V2AgentRuntimeBody: React.FC<Props> = ({
                 <V2AgentSettingsIcon name="chev" className="chev" />
               </summary>
               <div className="dbody">
-                {/* F641: why the key was revoked, outside <summary> so its link never toggles the disclosure. */}
-                {placement.boundMachineRevoked && hasDaemonRevokedReasonText(placement.boundMachineRevokedReason) && (
+                {/* F641: why the key was revoked, in the body rather than <summary>. */}
+                {revokedSetup && (
                   <p className="v2-agent-settings-page__live" data-testid="agent-machine-revoked-reason">
-                    <V2DaemonRevokedReason reason={placement.boundMachineRevokedReason} commandBelow={placement.activeMachines.length === 0} />
+                    <V2DaemonRevokedReason reason={placement.boundMachineRevokedReason} />
                   </p>
                 )}
+                {/* F641: that computer's own setup line, from its record, whether
+                    or not another computer can take the agent. Never a link to
+                    the add-a-computer page, whose line follows the browser's OS
+                    and on Windows turns an opt-out into --unsandboxed. */}
+                {revokedSetup && <p className="v2-agent-settings-page__live" data-testid="agent-machine-revoked-setup">
+                  {placement.activeMachines.length === 0 && <>{t('agentManage.runtime.noActiveMachine')} </>}<code>{revokedSetup.command}</code>
+                  {revokedSetup.keepsUnsandboxed && <>{' '}<V2KeepsUnsandboxedNote /></>}
+                  {revokedSetup.unsandboxedUnknown && <>{' '}<V2UnsandboxedUnknownNote /></>}
+                </p>}
                 {placement.activeMachines.length > 0 ? <div className="v2-agent-settings-page__move">
                   <label className="mu" htmlFor="agent-runtime-machine">{t('agentManage.runtime.moveLabel')}</label>
                   <span className="sel">
@@ -211,11 +220,7 @@ const V2AgentRuntimeBody: React.FC<Props> = ({
                   <button type="button" className="b b-s b-sm" disabled={!machineChoice || moving} onClick={() => { void moveAgent(); }}>
                     {moving ? t('agentManage.runtime.moving') : t('agentManage.runtime.move')}
                   </button>
-                </div> : revokedSetup ? <p className="v2-agent-settings-page__live" data-testid="agent-machine-revoked-setup">
-                  {t('agentManage.runtime.noActiveMachine')} <code>{revokedSetup.command}</code>
-                  {revokedSetup.keepsUnsandboxed && <>{' '}<V2KeepsUnsandboxedNote /></>}
-                  {revokedSetup.unsandboxedUnknown && <>{' '}<V2UnsandboxedUnknownNote /></>}
-                </p> : <p className="v2-agent-settings-page__live">{t('agentManage.runtime.noActiveMachine')} <code>{daemonSetupCommandFor(browserIsWindows() ? 'windows' : 'unix')}</code></p>}
+                </div> : revokedSetup ? null : <p className="v2-agent-settings-page__live">{t('agentManage.runtime.noActiveMachine')} <code>{daemonSetupCommandFor(browserIsWindows() ? 'windows' : 'unix')}</code></p>}
               </div>
             </details>
           ) : (

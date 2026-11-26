@@ -1,5 +1,4 @@
 import React from 'react';
-import { Link } from 'react-router-dom';
 import { Trans } from 'react-i18next';
 import { daemonSetupCommandFor } from '../utils/daemonSetupCommand';
 
@@ -8,17 +7,17 @@ import { daemonSetupCommandFor } from '../utils/daemonSetupCommand';
 // this build does not know renders nothing, so the generic line stays.
 export const hasDaemonRevokedReasonText = (reason: unknown): boolean => reason === 'cli_duplicate_daemons';
 
-// The fix is the computer setup command. Where the page already shows it just
-// below (commandBelow), the line points there; otherwise it links to Bring
-// your own agent, which shows the command for such a computer. Setup registers
-// a NEW computer, and nothing rebinds the agent by itself (adopt takes only an
-// unbound agent), so the line ends with the move step this panel offers.
-const V2DaemonRevokedReason: React.FC<{ reason?: string | null; commandBelow?: boolean }> = ({ reason, commandBelow = false }) => {
+// The fix is that computer's own setup command, which the panel shows just
+// below from its record (revokedComputerSetup). Never a link to Bring your own
+// agent: its add-a-computer line follows the browser's OS with default options,
+// so on Windows it carries --unsandboxed for an owner who opted out (review of
+// #4356). Setup registers a NEW computer, and nothing rebinds the agent by
+// itself (adopt takes only an unbound agent), so the line ends with the move
+// step this panel offers.
+const V2DaemonRevokedReason: React.FC<{ reason?: string | null }> = ({ reason }) => {
   if (reason !== 'cli_duplicate_daemons') return null;
   return <>
-    {commandBelow
-      ? <Trans i18nKey="agentManage.runtime.machineRevokedCliBugBelow" />
-      : <Trans i18nKey="agentManage.runtime.machineRevokedCliBug" components={{ byo: <Link to="/v2/agents/byo" /> }} />}
+    <Trans i18nKey="agentManage.runtime.machineRevokedCliBugBelow" />
     {' '}<Trans i18nKey="agentManage.runtime.machineRevokedMoveAfter" />
   </>;
 };

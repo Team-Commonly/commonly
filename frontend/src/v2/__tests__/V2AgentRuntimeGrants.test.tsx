@@ -86,19 +86,61 @@ test('revoked Runtime row offers an active computer and moves in one request', a
 });
 
 // F641: a key revoked with a reason tells the person what to do. The line sits
-// in the panel body, never inside <summary>, so its link can't toggle it.
-test('a computer revoked because of a CLI bug points at the setup command on Bring your own agent', async () => {
-  axios.get.mockImplementation((url) => Promise.resolve({ data: url.includes('/agent-binding/placement')
-    ? { boundMachineId: 'old', requestedMachineId: null, boundMachineRevoked: true, boundMachineRevokedReason: 'cli_duplicate_daemons',
-      activeMachines: [{ machineId: 'new', name: 'New Mac' }] } : response }));
+// in the panel body, never inside <summary>. It names that computer's OWN setup
+// line, shown right below from the placement record (its OS, its sandbox
+// choice), never a link to the generic add-a-computer page: that page builds the
+// line from the browser's OS with default options, so on Windows it would add
+// --unsandboxed for an owner who opted out (review of #4356).
+const revokedWithLiveComputer = (host) => axios.get.mockImplementation((url) => Promise.resolve({ data: url.includes('/agent-binding/placement')
+  ? { boundMachineId: 'old', requestedMachineId: null, boundMachineRevoked: true, boundMachineRevokedReason: 'cli_duplicate_daemons',
+    boundMachineHost: host, activeMachines: [{ machineId: 'new', name: 'New Mac' }] } : response }));
+
+test('a computer revoked because of a CLI bug shows its own setup line below, with no generic link', async () => {
+  revokedWithLiveComputer({ platform: 'darwin', unsandboxedOptIn: false });
   renderSection();
   const line = await screen.findByTestId('agent-machine-revoked-reason');
-  expect(line).toHaveTextContent('This computer was disconnected because of a bug in our CLI. Run the computer setup command again from Bring your own agent to get the fixed version.');
+  expect(line).toHaveTextContent('This computer was disconnected because of a bug in our CLI. Run the computer setup command below on it again to get the fixed version.');
   expect(line).toHaveTextContent('Setup adds it as a new computer, and this agent stays on the old one until you move it: then choose the new computer under Run on and select Move agent.');
-  expect(within(line).getByRole('link', { name: 'Bring your own agent' })).toHaveAttribute('href', '/v2/agents/byo');
+  expect(within(screen.getByTestId('agent-machine-placement')).queryByRole('link')).not.toBeInTheDocument();
   expect(line.closest('summary')).toBeNull();
+  expect(screen.getByTestId('agent-machine-revoked-setup').querySelector('code').textContent).toBe(daemonSetupCommandFor('unix'));
+  // The move step stays on offer beside it.
+  expect(screen.getByLabelText('Run on')).toBeInTheDocument();
   expect(screen.getByTestId('agent-machine-placement').querySelector('summary'))
     .toHaveTextContent('This computer’s key was revoked. Choose another computer to run this agent.');
+});
+
+test('a revoked Windows computer that opted out never gets --unsandboxed, even from a Windows browser', async () => {
+  const platform = jest.spyOn(window.navigator, 'platform', 'get').mockReturnValue('Win32');
+  try {
+    revokedWithLiveComputer({ platform: 'win32', unsandboxedOptIn: false });
+    renderSection();
+    const setup = await screen.findByTestId('agent-machine-revoked-setup');
+    expect(setup.querySelector('code').textContent).toBe(daemonSetupCommandFor('windows', undefined, { unsandboxed: false }));
+    expect(screen.getByTestId('agent-machine-placement')).not.toHaveTextContent('--unsandboxed');
+  } finally {
+    platform.mockRestore();
+  }
+});
+
+test('the revoked computer\'s OS follows the record, not the browser', async () => {
+  // A Mac browser, a Windows computer: the Windows line.
+  revokedWithLiveComputer({ platform: 'win32', unsandboxedOptIn: true });
+  const { unmount } = renderSection();
+  const win = await screen.findByTestId('agent-machine-revoked-setup');
+  expect(win.querySelector('code').textContent).toBe(daemonSetupCommandFor('windows'));
+  unmount();
+
+  // A Windows browser, a Mac computer: the Unix line.
+  const platform = jest.spyOn(window.navigator, 'platform', 'get').mockReturnValue('Win32');
+  try {
+    revokedWithLiveComputer({ platform: 'darwin', unsandboxedOptIn: null });
+    renderSection();
+    const mac = await screen.findByTestId('agent-machine-revoked-setup');
+    expect(mac.querySelector('code').textContent).toBe(daemonSetupCommandFor('unix'));
+  } finally {
+    platform.mockRestore();
+  }
 });
 
 test('with no computer left, the reason points at the setup command the panel already shows', async () => {
