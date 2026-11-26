@@ -185,9 +185,10 @@ const handlerSource = (method, route) => {
   throw new Error(`could not find the end of ${head}) in ${ROUTES_PATH}`);
 };
 
-// Where server.ts mounts the runtime router.
-const serverMountPath = () => {
-  const server = fs.readFileSync(SERVER_PATH, 'utf8');
+// Where server.ts mounts the runtime router. Comments are stripped first, so a
+// commented-out registration cannot stand in for a live one.
+const mountPathIn = (source) => {
+  const server = stripComments(source);
   const req = server.match(/const\s+(\w+)\s*=\s*require\(['"]\.\/routes\/agentsRuntime['"]\)/);
   if (!req) throw new Error(`server.ts does not require ./routes/agentsRuntime (${SERVER_PATH})`);
   const mounts = [...server.matchAll(new RegExp(`app\\.use\\(\\s*['"]([^'"]+)['"]\\s*,\\s*${req[1]}\\s*\\)`, 'g'))];
@@ -196,6 +197,7 @@ const serverMountPath = () => {
   }
   return mounts[0][1];
 };
+const serverMountPath = () => mountPathIn(fs.readFileSync(SERVER_PATH, 'utf8'));
 
 // Body fields a handler reads: `req.body?.x`, `req.body.x`, and names
 // destructured from `req.body` (`const { a, b: c } = req.body || {}`).
@@ -245,6 +247,13 @@ describe('CAP spec conformance (docs/openapi/cap-kernel.yaml)', () => {
     if (mounted !== MOUNT) {
       throw new Error(`server.ts mounts the runtime router at ${mounted}; the spec's paths assume ${MOUNT}`);
     }
+  });
+
+  it('reads only an active mount registration', () => {
+    const required = "const runtime = require('./routes/agentsRuntime');\n";
+    expect(mountPathIn(`${required}app.use('/api/agents/runtime', runtime);\n`)).toBe(MOUNT);
+    expect(() => mountPathIn(`${required}// app.use('/api/agents/runtime', runtime);\n`)).toThrow(/found 0/);
+    expect(() => mountPathIn(`${required}/* app.use('/api/agents/runtime', runtime); */\n`)).toThrow(/found 0/);
   });
 
   it('reads nested router mount prefixes', () => {
