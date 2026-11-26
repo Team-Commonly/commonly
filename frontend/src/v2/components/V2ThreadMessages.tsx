@@ -436,7 +436,12 @@ const V2ThreadMessages: React.FC<V2ThreadMessagesProps> = ({
       content: ruling.value,
       created_at: ruling.at || source.created_at,
       createdAt: ruling.at || source.createdAt,
-      user: { username: ruling.by || t('common.you'), isBot: false },
+      // `username` stays the handle; the name people read rides in displayName (F645).
+      user: {
+        username: ruling.by || t('common.you'),
+        ...(ruling.byName ? { displayName: ruling.byName } : {}),
+        isBot: false,
+      },
       replyTo: null,
       reply_msg_id: null,
       reply_content: null,

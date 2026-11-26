@@ -2,6 +2,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useV2Api } from '../hooks/useV2Api';
 import { notifyAttentionChanged } from '../hooks/useV2PodAttention';
+import { renderPlainWithMentions } from './V2MentionChip';
 
 export interface V2DecisionOption {
   label: string;
@@ -19,7 +20,10 @@ export interface V2DecisionCardData {
 
 export interface V2DecisionRuling {
   value: string;
+  /** The ruler's handle: the stable key, never shown when a name is known. */
   by?: string;
+  /** The ruler's display name, which people read (F645). */
+  byName?: string;
   at?: string;
   messageId?: string;
 }
@@ -73,6 +77,7 @@ const V2DecisionCard: React.FC<V2DecisionCardProps> = ({ decision, onRuled }) =>
       const next = {
         value: settled?.value || trimmed,
         ...(settled?.by ? { by: settled.by } : {}),
+        ...(settled?.byName ? { byName: settled.byName } : {}),
         ...(settled?.at ? { at: settled.at } : {}),
         ...(settled?.messageId ? { messageId: settled.messageId } : {}),
       };
@@ -88,6 +93,7 @@ const V2DecisionCard: React.FC<V2DecisionCardProps> = ({ decision, onRuled }) =>
         const next = {
           value: standing.value,
           ...(standing.by ? { by: standing.by } : {}),
+          ...(standing.byName ? { byName: standing.byName } : {}),
           ...(standing.at ? { at: standing.at } : {}),
           ...(standing.messageId ? { messageId: standing.messageId } : {}),
         };
@@ -113,10 +119,10 @@ const V2DecisionCard: React.FC<V2DecisionCardProps> = ({ decision, onRuled }) =>
         {decision.actorName && <span className="v2-decision-card__agent">{decision.actorName}</span>}
         <h3>{decision.title}</h3>
       </div>
-      {decision.detail && <p className="v2-decision-card__question">{decision.detail}</p>}
+      {decision.detail && <p className="v2-decision-card__question">{renderPlainWithMentions(decision.detail)}</p>}
       {ruling ? (
         <p className="v2-decision-card__settled" role="status">
-          {t('activity.decision.ruled', { by: ruling.by, value: ruling.value })}
+          {t('activity.decision.ruled', { by: ruling.byName || ruling.by, value: ruling.value })}
         </p>
       ) : (
         <div className="v2-decision-card__options">

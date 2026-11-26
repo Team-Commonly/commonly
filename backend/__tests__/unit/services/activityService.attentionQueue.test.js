@@ -4,9 +4,10 @@ const mockPodFind = jest.fn();
 const mockTaskFind = jest.fn();
 const mockDecisionFind = jest.fn();
 const mockDecisionCountDocuments = jest.fn();
+const mockUserFind = jest.fn();
 
 jest.mock('../../../models/Pod', () => ({ find: (...args) => mockPodFind(...args) }));
-jest.mock('../../../models/User', () => ({}));
+jest.mock('../../../models/User', () => ({ find: (...args) => mockUserFind(...args) }));
 jest.mock('../../../models/Activity', () => ({}));
 jest.mock('../../../models/Summary', () => ({}));
 jest.mock('../../../models/Post', () => ({}));
@@ -57,6 +58,34 @@ describe('ActivityService.getDecisionQueue', () => {
     expect(mockGetOpenQueue).toHaveBeenCalledWith('507f191e810c19729de860ea', {
       podId: 'pod-1', limit: 50, offset: 0,
     });
+  });
+
+  // F645: the Activity ruling line reads "Alex ruled", not the handle.
+  it('names each ruler by display name and keeps the handle in by', async () => {
+    mockPodFind.mockReturnValue(chain([{ _id: 'pod-1', name: 'Current', members: ['member-1'] }]));
+    mockDecisionCountDocuments.mockResolvedValue(2);
+    mockDecisionFind.mockReturnValue(decisionChain([
+      {
+        _id: 'decision-1', podId: 'pod-1', status: 'ruled', messageId: '42', agentName: 'scout',
+        title: 'Choose', question: 'Which?', options: [],
+        ruling: { value: 'B', byUserId: '64b000000000000000000001', byUsername: 'growth-t002-10160904a', messageId: '43' },
+      },
+      {
+        _id: 'decision-2', podId: 'pod-1', status: 'ruled', messageId: '52', agentName: 'scout',
+        title: 'Choose', question: 'Which?', options: [],
+        ruling: { value: 'A', byUserId: '64b000000000000000000002', byUsername: 'gone-person', messageId: '53' },
+      },
+    ]));
+    mockUserFind.mockReturnValue(chain([
+      { _id: '64b000000000000000000001', username: 'growth-t002-10160904a', displayName: 'Alex' },
+    ]));
+
+    const history = await ActivityService.getDecisionHistory('member-1', { podId: 'pod-1' });
+
+    expect(history.items[0].ruling).toMatchObject({ by: 'growth-t002-10160904a', byName: 'Alex' });
+    // A ruler who is gone falls back to the stored handle.
+    expect(history.items[1].ruling).toMatchObject({ by: 'gone-person', byName: 'gone-person' });
+    expect(mockUserFind).toHaveBeenCalledTimes(1);
   });
 
   it('reads settled decisions durably for a current pod member', async () => {
