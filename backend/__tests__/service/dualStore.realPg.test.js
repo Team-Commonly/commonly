@@ -465,6 +465,52 @@ real('tombstone deletes on real PostgreSQL', () => {
       await expectClean(1);
     });
 
+    // The stores are asymmetric (a real delete in Mongo, a kept row in
+    // Postgres), so every Postgres read must leave a tombstone out. This pins
+    // the `NOT pg_deleted` clause itself: the second half re-marks a live row
+    // with its payload intact, so a read that skipped the clause would match
+    // on the unique key even though tombstones are normally NULLed.
+    it('every pg-read path skips a tombstone, the unique deliveryId lookup included', async () => {
+      const reader = createDualStore({
+        name: 'DualStoreRealPgDelivery',
+        model: Delivery,
+        pg: adapter,
+        toRow,
+        fromRow: (row) => ({ _id: row.id, deliveryId: row.delivery_id, label: row.label }),
+        deletes: 'tombstone',
+        releaseKeys: { deliveryId: 'sentinel' },
+        filterColumns: { _id: 'id', deliveryId: 'delivery_id', label: 'label' },
+      });
+      const gone = await reader.create({ deliveryId: 'd-gone', label: 'gone' });
+      const kept = await reader.create({ deliveryId: 'd-kept', label: 'kept' });
+      expect(await reader.remove(gone._id)).toBe(true);
+      process.env[ENV] = 'pg-read';
+      const query = jest.spyOn(database.pool, 'query');
+      const reads = async (id, deliveryId) => ({
+        byId: await reader.findById(id),
+        byKey: await reader.findOneWhere({ deliveryId }),
+        byKeyMany: await reader.findWhere({ deliveryId }),
+        byIdFilter: await reader.findWhere({ _id: id }),
+        all: (await reader.findWhere({})).map((doc) => String(doc._id)),
+        scan: (await adapter.scan(null, 10)).map(({ id: rowId }) => rowId),
+      });
+
+      const afterDelete = await reads(gone._id, 'd-gone');
+      expect(afterDelete).toEqual({
+        byId: null, byKey: null, byKeyMany: [], byIdFilter: [], all: [String(kept._id)], scan: [String(kept._id)],
+      });
+      // These reads were served by Postgres, not the Mongo fallback.
+      expect(query.mock.calls.some(([sql]) => /NOT pg_deleted/.test(sql))).toBe(true);
+      expect((await reader.findOneWhere({ deliveryId: 'd-kept' }))).toMatchObject({ label: 'kept' });
+
+      await database.pool.query('UPDATE deliveries SET pg_deleted = true, deleted_at = now() WHERE id = $1', [String(kept._id)]);
+      expect(await raw(String(kept._id))).toMatchObject({ delivery_id: 'd-kept', pg_deleted: true });
+      expect(await reads(kept._id, 'd-kept')).toEqual({
+        byId: null, byKey: null, byKeyMany: [], byIdFilter: [], all: [], scan: [],
+      });
+      query.mockRestore();
+    });
+
     it('while the Postgres remove fails: Mongo takes the re-insert, and repair converges both stores', async () => {
       const old = await store.create({ deliveryId: 'redelivered', label: 'old' });
       const remove = jest.spyOn(adapter, 'remove').mockRejectedValueOnce(new Error('pg down'));
