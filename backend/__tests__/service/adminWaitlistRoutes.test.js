@@ -5,10 +5,13 @@
  * send-invitation (routes/admin/users.ts), every status and body pinned.
  *
  * ADR-034 step 2: this file runs as it is in every store mode. By default it
- * runs in mongo. With STORE_MODE_WAITLIST_REQUEST=dual or pg-read and the PG_*
- * settings of a throwaway Postgres that has run 0028, the same assertions hold
- * and each test also checks Postgres matches Mongo (verify) at its end. pg mode
- * is pinned at the end: every write route refuses before any write.
+ * runs in mongo. In dual or pg-read (STORE_MODE_WAITLIST_REQUEST) it needs a
+ * throwaway Postgres whose default schema has run 0028 (the realPg suite drops
+ * its own copy of the table, so apply it after), its PG_* settings, and
+ * INTEGRATION_TEST=true with MONGO_URI (a replica-set mongod): without
+ * INTEGRATION_TEST the test setup removes PG_HOST. Then the same assertions
+ * hold and each test also checks Postgres matches Mongo (verify) at its end.
+ * pg mode is pinned at the end: every write route refuses before any write.
  */
 const express = require('express');
 const request = require('supertest');
