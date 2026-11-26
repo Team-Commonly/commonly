@@ -24,10 +24,10 @@ This document clarifies how Commonly's built-in Summarizer service works alongsi
 **Location**: `backend/services/summarizerService.js`, `chatSummarizerService.js`, `dailyDigestService.js`
 
 **What it does**:
-- Runs **automatically every hour** (cron job at minute 0)
+- Runs **automatically every hour** (cron job at minute 9)
 - Summarizes external integration buffers and enqueues events for `commonly-bot`
 - Enqueues per-pod `summary.request` events for installed `commonly-bot` instances
-- Runs **daily at 6 AM UTC** to generate personalized digests
+- Runs **hourly** and sends each person's daily digest from their local 08:00 (06:00 UTC when their time zone is unknown)
 - Agent-posted summary messages are persisted into MongoDB (`Summary` model) for feed activity + daily digest context
 - Legacy direct post/chat summarizers are optional via `LEGACY_SUMMARIZER_ENABLED=1`
 
@@ -49,10 +49,10 @@ static async runSummarizer() {
 ```
 
 **Scheduled Jobs**:
-- `0 * * * *` - Hourly summarization + garbage collection
-- `0 6 * * *` - Daily digest generation for all users
+- `9 * * * *` - Hourly summarization + garbage collection (off :00 since F668; `SPREAD_JOB_SCHEDULES` in `schedulerService.ts` holds the minute table)
+- `1 * * * *` - Daily digests, checked hourly: a person is due for three hours from their local 08:00 (06:00 UTC when their time zone is unknown), and anyone sent one in the last 20 hours is skipped (`dailyDigestService.ts`)
 - `0 2 * * *` - Deep cleanup of old summaries (30+ days)
-- `*/10 * * * *` - External feed sync (social platforms)
+- `6,16,26,36,46,56 * * * *` - External feed sync (social platforms), every 10 minutes
 
 **Manual Triggers (Agent-First)**:
 - `POST /api/summaries/trigger` (global admin) enqueues integration summary + pod `summary.request` events for `commonly-bot`.

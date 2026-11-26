@@ -38,7 +38,9 @@ describe('tool registry shape', () => {
     // + 1 direct row edit (commonly_patch_task, TASK-669): PATCH the row itself.
     // + 1 backlog skip (commonly_catch_up, F45): the one way past a hold a read can't clear.
     // + 1 delete-own-message (commonly_delete_message, F141): remove a stray post.
-    expect(tools).toHaveLength(35);
+    // + 1 public PR read (commonly_read_public_pr, F646): read-only, public repos,
+    //   no credential of anyone's, for a seat whose sandbox has no network.
+    expect(tools).toHaveLength(36);
   });
 
   it('exposes no GitHub PR tool — that surface is `gh`, not the kernel', () => {
@@ -1231,4 +1233,85 @@ test('post schema publishes the current catalogue tuple without a private manife
   const description = byName.commonly_post_message.inputSchema.properties.payload.description;
   for (const value of Object.values(revision)) expect(description).toContain(String(value));
   expect(description).not.toContain('published catalogue revision manifest');
+});
+
+describe('commonly_read_public_pr (F646)', () => {
+  const tool = () => byName.commonly_read_public_pr;
+
+  it('is read-only and says public repos only', () => {
+    expect(tool().annotations?.readOnlyHint).toBe(true);
+    expect(tool().description).toMatch(/read-only/i);
+    expect(tool().description).toMatch(/public/i);
+  });
+
+  it('calls the route with owner, repo and number', async () => {
+    const fetchSpy = installFetch(async () => okResponse({ title: 'T' }));
+    const res = await tool().call({ owner: 'acme', repo: 'widgets', number: 7 });
+    expect(res.isError).toBeUndefined();
+    const [url, init] = fetchSpy.mock.calls[0];
+    expect(url).toBe('https://x.example/api/agents/runtime/github/public-pr?owner=acme&repo=widgets&number=7');
+    expect(init.method).toBe('GET');
+  });
+
+  it.each([
+    ['https://github.com/acme/widgets/pull/7'],
+    ['https://github.com/acme/widgets/pull/7/files'],
+    ['https://github.com/acme/widgets/pull/7/'],
+    ['https://github.com/acme/widgets/pull/7?diff=split#r1'],
+  ])('parses the link %s into the same call', async (url) => {
+    const fetchSpy = installFetch(async () => okResponse({ title: 'T' }));
+    await tool().call({ url });
+    expect(fetchSpy.mock.calls[0][0])
+      .toBe('https://x.example/api/agents/runtime/github/public-pr?owner=acme&repo=widgets&number=7');
+  });
+
+  it.each([
+    ['http://github.com/acme/widgets/pull/7'],
+    ['https://evil.example/acme/widgets/pull/7'],
+    ['https://github.com.evil.example/acme/widgets/pull/7'],
+    ['https://user@github.com/acme/widgets/pull/7'],
+    ['https://github.com:8443/acme/widgets/pull/7'],
+    ['https://github.com/acme/widgets/issues/7'],
+    ['https://github.com/acme/../pull/7'],
+    ['https://github.com/acme/widgets/pull/0'],
+    ['not a url'],
+  ])('rejects %s without calling Commonly', async (url) => {
+    const fetchSpy = installFetch(async () => okResponse({}));
+    const res = await tool().call({ url });
+    expect(res.isError).toBe(true);
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
+  it('caps number at 2^31-1, as the server does', async () => {
+    const fetchSpy = installFetch(async () => okResponse({}));
+    expect((await tool().call({ owner: 'acme', repo: 'widgets', number: 2 ** 31 })).isError).toBe(true);
+    expect((await tool().call({ url: 'https://github.com/acme/widgets/pull/2147483648' })).isError).toBe(true);
+    expect(fetchSpy).not.toHaveBeenCalled();
+    await tool().call({ owner: 'acme', repo: 'widgets', number: 2 ** 31 - 1 });
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
+  });
+
+  it('refuses a link together with owner/repo/number, rather than picking one', async () => {
+    const fetchSpy = installFetch(async () => okResponse({}));
+    const res = await tool().call({ url: 'https://github.com/acme/widgets/pull/7', owner: 'other', repo: 'r', number: 1 });
+    expect(res.isError).toBe(true);
+    expect(res.content[0].text).toMatch(/not both/);
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
+  it('rejects a call with neither a link nor a full owner/repo/number', async () => {
+    const fetchSpy = installFetch(async () => okResponse({}));
+    const res = await tool().call({ owner: 'acme', repo: 'widgets' });
+    expect(res.isError).toBe(true);
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
+  it('surfaces the backend refusal verbatim', async () => {
+    installFetch(async () => ({
+      ok: false, status: 404, text: async () => JSON.stringify({ code: 'pr_not_found_or_private' }),
+    }));
+    const res = await tool().call({ owner: 'acme', repo: 'secret', number: 1 });
+    expect(res.isError).toBe(true);
+    expect(res.content[0].text).toContain('pr_not_found_or_private');
+  });
 });

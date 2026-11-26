@@ -47,7 +47,7 @@ interface NeedsYouItem {
   sourceType?: string;
   // A settled decision keeps its ruling (from durable history) so the 0-state
   // can say when the last ask was answered.
-  ruling?: { value?: string; by?: string; at?: string | null } | null;
+  ruling?: { value?: string; by?: string; byName?: string; at?: string | null } | null;
   kind: 'mention' | 'approval' | 'decision' | 'handoff' | 'blocked';
   title: string;
   detail: string;
@@ -99,7 +99,7 @@ interface QueueResponse {
 interface DecisionHistoryResponse {
   items?: Array<NeedsYouItem & {
     status?: 'pending' | 'ruled';
-    ruling?: { value?: string; by?: string; at?: string | null } | null;
+    ruling?: { value?: string; by?: string; byName?: string; at?: string | null } | null;
     createdAt?: string | null;
   }>;
   count?: number;
@@ -659,7 +659,8 @@ const V2ActivityPage: React.FC = () => {
             settledHistory.forEach((item) => {
               next[String(item.id)] = {
                 value: String(item.ruling?.value),
-                ...(item.ruling?.by ? { by: item.ruling.by } : {}),
+                // F645: people read the ruler's display name; the handle is only a fallback.
+                ...(item.ruling?.byName || item.ruling?.by ? { by: item.ruling.byName || item.ruling.by } : {}),
               };
             });
             return next;
@@ -942,7 +943,8 @@ const V2ActivityPage: React.FC = () => {
           settled.forEach((item) => {
             next[String(item.id)] = {
               value: String(item.ruling?.value),
-              ...(item.ruling?.by ? { by: item.ruling.by } : {}),
+              // F645: people read the ruler's display name; the handle is only a fallback.
+              ...(item.ruling?.byName || item.ruling?.by ? { by: item.ruling.byName || item.ruling.by } : {}),
             };
           });
           return next;
@@ -1148,7 +1150,7 @@ const V2ActivityPage: React.FC = () => {
       const token = localStorage.getItem('token');
       const response = await axios.post<{
         ok?: boolean;
-        decision?: { ruling?: { value?: string; by?: string } | null };
+        decision?: { ruling?: { value?: string; by?: string; byName?: string } | null };
       }>(
         `/api/activity/decisions/${encodeURIComponent(item.id)}/choose`,
         { value },
@@ -1156,7 +1158,7 @@ const V2ActivityPage: React.FC = () => {
       );
       if (!response.data?.ok) throw new Error('Decision ruling failed');
       const settled = response.data.decision?.ruling;
-      const ruling = { value: settled?.value || value.trim(), ...(settled?.by ? { by: settled.by } : {}) };
+      const ruling = { value: settled?.value || value.trim(), ...(settled?.byName || settled?.by ? { by: settled.byName || settled.by } : {}) };
       setRuledDecisions((current) => ({
         ...current,
         [item.id]: ruling,
@@ -1169,7 +1171,7 @@ const V2ActivityPage: React.FC = () => {
     } catch (error) {
       const standing = axios.isAxiosError(error) ? error.response?.data?.decision?.ruling : null;
       if (standing?.value) {
-        const ruling = { value: standing.value, ...(standing.by ? { by: standing.by } : {}) };
+        const ruling = { value: standing.value, ...(standing.byName || standing.by ? { by: standing.byName || standing.by } : {}) };
         setRuledDecisions((current) => ({
           ...current,
           [item.id]: ruling,

@@ -135,6 +135,23 @@ describe('an explicit agent-instance key beats a display slug equal to it', () =
   });
 });
 
+// F645: an instanceId is the install's own name and outranks another install's
+// display slug that spells it, in either order, so `@review` wakes the install
+// the composer labels it as.
+describe('an instanceId beats a sibling display slug equal to it', () => {
+  const dflt = { agentName: 'assistant', instanceId: 'default', displayName: 'Review' };
+  const sibling = { agentName: 'assistant', instanceId: 'review', displayName: 'Second Reviewer' };
+
+  test.each([
+    ['default first', [dflt, sibling]],
+    ['sibling first', [sibling, dflt]],
+  ])('%s', (_order, installs) => {
+    const { map } = buildMentionMap(installs, []);
+    expect(map.get('review')).toEqual({ agentName: 'assistant', instanceId: 'review' });
+    expect(map.get('assistant-default')).toEqual({ agentName: 'assistant', instanceId: 'default' });
+  });
+});
+
 describe('routedMentionHandle tries a preferred key only while it routes here', () => {
   const helper = { agentName: 'codex', instanceId: 'helper', displayName: 'Assistant' };
   const desk = { agentName: 'claude', instanceId: 'desk', displayName: 'Assistant' };

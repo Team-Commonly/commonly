@@ -18,7 +18,8 @@ const SHIPPED = ['0001_legacy_schema.sql', '0002_record_chains.sql', '0003_self_
   '0017_agent_first_contacts.sql', '0018_agent_digest_states.sql', '0019_agent_task_wake_states.sql',
   '0020_needs_you_email_quotas.sql', '0021_agent_computer_takeovers.sql', '0022_billing_events.sql',
   '0023_discord_summary_histories.sql', '0024_needs_you_emails.sql', '0025_agent_task_row_wake_states.sql',
-  '0026_agent_provider_keys.sql'];
+  '0026_agent_provider_keys.sql', '0027_hosted_mcp_dcr_registrations.sql',
+  '0028_waitlist_requests.sql'];
 // The three tables 0003 took over from runtime DDL, and every column each must
 // end with (0004 adds tool_calls' provider columns). Shared by the fresh and the
 // retrofit case: both must reach it.

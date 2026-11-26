@@ -608,9 +608,12 @@ describe('judgeSeatConfinement — a seat with no daemon and no sandbox block (F
     await installRow({ runtime: { runtimeType: 'webhook', host: 'byo' } });
     mockPod.findById.mockImplementation(() => ({
       select: () => ({ lean: async () => ({
-        _id: POD, type: 'team', members: [SEAT], publicRead: false, joinPolicy: 'invite-only',
+        _id: POD, type: 'team', members: [OWNER, SEAT], publicRead: false, joinPolicy: 'invite-only',
       }) }),
     }));
+    // F660: the granter is a member of the pod they shared the grant with, so
+    // the census lists them, as a person.
+    await User.create({ _id: OWNER, username: 'granter', email: 'granter@example.test', password: 'fixture-only' });
     await RoomGrant.create(namedPodGrant());
     const result = await call();
     expect(result.callId).toBeTruthy();
@@ -627,9 +630,11 @@ describe('judgeSeatConfinement — a seat with no daemon and no sandbox block (F
     await installRow({ runtime: { adapter: 'claude', host: 'byo' }, environment: { sandbox: { trust: 'public' } } });
     mockPod.findById.mockImplementation(() => ({
       select: () => ({ lean: async () => ({
-        _id: POD, type: 'team', members: [SEAT], publicRead: false, joinPolicy: 'invite-only',
+        _id: POD, type: 'team', members: [OWNER, SEAT], publicRead: false, joinPolicy: 'invite-only',
       }) }),
     }));
+    // The granter has an account (F664).
+    await User.create({ _id: OWNER, username: 'granter', email: 'granter@example.test', password: 'fixture-only' });
     await RoomGrant.create(namedPodGrant());
     await expect(call()).rejects.toMatchObject({
       code: 'grant_broker_unconfined', statusCode: 403,

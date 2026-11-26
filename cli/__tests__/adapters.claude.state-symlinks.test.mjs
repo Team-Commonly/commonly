@@ -6,7 +6,7 @@
  * there is the child's choice, so every write the host makes into that folder
  * must not follow a link the child planted: not the auth-metadata file, not a
  * chmod of a subfolder, not a keychain link made inside a subfolder, and not
- * the removal of the login copy after the turn.
+ * the removal of a login copy an older CLI left (F661: none is written now).
  *
  * Also F153: a Seatbelt seat with no key that fails "Not logged in" says how to
  * give it one, as the bwrap seat does.
@@ -302,11 +302,19 @@ describe('a bwrap Claude seat\'s state folder (F153)', () => {
     fs.rmSync(root, { recursive: true, force: true });
   });
 
+  // F661: a public seat reaches the model on a key behind the proxy, a
+  // workspace seat on the person's own token; each ignores the other's.
   const bwrapSpawn = (impl, { trust = 'public', env = {} } = {}) => claude.spawn('hi', {
     agentName: 'f153-bwrap-seat',
     sessionId: null,
     cwd,
-    env: { PATH: process.env.PATH, CLAUDE_CONFIG_DIR: operatorClaude, ...env },
+    env: {
+      PATH: process.env.PATH,
+      CLAUDE_CONFIG_DIR: operatorClaude,
+      ANTHROPIC_API_KEY: 'sk-ant-f153-bw-key',
+      CLAUDE_CODE_OAUTH_TOKEN: 'f153-own-token',
+      ...env,
+    },
     environment: { model: 'test-model', sandbox: { mode: 'bwrap', trust } },
     memoryLongTerm: '',
     _publicClaudeState: state,
@@ -329,10 +337,9 @@ describe('a bwrap Claude seat\'s state folder (F153)', () => {
     expect(written.mode & 0o777).toBe(0o600);
   });
 
-  // The public login seat's copy is removed after its turn. A turn that swaps
-  // its .claude folder for a link to the person's own ~/.claude would have the
-  // host delete the person's login through it.
-  test('the login copy is removed after the turn without following a .claude link the turn planted', async () => {
+  // A turn that swaps its .claude folder for a link to the person's own
+  // ~/.claude must not have the host touch the person's login through it.
+  test('a .claude link the turn planted is not followed after the turn', async () => {
     const calls = [];
     await bwrapSpawn((cmd, args, opts) => {
       // Play the confined child: move the real folder aside and plant a link.
@@ -353,7 +360,6 @@ describe('a bwrap Claude seat\'s state folder (F153)', () => {
   // (EBUSY), so the host's check of them holds for the whole turn.
   test.each([
     ['public', {}],
-    ['public', { ANTHROPIC_API_KEY: 'sk-ant-f153-bw-key' }],
     ['workspace', {}],
   ])('a %s seat binds .claude and tmp on their own, after the state folder', async (trust, env) => {
     const calls = [];
@@ -372,17 +378,17 @@ describe('a bwrap Claude seat\'s state folder (F153)', () => {
     }
   });
 
-  // A staged copy of the login a crashed turn left behind holds the access
-  // token. The removal after the turn takes it with the login copy.
-  test('a staged login copy left in .claude is removed with the login after the turn', async () => {
+  // A staged copy of the login a crashed turn of an older CLI left holds an
+  // access token. The next turn removes it with the copy (F661).
+  test('a staged login copy an older CLI left in .claude is removed before the next turn', async () => {
     const configDir = path.join(state, '.claude');
     const staged = path.join(configDir, '..credentials.json.0b5e9a4c-1111-4222-8333-944455556666.tmp');
     const unrelated = path.join(configDir, 'settings.json');
-    await bwrapSpawn(() => {
-      fs.writeFileSync(staged, '{"claudeAiOauth":{"accessToken":"left-behind"}}\n', { mode: 0o600 });
-      fs.writeFileSync(unrelated, '{}\n');
-      return fakeChild({ stdout: 'ok' });
-    });
+    fs.mkdirSync(configDir, { mode: 0o700 });
+    fs.writeFileSync(staged, '{"claudeAiOauth":{"accessToken":"left-behind"}}\n', { mode: 0o600 });
+    fs.writeFileSync(path.join(configDir, '.credentials.json'), '{"claudeAiOauth":{"accessToken":"left-behind"}}\n', { mode: 0o600 });
+    fs.writeFileSync(unrelated, '{}\n');
+    await bwrapSpawn(() => fakeChild({ stdout: 'ok' }));
     expect(lstatOrNull(path.join(configDir, '.credentials.json'))).toBeNull();
     expect(lstatOrNull(staged)).toBeNull();
     // Only the login's own files go.
@@ -406,16 +412,16 @@ describe('a bwrap Claude seat\'s state folder (F153)', () => {
     expect(fs.readFileSync(path.join(decoyDir, '.credentials.json'), 'utf8')).toBe(DECOY_TEXT);
   });
 
-  // A child can leave a directory under a staged copy's name. Removing the
-  // login after the turn skips it rather than failing on it, and still removes
-  // the login copy itself.
+  // A child can leave a directory under a staged copy's name. Removing an old
+  // login copy skips it rather than failing on it, and still removes the copy.
   test('a directory named like a staged login copy does not break the removal of the login', async () => {
     const configDir = path.join(state, '.claude');
     const stagedDir = path.join(configDir, '..credentials.json.0b5e9a4c-1111-4222-8333-944455556666.tmp');
+    fs.mkdirSync(stagedDir, { recursive: true });
+    fs.writeFileSync(path.join(stagedDir, 'inside'), 'x');
+    fs.writeFileSync(path.join(configDir, '.credentials.json'), '{}\n', { mode: 0o600 });
     const calls = [];
     await bwrapSpawn((cmd, args, opts) => {
-      fs.mkdirSync(stagedDir);
-      fs.writeFileSync(path.join(stagedDir, 'inside'), 'x');
       calls.push({ cmd, args, opts });
       return fakeChild({ stdout: 'ok' });
     });
@@ -424,7 +430,7 @@ describe('a bwrap Claude seat\'s state folder (F153)', () => {
     expect(fs.lstatSync(stagedDir).isDirectory()).toBe(true);
   });
 
-  test('the next turn refuses a .claude link, before copying the login anywhere', async () => {
+  test('the next turn refuses a .claude link, before removing or writing anything through it', async () => {
     fs.symlinkSync(decoyDir, path.join(state, '.claude'));
     const calls = [];
     await expect(bwrapSpawn((cmd, args, opts) => { calls.push({ cmd, args, opts }); return fakeChild(); }))
@@ -434,16 +440,20 @@ describe('a bwrap Claude seat\'s state folder (F153)', () => {
   });
 
   // The open question F153 carried: which login a Linux workspace seat uses
-  // when the host env has a key. Pinned here as it stands: the login. The key
-  // never reaches the jail, and no proxy starts (macOS prefers the key, F151).
-  test('a Linux workspace seat with ANTHROPIC_API_KEY set still runs on the login copy, not the key', async () => {
+  // when the host env has a key. Pinned here as it stands: the person's own
+  // token (F661: never a copy of their login file). The key never reaches the
+  // jail, and no proxy starts (macOS prefers the key, F151).
+  test('a Linux workspace seat with ANTHROPIC_API_KEY set runs on the person\'s own token, not the key', async () => {
     const calls = [];
     let started = 0;
     await claude.spawn('hi', {
       agentName: 'f153-bwrap-ws',
       sessionId: null,
       cwd,
-      env: { PATH: process.env.PATH, CLAUDE_CONFIG_DIR: operatorClaude, ANTHROPIC_API_KEY: 'sk-ant-f153-ws' },
+      env: {
+        PATH: process.env.PATH, CLAUDE_CONFIG_DIR: operatorClaude, ANTHROPIC_API_KEY: 'sk-ant-f153-ws',
+        CLAUDE_CODE_OAUTH_TOKEN: 'f153-own-token',
+      },
       environment: { model: 'test-model', sandbox: { mode: 'bwrap', trust: 'workspace' } },
       memoryLongTerm: '',
       _publicClaudeState: state,
@@ -460,7 +470,9 @@ describe('a bwrap Claude seat\'s state folder (F153)', () => {
     expect(calls).toHaveLength(1);
     expect(JSON.stringify(calls[0].opts.env)).not.toContain('sk-ant-f153-ws');
     expect(calls[0].args.join('\n')).not.toContain('sk-ant-f153-ws');
-    expect(JSON.parse(calls[0].login).claudeAiOauth.accessToken).toBe('operator-only');
+    expect(calls[0].login).toBeNull();
+    expect(calls[0].opts.env.CLAUDE_CODE_OAUTH_TOKEN).toBe('f153-own-token');
+    expect(calls[0].opts.env).not.toHaveProperty('ANTHROPIC_API_KEY');
   });
 });
 

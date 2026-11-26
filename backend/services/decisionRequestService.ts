@@ -1,6 +1,7 @@
 import crypto from 'crypto';
 import type { DecisionCardOption, DecisionRelayCard } from './decisionCardRelay';
 import { escapeRegExp } from '../utils/escape';
+import { rulerNameOf, rulerNamesFor } from './decisionRulerName';
 
 // eslint-disable-next-line global-require
 const DecisionRequest = require('../models/DecisionRequest');
@@ -301,7 +302,7 @@ export const requestDecision = async (input: RequestDecisionOptions): Promise<Re
   };
 };
 
-const decisionPayload = (row: any): Record<string, unknown> => ({
+const decisionPayload = (row: any, byName?: string): Record<string, unknown> => ({
   id: String(row._id),
   status: row.status,
   title: row.title,
@@ -313,10 +314,17 @@ const decisionPayload = (row: any): Record<string, unknown> => ({
   ruling: row.ruling ? {
     value: row.ruling.value,
     by: row.ruling.byUsername,
+    ...(byName || row.ruling.byUsername ? { byName: byName || row.ruling.byUsername } : {}),
     at: row.ruling.at,
     messageId: row.ruling.messageId,
   } : null,
 });
+
+// A standing ruling read back for a caller who did not make it: name its ruler
+// the way people know them (F645).
+const standingPayload = async (row: any): Promise<Record<string, unknown>> => (
+  decisionPayload(row, rulerNameOf(row, await rulerNamesFor([row])))
+);
 
 // The ruled wake names what was asked, so an agent whose session was recycled,
 // or that raised several cards, knows what the pick answers (F588). The caps
@@ -460,16 +468,18 @@ export const chooseDecision = async (
 
   const row = await DecisionRequest.findById(decisionId);
   if (!row) return { status: 404, body: { error: 'Decision request not found' } };
-  if (row.status === 'ruled') {
-    return { status: 409, body: { error: 'Decision already ruled', decision: decisionPayload(row) } };
-  }
 
-  const caller = await User.findById(callerUserId).select('username isBot').lean();
+  const caller = await User.findById(callerUserId).select('username displayName isBot').lean();
   if (!caller || caller.isBot) return { status: 403, body: { error: 'Only a human can rule on this decision' } };
   const pod = await Pod.findById(String(row.podId)).select('members type').lean();
   if (!pod) return { status: 404, body: { error: 'Pod not found' } };
   if (!isListedPodMember(pod, callerUserId)) {
     return { status: 403, body: { error: 'Only human pod members can rule on this decision' } };
+  }
+  // The standing ruling (and its ruler's name) is for members only, so this
+  // answer comes after the caller, bot and membership checks (F645).
+  if (row.status === 'ruled') {
+    return { status: 409, body: { error: 'Decision already ruled', decision: await standingPayload(row) } };
   }
   // A card that names its deciders is theirs to rule; anyone else can read it.
   // Once none of them is still in the pod, any human member may rule, so the
@@ -480,7 +490,7 @@ export const chooseDecision = async (
     && !presentDeciders.some((decider: any) => String(decider.userId) === String(callerUserId))) {
     return {
       status: 403,
-      body: { error: 'This decision is for someone else to rule', code: 'not_a_decider', decision: decisionPayload(row) },
+      body: { error: 'This decision is for someone else to rule', code: 'not_a_decider', decision: await standingPayload(row) },
     };
   }
 
@@ -501,7 +511,7 @@ export const chooseDecision = async (
   if (!claimed) {
     const current = await DecisionRequest.findById(decisionId);
     if (current?.status === 'ruled') {
-      return { status: 409, body: { error: 'Decision already ruled', decision: decisionPayload(current) } };
+      return { status: 409, body: { error: 'Decision already ruled', decision: await standingPayload(current) } };
     }
     return { status: 409, body: { error: 'Decision is being ruled; retry shortly' } };
   }
@@ -517,6 +527,7 @@ export const chooseDecision = async (
     throw new DecisionRequestError('Ruling could not be posted; the decision remains open', 503, 'ruling_not_posted');
   }
 
+  const callerName = caller.displayName?.trim() || caller.username || undefined;
   const ruledAt = new Date();
   const ruled = await DecisionRequest.findOneAndUpdate(
     { _id: claimed._id, status: 'pending', 'rulingLock.token': lockToken },
@@ -594,7 +605,7 @@ export const chooseDecision = async (
       userId: callerUserId,
       replyToMessageId: String(ruled.messageId),
     });
-    return { status: 200, body: { ok: true, decision: decisionPayload(ruled) } };
+    return { status: 200, body: { ok: true, decision: decisionPayload(ruled, callerName) } };
   }
   // The typed event is the asking agent's one return turn. Still run the
   // normal message-delivery seam so explicit mentions in the human ruling
@@ -618,7 +629,7 @@ export const chooseDecision = async (
   } catch (error) {
     console.warn('[decision-request] supplementary ruling delivery failed:', (error as Error).message);
   }
-  return { status: 200, body: { ok: true, decision: decisionPayload(ruled) } };
+  return { status: 200, body: { ok: true, decision: decisionPayload(ruled, callerName) } };
 };
 
 /**

@@ -40,6 +40,8 @@ export interface IRoomGrantByoConsent {
   agents: Array<{ userId: string; sandbox: 'confined' | 'unconfined' | 'unknown' }>;
 }
 
+export type RoomGrantRevocationReason = 'task.done' | 'owner_left_pod' | 'owner_deleted';
+
 export interface IRoomGrantRemovalCue {
   /** The agent's bot User `_id`, the id the grant carried in `audience`. */
   userId: string;
@@ -53,7 +55,8 @@ export interface IRoomGrantRemovalCue {
 export interface IRoomGrant extends Document {
   binding?: RoomGrantTaskBinding;
   taskEpoch?: number;
-  revocationReason?: 'task.done';
+  /** Set by a revoke whose cause is not a person's revoke: `task.done`, F660's `owner_left_pod`, or F664's `owner_deleted`. */
+  revocationReason?: RoomGrantRevocationReason;
   grantId: string;
   connectionId: string;
   installationId: string;
@@ -115,6 +118,7 @@ export interface RoomGrantModel extends Model<IRoomGrant> {
   revokeCascadeMoved(
     grantId: string,
     revokedBy: string,
+    reason?: RoomGrantRevocationReason,
   ): Promise<Array<{ grantId: string; target?: { kind?: string; id?: string } }>>;
 }
 
@@ -148,7 +152,7 @@ const RoomGrantSchema = new Schema<IRoomGrant>(
       default: undefined,
     },
     taskEpoch: { type: Number, min: 0 },
-    revocationReason: { type: String, enum: ['task.done'] },
+    revocationReason: { type: String, enum: ['task.done', 'owner_left_pod', 'owner_deleted'] },
     connectionId: { type: String, required: true, trim: true },
     installationId: { type: String, required: true, trim: true },
     target: { type: GrantTargetSchema, required: true },
@@ -231,6 +235,7 @@ RoomGrantSchema.statics.revokeCascade = async function revokeCascade(
 RoomGrantSchema.statics.revokeCascadeMoved = async function revokeCascadeMoved(
   grantId: string,
   revokedBy: string,
+  reason?: RoomGrantRevocationReason,
 ): Promise<Array<{ grantId: string; target?: { kind?: string; id?: string } }>> {
   const ids: string[] = [grantId];
   const seen = new Set(ids);
@@ -255,7 +260,7 @@ RoomGrantSchema.statics.revokeCascadeMoved = async function revokeCascadeMoved(
       grantId: { $in: ids },
       $or: [{ revokedAt: { $exists: false } }, { revokedAt: null }],
     },
-    { $set: { revokedAt, revokedBy } },
+    { $set: { revokedAt, revokedBy, ...(reason ? { revocationReason: reason } : {}) } },
   );
   if (!result.modifiedCount) return [];
   // The stamp this write set identifies the rows it moved.

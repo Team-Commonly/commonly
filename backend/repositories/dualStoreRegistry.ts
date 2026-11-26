@@ -30,6 +30,9 @@ export const DUAL_STORED_MODELS: Record<string, () => DualStore> = {
   AgentTaskRowWakeState: () => require('./agentTaskRowWakeStateRepository').rowWakeStateStore(),
   // eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
   AgentProviderKey: () => require('./agentProviderKeyRepository').providerKeyStore(),
+  HostedMcpDcrRegistration: () => require('./hostedMcpDcrRegistrationRepository').dcrRegistrationStore(),
+  // eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
+  WaitlistRequest: () => require('./waitlistRequestRepository').waitlistRequestStore(),
 };
 
 type RepairCounts = Awaited<ReturnType<DualStore['repair']>>;

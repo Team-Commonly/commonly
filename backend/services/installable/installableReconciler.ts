@@ -313,9 +313,9 @@ const sweepOrphanedConnectorSecrets = async (now: Date): Promise<number> => {
       // a RETIRED registration keeps serving the rows it minted, so retirement
       // alone is not a reason to delete the secret those rows refresh with.
       // eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
-      const HostedMcpDcrRegistration = require('../../models/HostedMcpDcrRegistration');
-      const registration = await HostedMcpDcrRegistration.findById(secret.integrationId)
-        .select('refusedAt clientSecretRef').lean() as Record<string, unknown> | null;
+      const { findDcrRegistrationSecretOwner } = require('../../repositories/hostedMcpDcrRegistrationRepository');
+      // Read from Mongo in every mode but pg: a lagging Postgres row must not make a live secret look unowned.
+      const registration = await findDcrRegistrationSecretOwner(secret.integrationId) as Record<string, unknown> | null;
       if (registration && !registration.refusedAt && rowReferencesSecret(registration, spec, ref)) continue;
       await connectorSecrets.revoke(ref);
       revoked += 1;

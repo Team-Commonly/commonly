@@ -110,7 +110,8 @@ describe('SchedulerService automatic heartbeat dispatch lease', () => {
       enqueued: 0,
       skippedByInterval: 0,
     });
-    expect(AgentInstallation.find).toHaveBeenCalledWith({ status: 'active' });
+    // F668: only opted-in installs are read.
+    expect(AgentInstallation.find).toHaveBeenCalledWith({ status: 'active', 'config.heartbeat.enabled': true });
   });
 
   it('only wakes a pod with digest unread for 60 minutes and no recent or pending wake', async () => {

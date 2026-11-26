@@ -212,7 +212,8 @@ const V2Composer: React.FC<V2ComposerProps> = ({
                     seed={item.seed}
                   />
                   <span className="v2-mention-item__text">
-                    <span className="v2-mention-item__label">@{item.value || item.label}</span>
+                    {/* F645: the name people know; the subtitle carries the @handle that goes into the text. */}
+                    <span className="v2-mention-item__label">{item.label || `@${item.value}`}</span>
                     <span className="v2-mention-item__sub">{item.subtitle}</span>
                   </span>
                 </button>

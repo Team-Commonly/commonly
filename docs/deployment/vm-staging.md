@@ -26,8 +26,9 @@ port. Prod's containers, volumes and network are never named.
 
 ## Why it can't hurt prod
 
-- **Hard caps on every service** (`mem_limit`, `cpus`): about 3.3 GB and 1.9 CPUs
-  at most in total, on an 8 GB, 2-CPU VM where prod uses about 2.3 GB.
+- **Hard caps on every service** (`mem_limit`, `cpus`): about 3.3 GB and 1.2 CPU
+  at most in total (caps of 1.0 starved LiteLLM's boot on 2026-11-26; caps totalling 1.9 CPUs still let a staging deploy
+  push prod's event-loop lag past 1.5 s on 2026-11-26), on an 8 GB, 2-CPU VM where prod uses about 2.3 GB.
 - **`cpu_shares: 256`**, a quarter of prod's default weight, so prod wins any CPU
   contention 4:1.
 - **`oom_score_adj: 500`**, so under memory pressure the kernel kills staging first.

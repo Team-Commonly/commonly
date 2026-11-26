@@ -71,10 +71,81 @@ Its watch must see a set, a remove and a launch, on staging by hand if no real u
 `provider_key_changed` 409s, and the installable reconciler's `orphanedSecrets` count no higher than
 before the switch.
 
-**Migration order: `0024` must not be applied before `0023`, `0025` before `0024`, nor `0026` before `0025`.** The migration
+The twelfth is `HostedMcpDcrRegistration` (table `hosted_mcp_dcr_registrations`, migration `0027`,
+`STORE_MODE_HOSTED_MCP_DCR_REGISTRATION`), the instance's OAuth Dynamic Client Registration client per
+hosted-MCP catalogue entry. Its first-start claim is `findOneAndUpdateWhere` with `$setOnInsert` alone and a
+caller-chosen `_id`, returning the post-image; Mongo's unique `{ entryId, issuer }` index on `current: true`
+admits one winner, and in dual a loser reads the winner where mongo mode may throw 11000 (the registry
+handles both). Its refusal is `findOneAndUpdateWhere` returning the pre-image, whose `clientSecretRef` the
+one winner deletes; its ask claim is `findOneAndUpdateWhere` under `$or` and two ranges, returning the
+post-image; its retires are `setWhere`. `clientSecretRef` is not a secret: it is the id of the
+`ConnectorSecret` that holds a confidential client's secret encrypted (AES-256-GCM), so the copy puts a
+reference in Postgres. `clientId` is the vendor's public identifier, no registration access token is
+stored, and no path is `select: false`. **Every read stays on Mongo in `dual` and `pg-read`**
+(`findPageMongo`): each answers a security question (may a new start get this client, may a row still use
+it, does a registration still own this secret), and a Postgres row lagging a refusal or a retire could admit
+a refused client or revoke a live secret. So `pg-read` moves no read of this model; only `pg` reads
+Postgres. There is no TTL index in either store: a lapsing secret is judged from `clientSecretExpiresAt` by
+the code, from the same Mongo read in every mode but `pg`. **Before its step 1, step 0 also counts, and each
+must be 0:**
+- documents whose `clientSecretRef` is set and is not a 24-hex ObjectId string
+  (`{ clientSecretRef: { $ne: null, $not: /^[0-9a-f]{24}$/ } }`). Anything else could be material, and it
+  would be copied to a second store;
+- documents carrying any field the schema does not declare, such as a `clientSecret` or a
+  `registrationAccessToken` from a raw insert (an aggregate over `$objectToArray` of each document, keys
+  outside the schema's paths, `_id` and `__v`). No code ever wrote one, so a hit is a hand write to explain;
+- documents whose `current` is not a boolean (`{ current: { $not: { $type: 'bool' } } }`): the claim's
+  filter and the partial index test `current: true`, and a missing one would copy as NULL.
+
+Also check both unique indexes exist (`getIndexes()` shows `entryId_1_issuer_1` with `unique: true` and
+`partialFilterExpression: { current: true }`, and `entryId_1_issuer_1_clientId_1` with `unique: true`),
+because `0027` mirrors them and would refuse a second copy.
+
+Its watch must see a first registration, a reuse, a refusal (a token call answered `invalid_client`) and a
+retire, on staging by hand if no real connect makes them in the hour: `mismatch`/`repair` lines for
+`model=HostedMcpDcrRegistration`, any `post-image read failed model=HostedMcpDcrRegistration` (a refusal
+whose copy was left to repair), any `findOneAndUpdateWhere lost 5 races`, no rise in
+`client_registration_refused`, and the installable reconciler's `orphanedSecrets` count no higher than before
+the switch. A `pg-write-failed` here can be ordering, not loss: when another process's retire has not been
+copied yet, the next current client's copy meets `0027`'s partial unique index, stays flagged, and the
+repair job finishes it once the retire lands. Only one that stays across repair passes needs explaining.
+**`0027` must not be applied before `0026` (`AgentProviderKey`)**: ship `0026` first, or an instance that
+has run `0027` refuses to boot once `0026` appears (the runner matches history by position, below).
+
+The thirteenth is `WaitlistRequest` (table `waitlist_requests`, migration `0028`,
+`STORE_MODE_WAITLIST_REQUEST`), a person's request to join the instance and the admin's answer to it. Its
+create uses the helper's `create`; the admin's status change (whose close sets `invitationCode`,
+`invitedBy`, `invitedAt` and `invitationSentAt` to null) and the invitation's record use `update`, which
+stores those nulls in both stores. The admin list is `findPageMongo` and `countMongo`, because its search is
+an unescaped case-insensitive `$regex`, and the repository populates `invitationCode` (`{ _id, code }`) and
+`invitedBy` (`{ _id, username, email }`) itself, as Mongoose's `populate` did: a ref whose document is gone
+becomes null. The copy puts the form's personal data in Postgres: `email`, `name`, `organization`, `useCase`
+and `note`. `invitationCode` is the id of the `InvitationCode` document, never the code (that model holds
+the code and has not moved), and no path is `select: false`. **Two reads stay on Mongo in `dual` and
+`pg-read`** (`findPageMongo`, limit 1): the request an admin sends an invitation for (it decides where an
+access code is emailed), and the person's pending request before a new one is created (it decides whether
+that create writes). The response's re-read after an invitation moves to Postgres in `pg-read`. Mongo has
+no unique index on the collection besides `_id` (a person may ask again once a request is closed or
+invited) and no TTL index, so neither has Postgres, and no request expires on its own. **Before its step 1,
+step 0 also counts, and each must be 0:**
+- documents carrying any field the schema does not declare (an aggregate over `$objectToArray` of each
+  document, keys outside the schema's paths, `_id` and `__v`). No code ever wrote one, so a hit is a hand
+  write to explain, and it would not be copied;
+- documents whose `invitationCode` or `invitedBy` is set and is not an ObjectId
+  (`{ invitationCode: { $ne: null, $not: { $type: 'objectId' } } }`, and the same for `invitedBy`). The row
+  keeps them as hex text, and anything else could be a code rather than a reference;
+- documents whose `status` is not one of `pending`, `invited` or `closed`.
+
+Its watch must see a request, a list with a search, an invitation and a close, on staging by hand if no real
+person or admin makes them in the hour: `mismatch`/`repair` lines for `model=WaitlistRequest`, and no rise
+in the admin waitlist routes' 500s (`Failed to list waitlist requests`, `Failed to update waitlist
+request`, `Failed to send invitation email`).
+
+**Migration order: `0024` must not be applied before `0023`, `0025` before `0024`, `0026` before `0025`, `0027` before `0026`, nor `0028` before `0027`.** The migration
 runner matches history to the sorted file list by position, so an instance that has run `0024` refuses to
 boot once a `0023` file appears. `0023` (`DiscordSummaryHistory`) is on main, so `0024` follows it, and
-`0025` (`AgentTaskRowWakeState`) follows `0024`, and `0026` (`AgentProviderKey`) follows `0025`.
+`0025` (`AgentTaskRowWakeState`) follows `0024`, and `0026` (`AgentProviderKey`) follows `0025`, and `0027`
+(`HostedMcpDcrRegistration`) follows `0026`, and `0028` (`WaitlistRequest`) follows `0027`.
 
 **A model whose callers delete does not enter dual yet.** A completed delete removes the document and its
 row, and the version with them, so a recreated id starts again at version 1 and a late copy, a pg-mode
@@ -83,9 +154,13 @@ in both stores that keep the version. Until then the helper's `remove` throws ou
 store was created with `allowDeletes: true`, which is unsafe for exactly that reason.
 None of `AgentPodReadCursor`, `AgentFirstContact`, `AgentDigestState`, `AgentTaskWakeState`,
 `NeedsYouEmailQuota`, `AgentComputerTakeover`, `BillingEvent`, `DiscordSummaryHistory`, `NeedsYouEmail`,
-`AgentTaskRowWakeState` and `AgentProviderKey` has a delete path (and neither `NeedsYouEmail` nor
-`AgentTaskRowWakeState` has a TTL index). `AgentProviderKey`'s remove clears the binding's fields and keeps
-the document; what it deletes is the `ConnectorSecret`, a model that has not moved.
+`AgentTaskRowWakeState`, `AgentProviderKey`, `HostedMcpDcrRegistration` and `WaitlistRequest` has a delete
+path (and none of `NeedsYouEmail`, `AgentTaskRowWakeState`, `HostedMcpDcrRegistration` and `WaitlistRequest`
+has a TTL index).
+`AgentProviderKey`'s remove clears the binding's fields and keeps the document, and a refused or retired
+DCR client keeps its document. What the key's remove and a DCR refusal delete is the `ConnectorSecret`, a
+model that has not moved. Retiring a DCR client only stops new starts from using it: its secret stays, because
+the connections it already minted keep using it until the vendor refuses one of their token calls.
 
 The mode variable is `STORE_MODE_` plus the model name in upper snake case:
 `AgentPodReadCursor` reads `STORE_MODE_AGENT_POD_READ_CURSOR`. Unset means `mongo`, which makes no
@@ -168,8 +243,8 @@ only a rollback from `pg` can produce. That case is out of scope until step 4 is
 
 ## Helper shapes for AgentProviderKey, HostedMcpDcrRegistration and WaitlistRequest
 
-`AgentProviderKey` has moved (the eleventh model, above); the other two have not. The helper has the shapes
-their callers use, so each one can move in its own change:
+All three have moved (the eleventh, twelfth and thirteenth models, above). These are the helper shapes
+their callers use:
 
 - **`findOneAndUpdateWhere(filter, update, { returnDocument, upsert })`** is Mongoose's `findOneAndUpdate`.
   `update` may use `$set`, `$inc` and, with `upsert`, `$setOnInsert`, all on top-level schema paths, and never
@@ -187,7 +262,7 @@ their callers use, so each one can move in its own change:
   - The filter runs only on Mongo. It is refused unless it uses only equality, `$eq`, `$ne`, ranges, `$in`,
     `$nin` and `$exists`, combined with `$and`, `$or` and `$nor`. RegExp, `$where` and `$expr` are refused.
 - **`findPageMongo(filter, { sort, skip, limit, fields })` and `countMongo(filter)`** serve WaitlistRequest's
-  admin list. Both read Mongo in mongo, dual and pg-read. They are the only filters that may use a RegExp or
+  admin list (and the Mongo-only reads of all three). Both read Mongo in mongo, dual and pg-read. They are the only filters that may use a RegExp or
   `$regex`, because Postgres never runs them. The repository populates refs on the plain documents they
   return.
 - **`update` now stores a null in dual** as mongo mode does. `castObject` used to drop it, so WaitlistRequest's
@@ -217,6 +292,42 @@ The other calls these models make are already covered by `findById`, `findOneWhe
   - the stamp: `UPDATE … SET last_used_at = $now WHERE id = $1 AND secret_ref = $ref AND generation = $g`.
 
   Until then, don't set it to `pg`: every set, remove and launch would fail.
+
+- **`HostedMcpDcrRegistration` cannot run in `pg` yet.** `claimCurrentDcrRegistration`,
+  `refuseDcrRegistration` and `claimDcrAsk` refuse in `pg` before any write, the two retires go through the
+  helper's `setWhere`, which refuses, and `ensureDcrClient` refuses before it asks the vendor to register or
+  stores a secret. Its reads already read Postgres in `pg`. Before this model runs in `pg`, each write needs a
+  single-statement Postgres form, bumping `pg_version` and tested on real Postgres with racing starts,
+  refusals and asks:
+  - the claim: `INSERT … ON CONFLICT (entry_id, issuer) WHERE current DO NOTHING RETURNING *`, and on no row
+    the current client read back (a loser gets the winner, as it does in dual);
+  - the retires: `UPDATE … SET current = false, retired_at = $now WHERE id = $1 AND current` and `WHERE
+    entry_id = $1 AND issuer = $2 AND current [AND client_id = $3] RETURNING id`;
+  - the refusal: the pre-image and the change in one statement, through a CTE that reads the row with
+    `refused_at IS NULL` `FOR UPDATE`, so exactly one caller gets the `client_secret_ref` to delete;
+  - the ask: `UPDATE … SET asked_at = $now WHERE entry_id = $1 AND issuer = $2 AND current AND client_id = $3
+    AND refused_at IS NULL AND created_at <= $since AND (asked_at IS NULL OR asked_at <= $since) RETURNING *`.
+
+  Until then, don't set it to `pg`: no hosted-MCP DCR connect could start. The switch is stop-the-world for
+  the same reason as `BillingEvent`'s: Mongo's and Postgres's partial unique indexes don't coordinate, so a
+  `dual` replica and a `pg` replica could each make a different client current for one entry, and each
+  refuse the same client.
+
+- **`WaitlistRequest` cannot run in `pg` yet.** `createWaitlistRequest`, `setWaitlistRequestStatus` and
+  `markWaitlistRequestInvited` refuse in `pg` before any write, and the send-invitation route refuses before it
+  creates an invitation code or sends an email. The admin list refuses too (`findPageMongo` and `countMongo`
+  do). The pending lookup and the invitation's read already read Postgres in `pg`. Before this model runs in
+  `pg`:
+  - the list needs an `ILIKE` form of the search, with its own parity check against Mongo's `$regex` with
+    `$options: 'i'` (the pattern is the admin's text unescaped, so a regex metacharacter must behave the
+    same, or the search escapes it in both stores first), `ORDER BY created_at DESC, id`, and `count(*)`
+    over the same filter;
+  - the create: the helper's pg-only `create`, after `validate()` on the new document, as
+    `DiscordSummaryHistory` needs;
+  - the status change and the invitation: `UPDATE … SET … WHERE id = $1 RETURNING *`, bumping `pg_version`,
+    with the close's NULLs.
+
+  Until then, don't set it to `pg`: no one could join the waitlist and no admin could list, close or invite.
 
 - **`AgentPodReadCursor` needs a single-statement upsert in pg mode.** The helper's pg-mode `upsert` is
   optimistic: it reads, merges, and writes at the version it read, retrying 5 times. More than 5 writers

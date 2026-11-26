@@ -82,7 +82,7 @@ describe('the account deletion sweep and hosted connections (F368)', () => {
     mockRemove.mockRejectedValueOnce(new Error('vendor exploded'));
 
     const failure = await sweepAccountDeletions().catch((error) => error);
-    expect(failure.errors.map((e) => e.message).join(' ')).toMatch(/hosted connections not removed yet/);
+    expect(failure.errors.map((e) => e.message).join(' ')).toMatch(/connections not removed yet/);
     expect(mockRemove).toHaveBeenCalledTimes(2);
     // One of the two went through despite the other throwing first.
     expect(await Integration.countDocuments({ _id: { $in: [first._id, second._id] } })).toBe(1);
@@ -101,5 +101,42 @@ describe('the account deletion sweep and hosted connections (F368)', () => {
     expect(mockDeleteOpenings).toHaveBeenCalledWith(String(gone));
     expect(mockRemove).toHaveBeenCalledTimes(1);
     expect(await Integration.exists({ _id: row._id })).toBeNull();
+  });
+
+  // F660: removeOwnedConnections reaches hosted rows only, so a GitHub-app
+  // row the person shared with a pod kept its grants live. The sweep now ends
+  // the person's pod grants in every pod, a DM room included, and (F664) their
+  // seat grants too.
+  it('ends the person\'s pod and seat grants on every connection type, and no one else\'s', async () => {
+    // eslint-disable-next-line global-require
+    const RoomGrant = require('../../models/RoomGrant');
+    const gone = new mongoose.Types.ObjectId();
+    const other = new mongoose.Types.ObjectId();
+    const agent = new mongoose.Types.ObjectId();
+    await AccountDeletion.create({ _id: gone });
+    const grant = (ownerId, target) => RoomGrant.create({
+      grantId: `grant_${new mongoose.Types.ObjectId()}`,
+      connectionId: 'install-gh-1',
+      installationId: 'install-gh-1',
+      target,
+      tools: ['github.list_issues'],
+      writeMode: 'read',
+      audience: [String(agent)],
+      expiresAt: new Date(Date.now() + 3_600_000),
+      brokerId: 'github-app',
+      ownerId: String(ownerId),
+    });
+    const inPod = await grant(gone, { kind: 'pod', id: String(new mongoose.Types.ObjectId()) });
+    const inDmRoom = await grant(gone, { kind: 'pod', id: String(new mongoose.Types.ObjectId()) });
+    const seat = await grant(gone, { kind: 'seat', id: String(agent) });
+    const othersGrant = await grant(other, { kind: 'pod', id: String(new mongoose.Types.ObjectId()) });
+
+    await sweepAccountDeletions();
+
+    const revokedAt = async (g) => (await RoomGrant.findOne({ grantId: g.grantId }).lean()).revokedAt;
+    expect(await revokedAt(inPod)).toBeInstanceOf(Date);
+    expect(await revokedAt(inDmRoom)).toBeInstanceOf(Date);
+    expect(await revokedAt(seat)).toBeInstanceOf(Date);
+    expect(await revokedAt(othersGrant)).toBeNull();
   });
 });

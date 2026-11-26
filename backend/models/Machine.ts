@@ -51,8 +51,10 @@ export interface IMachine extends Document {
   // TASK-784: null until a CLI that reports it registers or checks in.
   host: IMachineHost | null;
   hostReportedAt: Date | null;
-  // TASK-784: when an agent bound to this machine first acked a person-waiting
-  // event (an @mention or a DM) with a posted reply. Set once, never moved.
+  // TASK-784 / F639: when an agent bound to this machine first answered: its
+  // first chat post or comment (noteMachinePosted), or its first posted ack of
+  // a person-waiting event (an @mention or a DM). A post into an agent-to-agent
+  // DM (`agent-dm`, no person in it) doesn't count. Set once, never moved.
   firstAnswerAt: Date | null;
   createdAt: Date;
   updatedAt: Date;

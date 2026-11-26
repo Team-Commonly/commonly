@@ -23,9 +23,9 @@ const { pool } = require('../config/db-pg');
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const Integration = require('../models/Integration');
 // eslint-disable-next-line @typescript-eslint/no-require-imports
-const { HOSTED_MCP_TYPE, removeConnection } = require('./connectionRemovalService');
+const { HOSTED_MCP_TYPE, removeConnection, removeGithubAppRepositoryConnection } = require('./connectionRemovalService');
 // eslint-disable-next-line @typescript-eslint/no-require-imports
-const { revokeConnectionGrants, SYSTEM_REVOKER } = require('./roomGrantService');
+const { endOwnerGrants, revokeConnectionGrants, SYSTEM_REVOKER } = require('./roomGrantService');
 
 /**
  * A deleted person's hosted connections go too: grants, then the token is
@@ -34,7 +34,7 @@ const { revokeConnectionGrants, SYSTEM_REVOKER } = require('./roomGrantService')
  * its attempt even when an earlier one failed. A connection that can't finish
  * this round (the vendor refused or threw, or a token write held the row)
  * makes this throw once all rows have been tried, so the receipt is retried
- * next round.
+ * next round. Their GitHub App repository rows go after (F664).
  */
 const removeOwnedConnections = async (userId: string): Promise<void> => {
   const rows = await Integration.find({ type: HOSTED_MCP_TYPE, createdBy: userId });
@@ -48,7 +48,22 @@ const removeOwnedConnections = async (userId: string): Promise<void> => {
       unfinished.push(`${String(connection._id)}:${(error as Error)?.name || 'Error'}`);
     }
   }
-  if (unfinished.length) throw new Error(`hosted connections not removed yet: ${unfinished.join(', ')}`);
+  // F664: their GitHub App repository connections go through the same removal
+  // the integrations route runs for one: the owner's grants on the row end,
+  // then the row is deleted, both scoped to this owner. A row someone else
+  // took over since the read is left alone.
+  const githubRows = await Integration.find({ type: 'github-app', createdBy: userId });
+  for (const connection of githubRows) {
+    try {
+      // eslint-disable-next-line no-await-in-loop
+      await removeGithubAppRepositoryConnection({
+        connection, removedBy: SYSTEM_REVOKER, revokeGrants: revokeConnectionGrants,
+      });
+    } catch (error) {
+      unfinished.push(`${String(connection._id)}:${(error as Error)?.name || 'Error'}`);
+    }
+  }
+  if (unfinished.length) throw new Error(`connections not removed yet: ${unfinished.join(', ')}`);
 };
 
 export class AccountDeletionError extends Error {
@@ -71,6 +86,11 @@ const revokeOwnedAccess = async (userId: string): Promise<void> => {
   // The deleted account cannot authenticate; its owned runtimes pause below.
   await Pod.updateMany({ members: userId, type: { $nin: [...DM_POD_TYPES_GUARD] } },
     { $pull: { members: userId } });
+  // Every grant they own ends, pod grants in every pod (DM rooms included: the
+  // membership kept there is history, not a live share) and seat grants (F664).
+  // Never throws; every sweep round runs this again, and use refuses any grant
+  // whose owner has a deletion request or is gone, DM rooms included.
+  await endOwnerGrants({ userId });
   await AgentInstallation.updateMany(
     { installedBy: userId, status: 'active' },
     { $set: { status: 'paused' } },

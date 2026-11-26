@@ -1,4 +1,5 @@
 import mongoose, { Document, Model, Schema } from 'mongoose';
+import { dualStorePlugin } from '../repositories/dualStore';
 
 /**
  * One vendor-issued OAuth client for an instance and catalogue entry: public
@@ -52,6 +53,8 @@ HostedMcpDcrRegistrationSchema.index(
   { entryId: 1, issuer: 1, clientId: 1 },
   { unique: true },
 );
+// ADR-034 step 2: the repair markers (pgVersion, pgPending, pgDeleted) and their sparse index.
+dualStorePlugin(HostedMcpDcrRegistrationSchema);
 
 const HostedMcpDcrRegistration: Model<IHostedMcpDcrRegistration> =
   (mongoose.models.HostedMcpDcrRegistration as Model<IHostedMcpDcrRegistration>)

@@ -59,7 +59,11 @@ describe('staging on the prod VM', () => {
     const mem = startable.reduce((sum, n) => sum + toBytes(merged(n).mem_limit), 0);
     const cpus = startable.reduce((sum, n) => sum + Number(merged(n).cpus), 0);
     expect(mem).toBeLessThanOrEqual(3.5 * 1024 ** 3);
-    expect(cpus).toBeLessThan(2);
+    // Well under the 2-CPU VM: on 2026-11-26 caps totalling 1.9 still let a staging
+    // deploy push prod's event-loop lag past 1.5s, and 1.0 starved LiteLLM's boot.
+    // Hundredths, so float sums compare exactly.
+    expect(Math.round(cpus * 100)).toBeLessThanOrEqual(120);
+    expect(Number(merged('litellm').cpus)).toBeGreaterThanOrEqual(0.4);
   });
 
   test('nothing is published on a host port', () => {
@@ -79,6 +83,19 @@ describe('staging on the prod VM', () => {
     const journey = override.services['stranger-journey'].environment.join('\n');
     expect(journey).toMatch(/^JOURNEY_API=https:\/\/api-staging\.commonly\.me$/m);
     expect(override.services.frontend.image).toMatch(/-staging$/);
+  });
+
+  // At its 0.15 CPU cap, staging mongo's ping timed out at 5s three times during a
+  // staging `up` (2026-11-26). Pin the floors so a revert to 5s / 30s fails here.
+  test('staging mongo healthcheck allows for its CPU cap', () => {
+    const secs = (v) => {
+      const m = String(v).match(/^(\d+)s$/);
+      if (!m) throw new Error(`unparsed duration ${v}`);
+      return Number(m[1]);
+    };
+    const hc = override.services.mongo.healthcheck;
+    expect(secs(hc.timeout)).toBeGreaterThanOrEqual(15);
+    expect(secs(hc.start_period)).toBeGreaterThanOrEqual(60);
   });
 
   test('the tunnel config comes from the untracked staging-secrets dir', () => {

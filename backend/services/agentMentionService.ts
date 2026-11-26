@@ -246,11 +246,14 @@ const slugify = (value = ''): string => value
 // two installs from holding the same one, so it wins. (buildAgentUsername is
 // not injective, so that refusal is what keeps it unique, not the key.) Then the
 // explicit agent-instance key, then the bare name and its curated aliases
-// (single-install only), then the instanceId and the display-name slug, which
-// nothing keeps unique. An equal claim keeps the rule every key had before
-// ranks existed: the later install wins.
+// (single-install only), then the instanceId, then the display-name slug.
+// Nothing keeps those last two unique, but an instanceId is the install's own
+// name and a display slug is a label anyone can choose, so when one install's
+// instanceId spells another's slug, the instanceId wins in either order, the
+// same rule the composer's mention labels follow (F645). An equal claim keeps
+// the rule every key had before ranks existed: the later install wins.
 const KEY_STRENGTH = {
-  canonical: 4, explicit: 3, bare: 2, loose: 1,
+  canonical: 5, explicit: 4, bare: 3, instance: 2, loose: 1,
 } as const;
 
 const buildMentionMap = (
@@ -291,7 +294,7 @@ const buildMentionMap = (
     if (canonical !== agentName.toLowerCase()) {
       claim(canonical, { agentName, instanceId }, KEY_STRENGTH.canonical);
     }
-    claim(instanceId.toLowerCase(), { agentName, instanceId }, KEY_STRENGTH.loose);
+    claim(instanceId.toLowerCase(), { agentName, instanceId }, KEY_STRENGTH.instance);
     if (displaySlug) {
       claim(displaySlug, { agentName, instanceId }, KEY_STRENGTH.loose);
     }

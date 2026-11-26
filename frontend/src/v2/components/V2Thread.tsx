@@ -9,6 +9,8 @@ import V2Hint from './V2Hint';
 import V2CatchUpStrip from './V2CatchUpStrip';
 import V2Composer from './V2Composer';
 import { type V2DecisionCardData, type V2DecisionRuling } from './V2DecisionCard';
+import { MentionLabelsContext } from './V2MentionChip';
+import { buildAgentDisplayNames, useMentionLabelMap } from '../utils/mentionLabels';
 import V2ThreadMessages, { ASK_START_ID, V2ThreadHistoryStatus } from './V2ThreadMessages';
 import { landOnMessage } from './V2MessageRow';
 import V2ThreadStarter from './V2ThreadStarter';
@@ -1528,31 +1530,14 @@ const V2Thread: React.FC<V2ThreadProps> = ({ detail, podsState, firstRunVisible 
   // If we re-introduce a lead concept, it needs real data on the
   // AgentInstallation row, not a frontend heuristic.
 
-  // Map of agent-user username → per-installation displayName. Mirrors
-  // backend AgentIdentityService.buildAgentUsername: '<agentName>' when
-  // instanceId is 'default' or matches the agentName, else
-  // '<agentName>-<instanceId>'. Lets V2MessageRow render "Engineer (Nova)"
-  // instead of the raw User row username "openclaw-nova".
-  //
-  // Note: the backend payload key is `name` (per buildAgentInstallationPayload
-  // in registry helpers), but V2Agent's TypeScript shape declares `agentName`
-  // — the type doesn't match the wire. Read both to survive either source.
-  const agentDisplayNames = React.useMemo(() => {
-    const map = new Map<string, string>();
-    if (!agents) return map;
-    for (const agent of agents) {
-      const rawName = (agent as { name?: string; agentName?: string }).name
-        || agent.agentName || '';
-      const name = rawName.toLowerCase();
-      const instance = (agent.instanceId || '').toLowerCase();
-      const username = !instance || instance === 'default' || instance === name
-        ? name
-        : `${name}-${instance}`;
-      const display = agent.displayName || agent.profile?.displayName || rawName;
-      if (username && display) map.set(username, display);
-    }
-    return map;
-  }, [agents]);
+  // Agent User-row username → the name its messages are signed with, so
+  // V2MessageRow renders "Engineer (Nova)" instead of "openclaw-nova". F645:
+  // the mention labels are built from the same names, so a chip and the byline
+  // of one agent never disagree.
+  const agentDisplayNames = React.useMemo(() => buildAgentDisplayNames(agents || []), [agents]);
+  // Every handle the pod can mention → the name people read. Keyed on the
+  // names, not array identity, so the context value survives parent re-renders.
+  const mentionLabels = useMentionLabelMap(members || [], agents || []);
   // Staging walk 2026-11-02: until the pod's creator sends anything after
   // Scout's welcome, the composer names the agent who just spoke, with an
   // example, instead of the pod.
@@ -2359,6 +2344,7 @@ const V2Thread: React.FC<V2ThreadProps> = ({ detail, podsState, firstRunVisible 
   }
 
   return (
+    <MentionLabelsContext.Provider value={mentionLabels}>
     <main className="v2-pane v2-pane--main">
       <div className="v2-chat v2-thread">
         <header className={`v2-thread__header v2-pod-header${isDirectPod ? ' v2-pod-header--direct' : ''}`}>
@@ -2894,6 +2880,7 @@ const V2Thread: React.FC<V2ThreadProps> = ({ detail, podsState, firstRunVisible 
             )}
       </div>
     </main>
+    </MentionLabelsContext.Provider>
   );
 };
 

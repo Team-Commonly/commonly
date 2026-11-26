@@ -19,7 +19,18 @@
  */
 import { randomBytes } from 'crypto';
 import { Types } from 'mongoose';
-import HostedMcpDcrRegistration, { IHostedMcpDcrRegistration } from '../models/HostedMcpDcrRegistration';
+import {
+  assertDcrRegistrationWritable,
+  claimCurrentDcrRegistration,
+  claimDcrAsk,
+  findCurrentDcrRegistration,
+  findUsableDcrRegistration,
+  initDcrRegistrations,
+  refuseDcrRegistration,
+  retireCurrentDcrRegistration,
+  retireDcrRegistrationById,
+  type DcrRegistrationRow,
+} from '../repositories/hostedMcpDcrRegistrationRepository';
 import type { HostedMcpOAuthEntry } from './hostedMcpEntryService';
 import {
   buildTokenExchangeRequest,
@@ -45,13 +56,7 @@ type RegistrationMethod = 'none' | ConfidentialMethod;
  */
 const CLIENT_SECRET_RENEW_MARGIN_MS = 24 * 60 * 60 * 1000;
 
-const currentFilter = (entry: HostedMcpOAuthEntry) => ({
-  entryId: entry.id,
-  issuer: entry.issuer,
-  current: true,
-});
-
-type RegistrationRow = Pick<IHostedMcpDcrRegistration,
+type RegistrationRow = Pick<DcrRegistrationRow,
   'clientId' | 'tokenEndpointAuthMethod' | 'clientSecretRef' | 'clientSecretExpiresAt'>;
 
 const secretLapsing = (row: RegistrationRow, now: Date): boolean => Boolean(
@@ -109,18 +114,16 @@ export const ensureDcrClient = async (
   }
   // A first start can arrive before Mongoose's background index build finishes.
   // The upsert is safe only once the unique current-registration index exists.
-  await HostedMcpDcrRegistration.init();
-  const existing = await HostedMcpDcrRegistration.findOne(currentFilter(entry));
+  await initDcrRegistrations();
+  const existing = await findCurrentDcrRegistration(entry);
   if (existing?.redirectUri === redirectUri && !existing.refusedAt && !secretLapsing(existing, now)) {
     const reused = await clientFromRow(existing);
     if (reused) return reused;
   }
-  if (existing) {
-    await HostedMcpDcrRegistration.updateOne(
-      { _id: existing._id, current: true },
-      { $set: { current: false, retiredAt: now } },
-    );
-  }
+  // Everything below ends in a write here; pg refuses it before the vendor is
+  // asked or a secret is stored (ADR-034 step 2).
+  assertDcrRegistrationWritable('ensureDcrClient');
+  if (existing) await retireDcrRegistrationById(existing._id, now);
 
   if (!metadata.registration_endpoint) {
     throw new HostedMcpClientError(
@@ -233,21 +236,14 @@ export const ensureDcrClient = async (
   // Two first starts may both POST. The unique current index admits only one
   // registration; both starts then authorize with the stored winner's client.
   try {
-    const stored = await HostedMcpDcrRegistration.findOneAndUpdate(
-      currentFilter(entry),
-      { $setOnInsert: {
-        _id: registrationId,
-        entryId: entry.id,
-        issuer: entry.issuer,
-        clientId: issued.client_id,
-        redirectUri,
-        tokenEndpointAuthMethod: method,
-        clientSecretRef,
-        clientSecretExpiresAt,
-        current: true,
-      } },
-      { upsert: true, new: true, setDefaultsOnInsert: true },
-    );
+    const stored = await claimCurrentDcrRegistration(entry, {
+      _id: registrationId,
+      clientId: issued.client_id,
+      redirectUri,
+      tokenEndpointAuthMethod: method,
+      clientSecretRef,
+      clientSecretExpiresAt,
+    });
     if (!stored || stored.redirectUri !== redirectUri || stored.refusedAt) {
       await discardOwnSecret();
       throw new HostedMcpClientError('client_registration_refused', 'current registration changed during start');
@@ -261,7 +257,7 @@ export const ensureDcrClient = async (
   } catch (error) {
     if ((error as { code?: number })?.code !== 11000) throw error;
     await discardOwnSecret();
-    const winner = await HostedMcpDcrRegistration.findOne(currentFilter(entry));
+    const winner = await findCurrentDcrRegistration(entry);
     const client = winner?.redirectUri === redirectUri && !winner.refusedAt ? await clientFromRow(winner) : null;
     if (client) return client;
     throw new HostedMcpClientError('client_registration_refused', 'concurrent registration changed');
@@ -274,23 +270,14 @@ export const dcrClientForRow = async (
   recordedClientId: string | undefined,
 ): Promise<HostedMcpClientConfiguration | null> => {
   if (entry.client !== 'dcr' || !recordedClientId) return null;
-  const registration = await HostedMcpDcrRegistration.findOne({
-    entryId: entry.id,
-    issuer: entry.issuer,
-    clientId: recordedClientId,
-    refusedAt: null,
-  });
+  const registration = await findUsableDcrRegistration(entry, recordedClientId);
   return registration ? clientFromRow(registration) : null;
 };
 
 /** Invalid client on token/revoke poisons this registration, not every row. */
 export const refuseDcrClient = async (entry: HostedMcpOAuthEntry, clientId: string): Promise<void> => {
   if (entry.client !== 'dcr') return;
-  const now = new Date();
-  const refused = await HostedMcpDcrRegistration.findOneAndUpdate(
-    { entryId: entry.id, issuer: entry.issuer, clientId, refusedAt: null },
-    { $set: { refusedAt: now, retiredAt: now, current: false } },
-  );
+  const refused = await refuseDcrRegistration(entry, clientId, new Date());
   // A refused client's secret is useless; delete it now rather than at the sweep.
   if (refused?.clientSecretRef) await connectorSecrets.revoke(refused.clientSecretRef).catch(() => {});
 };
@@ -366,11 +353,7 @@ export const retireCurrentDcrClient = async (
   now: Date = new Date(),
 ): Promise<boolean> => {
   if (entry.client !== 'dcr') return false;
-  const write = await HostedMcpDcrRegistration.updateOne(
-    clientId ? { ...currentFilter(entry), clientId } : currentFilter(entry),
-    { $set: { current: false, retiredAt: now } },
-  );
-  return (write.modifiedCount ?? 0) > 0;
+  return retireCurrentDcrRegistration(entry, clientId, now);
 };
 
 /**
@@ -394,17 +377,7 @@ export const retireDcrClientIfUnknown = async (
   now: Date = new Date(),
 ): Promise<boolean> => {
   if (entry.client !== 'dcr' || !clientId) return false;
-  const claimed = await HostedMcpDcrRegistration.findOneAndUpdate(
-    {
-      ...currentFilter(entry),
-      clientId,
-      refusedAt: null,
-      createdAt: { $lte: new Date(now.getTime() - DCR_ASK_INTERVAL_MS) },
-      $or: [{ askedAt: null }, { askedAt: { $lte: new Date(now.getTime() - DCR_ASK_INTERVAL_MS) } }],
-    },
-    { $set: { askedAt: now } },
-    { new: true },
-  );
+  const claimed = await claimDcrAsk(entry, clientId, now, DCR_ASK_INTERVAL_MS);
   // ensureDcrClient replaces a client whose secret can't be read on its own.
   const client = claimed ? await clientFromRow(claimed) : null;
   if (!claimed || !client) return false;

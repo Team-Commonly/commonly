@@ -29,6 +29,9 @@ describe('cantAnswerNotice', () => {
       ['pi with a status it printed', new Error('pi exited 1: 401 {"error":"unauthorized"}')],
       ['pi with a refused route', new Error('upstream refused 401: invalid key')],
       ['a login the wrapper refused', new Error('the Claude login on this machine expires in 3 min, before this turn could end.')],
+      ['a Linux workspace seat with no token of its own (F661)', new Error('workspace Claude agents on Linux need your own Claude token or an API key: run `claude setup-token` in your own terminal on this machine and set CLAUDE_CODE_OAUTH_TOKEN to it in the agent\'s environment, or set ANTHROPIC_API_KEY.')],
+      ['a Linux daemon workspace seat (F661)', new Error('workspace Claude agents on Linux need your own Claude token or an API key, and this agent runs under the background daemon, which carries neither.')],
+      ['a Linux public seat with no key (F661)', new Error('public Claude agents on Linux need ANTHROPIC_API_KEY in the agent\'s environment.')],
     ])('%s', (_name, error) => {
       expect(cantAnswerNotice(error)?.text).toBe(LOGIN_NOTICE);
     });

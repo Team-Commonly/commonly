@@ -67,8 +67,10 @@ describe('dispatchScheduledAgentHeartbeats step timings', () => {
   afterEach(() => jest.restoreAllMocks());
 
   it('returns timingsMs with every step as a non-negative number, and how many installs were checked', async () => {
+    // Intervals off, so both opted-in installs are due: since F668 the pod
+    // pick runs only for a global install that is due.
     const result = await SchedulerService.dispatchScheduledAgentHeartbeats({
-      now: NOW, respectIntervals: true, trigger: 'scheduled-interval',
+      now: NOW, respectIntervals: false, trigger: 'scheduled-interval',
     });
 
     expect(result.skippedByLease).toBe(false);

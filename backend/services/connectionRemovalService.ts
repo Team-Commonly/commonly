@@ -890,8 +890,32 @@ export const finishIncompleteRemovals = async (options: {
   return counts;
 };
 
+/**
+ * Removing a per-repository GitHub App row (F172), the one sequence
+ * `DELETE /api/integrations/:id` and account deletion (F664) both run. The
+ * row's grants end first, while the row they were minted against still
+ * exists (TASK-145). A row can change owner (F174 takeover), so both steps are
+ * scoped to the owner read with the row: only the grants that owner minted
+ * (plus unowned ones from before grants carried an owner) end, and a row taken
+ * over since is left alone. Returns false when no row was removed: it had no
+ * owner, or it is gone or held by someone else now.
+ */
+export const removeGithubAppRepositoryConnection = async (options: {
+  connection: RemovableConnection & { installationId?: unknown; config?: { installationId?: unknown } };
+  removedBy: string;
+  revokeGrants: (input: { connection: RemovableConnection; revokedBy: string; ownerId?: string }) => Promise<number>;
+}): Promise<boolean> => {
+  const { connection } = options;
+  const owner = connection?.createdBy ? String(connection.createdBy) : '';
+  if (!owner) return false;
+  await options.revokeGrants({ connection, revokedBy: options.removedBy, ownerId: owner });
+  const deleted = await Integration.findOneAndDelete({ _id: connection._id, createdBy: owner });
+  return Boolean(deleted);
+};
+
 module.exports = {
   HOSTED_MCP_TYPE,
+  removeGithubAppRepositoryConnection,
   PROVIDER_REVOKED_MARK,
   REVOKE_PAGE_KEY,
   REMOVAL_LEASE_MS,
