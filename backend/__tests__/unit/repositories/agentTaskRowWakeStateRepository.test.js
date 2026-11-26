@@ -351,6 +351,36 @@ describe('task row wake state repository (ADR-034 step 2)', () => {
     });
   });
 
+  // The failure budget is the stop brake's input: a restamp of the same row on
+  // its next wake cycle must leave the counted failures and verdict as they are.
+  describe.each(['mongo', 'dual', 'pg-read'])('%s: a restamp after a counted failure', (mode) => {
+    it('keeps failures, lastVerdict and countedEventId, in Mongo, in Postgres and in what it reads back', async () => {
+      if (mode === 'mongo') delete process.env[ENV]; else process.env[ENV] = mode;
+      const first = new Types.ObjectId();
+      const next = new Types.ObjectId();
+      await recordRowWakes([KEY], { lastWakeAt: NOW, lastWakeEventId: first });
+      expect(await countRowOutcome(KEY, null, { countedEventId: first, failures: 2, lastVerdict: 'failed' }))
+        .toBe(true);
+      await recordRowWakes([KEY], { lastWakeAt: minutes(5), lastWakeEventId: next });
+
+      const stored = await raw();
+      expect(stored).toMatchObject({ failures: 2, lastVerdict: 'failed', lastWakeAt: minutes(5) });
+      expect(String(stored.countedEventId)).toBe(String(first));
+      expect(String(stored.lastWakeEventId)).toBe(String(next));
+
+      const [read] = await findRowWakeStates([KEY]);
+      expect(read).toMatchObject({ failures: 2, lastVerdict: 'failed' });
+      expect(String(read.countedEventId)).toBe(String(first));
+      if (mode === 'mongo') {
+        expect(rowOf()).toBeUndefined();
+      } else {
+        expect(rowOf().row).toMatchObject({
+          failures: 2, last_verdict: 'failed', counted_event_id: String(first), last_wake_event_id: String(next),
+        });
+      }
+    });
+  });
+
   it('pg: reads Postgres, and the writes refuse until step 4, before any write', async () => {
     process.env[ENV] = 'pg';
     mockPg.current.rows.set(KEY, {
