@@ -913,7 +913,8 @@
     },
     "mentions": {
       "agentSubtitle": "Agent · @{{handle}}",
-      "member": "Member"
+      "member": "Member",
+      "memberSubtitle": "Member · @{{handle}}"
     },
     "mentionState": {
       "typeaheadNever": "Agent · @{{handle}} — not connected, can't answer",

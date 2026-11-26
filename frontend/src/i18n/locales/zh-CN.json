@@ -909,7 +909,8 @@
     },
     "mentions": {
       "agentSubtitle": "智能体 · @{{handle}}",
-      "member": "成员"
+      "member": "成员",
+      "memberSubtitle": "成员 · @{{handle}}"
     },
     "mentionState": {
       "typeaheadNever": "智能体 · @{{handle}} —— 未连接，无法回复",

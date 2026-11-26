@@ -249,3 +249,30 @@ describe('the default install\'s explicit handle carries its state (F607)', () =
     expect(warning.textContent).toContain("isn't connected");
   });
 });
+
+// F645: a picker row reads as the name people know, beside the handle it inserts.
+describe('the @ picker reads display names (F645)', () => {
+  test('rows show the display name and the handle, never the runtime name', async () => {
+    mockStates([]);
+    renderChat(makeDetail({
+      members: [
+        { _id: 'u1', username: 'solo-user', isBot: false },
+        { _id: 'b1', username: 'claude-code-gw3-claude', isBot: true, displayLabel: 'gw3-claude' },
+        { _id: 'h2', username: 'growth-t002-10160904a', displayName: 'Alex', isBot: false },
+      ],
+      agents: [{ agentName: 'claude-code', instanceId: 'gw3-claude', displayName: 'Claude Code' }],
+    }));
+    const input = screen.getByPlaceholderText(/message my workspace/i);
+    fireEvent.change(input, { target: { value: '@gw3' } });
+
+    const option = await screen.findByRole('option');
+    expect(option.querySelector('.v2-mention-item__label').textContent).toBe('Claude Code');
+    expect(option.textContent).toContain('@gw3-claude');
+    expect(option.textContent).not.toMatch(/claude-code(?!-)/);
+
+    fireEvent.change(input, { target: { value: '@ale' } });
+    const person = await screen.findByRole('option');
+    expect(person.querySelector('.v2-mention-item__label').textContent).toBe('Alex');
+    expect(person.textContent).toContain('@growth-t002-10160904a');
+  });
+});

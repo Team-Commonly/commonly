@@ -4,9 +4,11 @@
 // package by path and renders the linkified markdown through it, so each href
 // asserted here is the one a reader would click.
 import React from 'react';
-import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, renderHook, screen, waitFor } from '@testing-library/react';
 import { linkifyBareUrls, messageMarkdownComponents, prUrlsToRefLinks } from '../components/V2MessageRow';
 import V2GithubPrCard from '../components/V2GithubPrCard';
+import { MentionLabelsContext } from '../components/V2MentionChip';
+import { buildMentionLabels, useMentionLabelMap } from '../utils/mentionLabels';
 import i18n, { i18nReady } from '../../i18n';
 
 beforeAll(async () => { await i18nReady; await i18n.changeLanguage('en'); });
@@ -293,5 +295,96 @@ describe('mention pills through the real react-markdown', () => {
 
   it('a slash between mentions keeps both', () => {
     expect(pills('@alice/@bob please look')).toEqual(['@alice', '@bob']);
+  });
+});
+
+// F645: a chip reads as the name people know; the text keeps the handle.
+describe('mention chips read display names', () => {
+  const members = [
+    { _id: 'h-1', username: 'growth-t002-10160904a', displayName: 'Alex', isBot: false },
+    { _id: 'b-1', username: 'claude-code-gw3-claude', isBot: true, displayLabel: 'gw3-claude' },
+  ];
+  const agents = [{ agentName: 'claude-code', instanceId: 'gw3-claude', displayName: 'Claude Code' }];
+  const chips = (content, labels = buildMentionLabels(members, agents)) => {
+    const { container } = render(
+      <MentionLabelsContext.Provider value={labels}>
+        <RealReactMarkdown components={messageMarkdownComponents}>{content}</RealReactMarkdown>
+      </MentionLabelsContext.Provider>,
+    );
+    return Array.from(container.querySelectorAll('.v2-msg__mention'))
+      .map((chip) => ({ text: chip.textContent, title: chip.getAttribute('title') }));
+  };
+
+  // The server sends displayLabel 'gw3-claude' for this seat (the leak rule);
+  // the install's chosen "Claude Code" wins, as on its author line.
+  it('an agent handle reads as its display label, with the handle in the tooltip', () => {
+    // Codex's handoff opens with a plain-text handle: agent content chips too.
+    expect(chips('@gw3-claude please review the branch')).toEqual([
+      { text: '@Claude Code', title: '@gw3-claude' },
+    ]);
+  });
+
+  it('a person reads as their display name', () => {
+    expect(chips('For @growth-t002-10160904a: which way?')).toEqual([
+      { text: '@Alex', title: '@growth-t002-10160904a' },
+    ]);
+  });
+
+  it('an unknown handle stays as written', () => {
+    expect(chips('ask @nobody-here')).toEqual([{ text: '@nobody-here', title: null }]);
+  });
+
+  it('with no pod labels every chip stays the handle', () => {
+    expect(chips('@gw3-claude look', new Map())).toEqual([{ text: '@gw3-claude', title: null }]);
+  });
+
+  it('never shows the runtime agentName as a label', () => {
+    const labels = buildMentionLabels(
+      [{ _id: 'b-2', username: 'claude-code-seat', isBot: true }],
+      [{ agentName: 'claude-code', instanceId: 'seat' }],
+    );
+    expect(labels.get('seat')).toBe('seat');
+    expect([...labels.values()]).not.toContain('claude-code');
+  });
+
+  // A default install's fallback slug ('review', from displayName 'Review')
+  // must not take the key a sibling install claims as its own handle.
+  it('a sibling install keeps its own handle over a default install\'s fallback slug', () => {
+    const labels = buildMentionLabels([], [
+      { agentName: 'reviewer', instanceId: 'default', displayName: 'Review' },
+      { agentName: 'reviewer', instanceId: 'review', displayName: 'Second Reviewer' },
+    ]);
+    expect(labels.get('review')).toBe('Second Reviewer');
+    expect(labels.get('reviewer-default')).toBe('Review');
+    expect(labels.get('reviewer')).toBe('Review');
+    expect(labels.get('reviewer-review')).toBe('Second Reviewer');
+  });
+});
+
+describe('the label map keeps its identity across equal re-renders (F645)', () => {
+  const make = () => ({
+    members: [{ _id: 'h-1', username: 'growth-t002-10160904a', displayName: 'Alex', isBot: false }],
+    agents: [{ agentName: 'claude-code', instanceId: 'gw3-claude', displayName: 'Claude Code' }],
+  });
+
+  it('fresh but equal arrays return the same Map', () => {
+    const { result, rerender } = renderHook(({ members, agents }) => useMentionLabelMap(members, agents), {
+      initialProps: make(),
+    });
+    const first = result.current;
+    rerender(make());
+    expect(result.current).toBe(first);
+  });
+
+  it('a changed name builds a new Map', () => {
+    const { result, rerender } = renderHook(({ members, agents }) => useMentionLabelMap(members, agents), {
+      initialProps: make(),
+    });
+    const first = result.current;
+    const next = make();
+    next.members[0].displayName = 'Alexandra';
+    rerender(next);
+    expect(result.current).not.toBe(first);
+    expect(result.current.get('growth-t002-10160904a')).toBe('Alexandra');
   });
 });

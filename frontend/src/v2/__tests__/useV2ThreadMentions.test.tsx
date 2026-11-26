@@ -178,3 +178,46 @@ describe('@ picker for an opaque-token sibling with no display name (F622)', () 
     expect(valuesFor([opaque])).toEqual(['codex']);
   });
 });
+
+// F645: the picker reads as the name people know and shows the handle it
+// inserts; the text still gets the handle, so the mention pipeline is unchanged.
+describe('@ picker shows display names', () => {
+  const podMembers = [
+    { _id: 'u-self', username: 'laruiss' },
+    { _id: 'h-1', username: 'growth-t002-10160904a', displayName: 'Alex', isBot: false },
+    { _id: 'b-1', username: 'claude-code-gw3-claude', isBot: true, displayLabel: 'gw3-claude' },
+  ];
+  const podAgents = [{ agentName: 'claude-code', instanceId: 'gw3-claude', displayName: 'Claude Code' }];
+  const setup = (query) => {
+    let draft = `@${query}`;
+    const setDraft = jest.fn((next) => { draft = typeof next === 'function' ? next(draft) : next; });
+    const inputRef = { current: { selectionStart: draft.length, focus: jest.fn(), setSelectionRange: jest.fn() } };
+    const wrapper = ({ children }) => <AuthContext.Provider value={auth('laruiss')}>{children}</AuthContext.Provider>;
+    const { result } = renderHook(() => useV2ThreadMentions({
+      members: podMembers, agents: podAgents, agentStateByHandle: new Map(), draft, setDraft, inputRef,
+    }), { wrapper });
+    act(() => { result.current.updateMentionState(draft, draft.length); });
+    return { result, setDraft, read: () => draft };
+  };
+
+  test('an agent row reads as its display label beside its handle, and inserts the handle', () => {
+    jest.spyOn(window, 'requestAnimationFrame').mockImplementation(() => 0);
+    const { result, read } = setup('cla');
+    const item = result.current.filteredMentions.find((row) => row.value === 'gw3-claude');
+    expect(item.label).toBe('Claude Code');
+    expect(item.subtitle).toContain('@gw3-claude');
+    expect(item.label).not.toBe('claude-code');
+    act(() => { result.current.selectMention(item); });
+    expect(read()).toBe('@gw3-claude ');
+  });
+
+  test('a person row reads as their display name beside their handle, and inserts the handle', () => {
+    jest.spyOn(window, 'requestAnimationFrame').mockImplementation(() => 0);
+    const { result, read } = setup('ale');
+    const item = result.current.filteredMentions.find((row) => row.value === 'growth-t002-10160904a');
+    expect(item.label).toBe('Alex');
+    expect(item.subtitle).toContain('@growth-t002-10160904a');
+    act(() => { result.current.selectMention(item); });
+    expect(read()).toBe('@growth-t002-10160904a ');
+  });
+});

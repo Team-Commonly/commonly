@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { useV2Api } from './useV2Api';
 import { V2Pod, V2PodMember } from './useV2Pods';
 import { useSocket } from '../../context/SocketContext';
@@ -33,6 +33,9 @@ export interface V2Message {
   messageType?: string;
   user?: {
     username: string;
+    // Client-only: a display name for a row the client builds itself (the
+    // ruling stand-in), so `username` stays a handle in handle-keyed maps.
+    displayName?: string;
     profile_picture?: string | null;
     // Face-vs-robot avatar tier. The PG SELECT always fetched u.is_bot; the
     // backend mapper now forwards it instead of dropping it.
@@ -923,9 +926,12 @@ export const useV2PodDetail = (podId: string | null): UseV2PodDetailResult => {
     }
   }, [api, podId]);
 
-  const members: V2PodMember[] = (pod?.members || []).filter(
+  // F645: one array per pod read, so the members-keyed memos downstream (the
+  // mention label map and its context) keep their identity across re-renders.
+  const podMembers = pod?.members;
+  const members: V2PodMember[] = useMemo(() => (podMembers || []).filter(
     (m): m is V2PodMember => typeof m === 'object' && m !== null,
-  );
+  ), [podMembers]);
 
   return {
     pod,
