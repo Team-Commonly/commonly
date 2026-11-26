@@ -130,7 +130,15 @@
 .v2-ui-card { min-width:0; max-width:100%; --sans:var(--v2-font);--mono:var(--v2-font-mono); }
 .v2-ui-card .ui { overflow-wrap:anywhere; }
 .v2-ui-card .ui-recs { display:none; }
-.v2-ui-card .ui-table .ui-tb td { white-space:normal; overflow-wrap:anywhere; }
+/* F650: `anywhere` drops a cell's min-content to one character, so the auto
+   layout squeezed short columns and broke "Merged" and "Status" mid-word. Cells
+   break only between words; a long hash or URL widens its column, and the
+   table scrolls sideways inside its card instead of leaving the column. The
+   table is a grid item of .ui-bd, so min-width:0 keeps its wide min-content
+   from stretching the card's track past the column. */
+.v2-ui-card .ui-table { min-width:0; }
+.v2-ui-card .ui-table .ui-tb :is(th, td) { white-space:normal; overflow-wrap:normal; }
+.v2-ui-card .ui-table .ui-tw { overflow-x:auto; }
 .v2-ui-card .ui-rec dd { margin:0; min-width:0; overflow-wrap:anywhere; }
 .v2-ui-card a:focus-visible { outline:2px solid var(--v2-ink); outline-offset:2px; }
 @media (max-width:760px){
