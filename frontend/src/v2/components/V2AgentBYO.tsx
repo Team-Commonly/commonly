@@ -18,7 +18,9 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { Trans, useTranslation } from 'react-i18next';
-import { hasDaemonRevokedReasonText, revokedComputerSetup, V2KeepsUnsandboxedNote } from './V2DaemonRevokedReason';
+import {
+  hasDaemonRevokedReasonText, revokedComputerSetup, V2KeepsUnsandboxedNote, V2UnsandboxedUnknownNote,
+} from './V2DaemonRevokedReason';
 import axios from '../../utils/axiosConfig';
 import { recordByoStep, type ByoCopyType, type ByoStallReason, type ByoStep } from '../utils/byoTelemetry';
 import getApiBaseUrl from '../../utils/apiBaseUrl';
@@ -224,7 +226,7 @@ type MachineRow = {
   // F641: its OS (Node's platform name; null when too old to say) and whether
   // its owner opted out of the sandbox, for its own setup line.
   platform?: string | null;
-  unsandboxedOptIn?: boolean;
+  unsandboxedOptIn?: boolean | null;
   // F641: why an operator revoked its key, as a stable code, while no live key replaced it.
   revokedReason?: string;
 };
@@ -2431,8 +2433,14 @@ const V2AgentBYO: React.FC = () => {
           {/* F641: outside the <label>, so nothing here selects the picker. */}
           {mode === 'machine' && revokedSetup && (
             <p className="v2-byo__needs" data-testid="byo-machine-revoked-reason">
-              {t('agentByo.machine.revokedCliBug')} <code>{revokedSetup.command}</code>
+              {t('agentByo.machine.revokedCliBug')} <code>{revokedSetup.command}</code>{' '}
+              {/* This computer's own line: the add-computer block copies the page's. */}
+              <button type="button" className="v2-byo__copy" data-testid="byo-revoked-setup-copy"
+                onClick={() => { void copy('revoked-setup', revokedSetup.command); }}>
+                {copied === 'revoked-setup' ? t('agentByo.addComputer.copied') : t('agentByo.addComputer.copy')}
+              </button>
               {revokedSetup.keepsUnsandboxed && <>{' '}<V2KeepsUnsandboxedNote /></>}
+              {revokedSetup.unsandboxedUnknown && <>{' '}<V2UnsandboxedUnknownNote /></>}
             </p>
           )}
           {mode === 'machine' && (

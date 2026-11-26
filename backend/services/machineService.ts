@@ -37,7 +37,8 @@ interface MachineView {
   // and whether its owner opted out of the sandbox there, so the notice gives
   // back that computer's own setup line.
   platform?: string | null;
-  unsandboxedOptIn?: boolean;
+  // null: unknown (no daemon reported it since the field existed).
+  unsandboxedOptIn?: boolean | null;
   // F641: why an operator revoked this computer's key, as a stable code, while
   // no live key has replaced it. Absent for a revoke that gave no reason.
   revokedReason?: DaemonRevokedReason;
@@ -290,7 +291,7 @@ export async function listMachinesForOwner(ownerUserId: Types.ObjectId | string)
         ...view,
         revokedReason,
         platform: normalizeHostReport(machine.host)?.platform ?? null,
-        unsandboxedOptIn: machine.hostUnsandboxedOptIn === true,
+        unsandboxedOptIn: typeof machine.hostUnsandboxedOptIn === 'boolean' ? machine.hostUnsandboxedOptIn : null,
       };
     }),
     offlineAfterMs: MACHINE_OFFLINE_AFTER_MS,

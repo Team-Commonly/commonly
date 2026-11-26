@@ -139,6 +139,28 @@ describe('BYO on-my-computer mode', () => {
     const code = note.querySelector('code').textContent;
     expect(code).toMatch(/^npx\.cmd -y @commonlyai\/cli@latest daemon setup --instance \S+$/);
     expect(note).not.toHaveTextContent('--unsandboxed');
+    expect(note).not.toHaveTextContent('If this computer ran agents without a sandbox');
+  });
+
+  const UNKNOWN = 'If this computer ran agents without a sandbox, add --unsandboxed to keep that: agents then act with your own access to files and commands, and get no connector grants.';
+
+  test('a revoked Windows computer whose sandbox choice is unknown gets no flag, and the line saying how to keep it', async () => {
+    const note = await revokedPick({ platform: 'win32', unsandboxedOptIn: null });
+    expect(note.querySelector('code').textContent).toMatch(/^npx\.cmd -y @commonlyai\/cli@latest daemon setup --instance \S+$/);
+    expect(note).toHaveTextContent(UNKNOWN);
+    expect(note).not.toHaveTextContent(KEEPS);
+  });
+
+  test('the notice copies that computer\'s own command, not the page\'s', async () => {
+    Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText: jest.fn().mockResolvedValue(undefined) } });
+    const note = await revokedPick({ platform: 'win32', unsandboxedOptIn: false });
+    const shown = note.querySelector('code').textContent;
+    fireEvent.click(screen.getByTestId('byo-revoked-setup-copy'));
+    await waitFor(() => expect(navigator.clipboard.writeText).toHaveBeenCalledWith(shown));
+    // The page's own line (a Mac browser) is the Unix one; the notice's is Windows, with no flag.
+    expect(shown).toMatch(/^npx\.cmd /);
+    expect(shown).not.toContain('--unsandboxed');
+    await waitFor(() => expect(screen.getByTestId('byo-revoked-setup-copy')).toHaveTextContent('Copied'));
   });
 
   test('a revoked computer with no OS on record falls back to the browser line', async () => {

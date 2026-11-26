@@ -113,7 +113,7 @@ router.get('/placement', bindingRateLimit, auth, async (req: express.Request & {
       .select('machineId name createdAt host.platform hostUnsandboxedOptIn').lean();
     type PlacementMachine = {
       machineId: string; name: string; createdAt: Date;
-      host?: { platform?: string | null } | null; hostUnsandboxedOptIn?: boolean;
+      host?: { platform?: string | null } | null; hostUnsandboxedOptIn?: boolean | null;
     };
     const activeMachines = (await Promise.all(machines.map(async (machine: PlacementMachine) => ({
       machineId: machine.machineId,
@@ -141,7 +141,9 @@ router.get('/placement', bindingRateLimit, auth, async (req: express.Request & {
       boundMachineHost: boundMachineRevokedReason
         ? (() => {
           const bound = machines.find((machine: PlacementMachine) => machine.machineId === boundMachineId);
-          return { platform: bound?.host?.platform ?? null, unsandboxedOptIn: bound?.hostUnsandboxedOptIn === true };
+          // A missing opt-in is unknown (null), never a confident false.
+          const optIn = bound?.hostUnsandboxedOptIn;
+          return { platform: bound?.host?.platform ?? null, unsandboxedOptIn: typeof optIn === 'boolean' ? optIn : null };
         })()
         : null,
       // F476: the computer whose removal unbound it, until a daemon adopts it.

@@ -188,7 +188,8 @@ describe('ADR-026 machine lifecycle service', () => {
     const optIn = async () => (await Machine.findById(machine.id).lean()).hostUnsandboxedOptIn;
     const beat = (sandbox, host) => Machine.findById(machine.id)
       .then((m) => machineService.recordMachineHeartbeat(m, [], undefined, sandbox, host));
-    expect(await optIn()).toBe(false);
+    // Unknown until a daemon reports it: never a confident false.
+    expect(await optIn() ?? null).toBeNull();
 
     expect(await beat('unsandboxed-opted-in', { platform: 'win32' })).toMatchObject({ hostUnconfined: true });
     expect(await optIn()).toBe(true);
@@ -210,6 +211,28 @@ describe('ADR-026 machine lifecycle service', () => {
     await beat('unsandboxed-opted-in');
     expect(await beat('default')).toMatchObject({ hostUnconfined: false });
     expect(await optIn()).toBe(false);
+  });
+
+  // F641: a computer revoked before this field existed never checks in again,
+  // so a missing field is UNKNOWN (null), never a confident false.
+  it('lists the opt-in as unknown when the record has none, and as stored otherwise', async () => {
+    const ownerUserId = new mongoose.Types.ObjectId();
+    const { machine } = await machineService.registerMachine({ ownerUserId, name: 'Windows PC' });
+    await mongoose.connection.collection('machines').updateOne(
+      { _id: new mongoose.Types.ObjectId(machine.id) },
+      { $set: { host: { platform: 'win32' } }, $unset: { hostUnsandboxedOptIn: '' } },
+    );
+    const daemon = await AgentCredential.findOne({ machineId: machine.machineId, kind: 'daemon' });
+    await AgentCredential.revokeCascade(daemon._id, { reason: 'cli_duplicate_daemons' });
+    const listed = async () => (await machineService.listMachinesForOwner(ownerUserId)).machines[0].unsandboxedOptIn;
+
+    expect(await listed()).toBeNull();
+    for (const stored of [false, true]) {
+      // eslint-disable-next-line no-await-in-loop
+      await Machine.updateOne({ _id: machine.id }, { $set: { hostUnsandboxedOptIn: stored } });
+      // eslint-disable-next-line no-await-in-loop
+      expect(await listed()).toBe(stored);
+    }
   });
 
   it('keeps only the four stored seat fields when a daemon reports its full payload', () => {

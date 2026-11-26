@@ -12,7 +12,7 @@ import V2RuntimeControls, { runtimeNotReady, RuntimeSettings, RuntimeUpdate } fr
 import { browserIsWindows, daemonSetupCommandFor } from '../utils/daemonSetupCommand';
 import { usePhone } from '../connectors/usePhone';
 import V2DaemonRevokedReason, {
-  hasDaemonRevokedReasonText, revokedComputerSetup, RevokedComputerHost, V2KeepsUnsandboxedNote,
+  hasDaemonRevokedReasonText, revokedComputerSetup, RevokedComputerHost, V2KeepsUnsandboxedNote, V2UnsandboxedUnknownNote,
 } from './V2DaemonRevokedReason';
 
 export interface Runtime extends RuntimeSettings {}
@@ -214,6 +214,7 @@ const V2AgentRuntimeBody: React.FC<Props> = ({
                 </div> : revokedSetup ? <p className="v2-agent-settings-page__live" data-testid="agent-machine-revoked-setup">
                   {t('agentManage.runtime.noActiveMachine')} <code>{revokedSetup.command}</code>
                   {revokedSetup.keepsUnsandboxed && <>{' '}<V2KeepsUnsandboxedNote /></>}
+                  {revokedSetup.unsandboxedUnknown && <>{' '}<V2UnsandboxedUnknownNote /></>}
                 </p> : <p className="v2-agent-settings-page__live">{t('agentManage.runtime.noActiveMachine')} <code>{daemonSetupCommandFor(browserIsWindows() ? 'windows' : 'unix')}</code></p>}
               </div>
             </details>

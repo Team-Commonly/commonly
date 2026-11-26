@@ -3430,6 +3430,7 @@
       "machineRevokedCliBug": "我们的 CLI 有个 Bug，这台电脑因此断开了连接。请到「<byo>接入你自己的智能体</byo>」页面重新运行电脑设置命令，获取修复后的版本。",
       "machineRevokedCliBugBelow": "我们的 CLI 有个 Bug，这台电脑因此断开了连接。请在这台电脑上重新运行下面的电脑设置命令，获取修复后的版本。",
       "keepsUnsandboxed": "<cmd>--unsandboxed</cmd> 会保留这台电脑不用沙箱运行的设置：智能体用你自己的权限访问文件、运行命令，也不会获得任何连接器授权。",
+      "unsandboxedUnknown": "如果这台电脑之前不用沙箱运行智能体，加上 <cmd>--unsandboxed</cmd> 就能保留这个设置：智能体会用你自己的权限访问文件、运行命令，也不会获得任何连接器授权。",
       "machineRemoved": "{{name}} 已移除。请选择另一台电脑运行此智能体。",
       "currentMachine": "正在 {{name}} 上运行",
       "machineRequested": "等待 {{name}} 启动此智能体",

@@ -129,6 +129,16 @@ test('with no computer left, the line below is the revoked computer\'s own, keep
   expect(plain).not.toHaveTextContent('--unsandboxed');
 });
 
+test('with no computer left and an unknown sandbox choice, the line has no flag and says how to keep one', async () => {
+  axios.get.mockImplementation((url) => Promise.resolve({ data: url.includes('/agent-binding/placement')
+    ? { boundMachineId: 'old', requestedMachineId: null, boundMachineRevoked: true, boundMachineRevokedReason: 'cli_duplicate_daemons',
+      boundMachineHost: { platform: 'win32', unsandboxedOptIn: null }, activeMachines: [] } : response }));
+  renderSection();
+  const line = await screen.findByTestId('agent-machine-revoked-setup');
+  expect(line.querySelector('code').textContent).toBe(daemonSetupCommandFor('windows', undefined, { unsandboxed: false }));
+  expect(line).toHaveTextContent('If this computer ran agents without a sandbox, add --unsandboxed to keep that: agents then act with your own access to files and commands, and get no connector grants.');
+});
+
 test('a revoke without a reason keeps the generic line and no connect link', async () => {
   axios.get.mockImplementation((url) => Promise.resolve({ data: url.includes('/agent-binding/placement')
     ? { boundMachineId: 'old', requestedMachineId: null, boundMachineRevoked: true, boundMachineRevokedReason: null,
