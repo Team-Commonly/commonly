@@ -677,6 +677,11 @@ const lockAbandoned = (content, mtimeMs, {
   return age > staleMs;
 };
 
+// How long a release keeps trying a lock or guard that Windows won't move
+// (another handle on it, an antivirus scan say) before leaving it to the
+// next waiter's takeover rules.
+const LOCK_RELEASE_RETRY_MS = 5 * 1000;
+
 // How long a guard holder may act: it is held only for a read and a removal.
 // The guard reads `<pid> <token> <deadline>`, and its holder acts on the lock
 // only before that deadline.
@@ -774,8 +779,17 @@ const withLockGuard = async (guard, fn, {
   try {
     return await fn(stillMine);
   } finally {
-    // Past its deadline the guard may be another's already: leave it.
-    if (stillMine()) await remove(guard, (c) => c === mine).catch(() => {});
+    // Past its deadline the guard may be another's already: leave it. A guard
+    // Windows won't move now is tried again for a few seconds, each attempt
+    // judging it afresh as ours.
+    const releaseUntil = now() + LOCK_RELEASE_RETRY_MS;
+    while (stillMine()) {
+      // eslint-disable-next-line no-await-in-loop
+      const released = await remove(guard, (c) => c === mine).catch(() => 'failed');
+      if (released !== 'busy' || now() > releaseUntil) break;
+      // eslint-disable-next-line no-await-in-loop
+      await new Promise((resolve) => { setTimeout(resolve, 20); });
+    }
   }
 };
 
@@ -871,10 +885,35 @@ const withFileLock = async (root, name, fn, {
   try {
     return await fn();
   } finally {
-    await withLockGuard(guard, async (stillMine) => {
-      // Our own lock, or one that can't be read at all (never left behind).
-      if (stillMine()) await remove(lock, (content) => content === mine || content === null);
-    }, { now, pidAlive, remove }).catch(() => {});
+    // The release, under the guard. The lock is read first, and only a file
+    // read as ours, or one that can't be read at all (never left behind), is
+    // moved aside, and is judged again there. A lock that is not ours (a
+    // successor's, after a takeover) is never renamed: moving it would free
+    // the path for a moment, and a third turn's create could win it. Every
+    // removal runs under the guard, so nothing replaces the lock between this
+    // read and the move. Windows refusing the move ('busy') is retried for a
+    // few seconds, each attempt reading afresh.
+    const releaseUntil = now() + LOCK_RELEASE_RETRY_MS;
+    for (;;) {
+      // eslint-disable-next-line no-await-in-loop
+      const released = await withLockGuard(guard, async (stillMine) => {
+        if (!stillMine()) return 'kept';
+        const held = await stat(lock).catch((error) => error);
+        if (held?.code === 'ENOENT') return 'gone';
+        const read = await readFile(lock, 'utf8').then((text) => ({ text }), (error) => ({ error }));
+        if (['EBUSY', 'EPERM', 'EACCES'].includes(read.error?.code)) return 'busy';
+        const unreadable = Boolean(read.error);
+        if (!unreadable && read.text !== mine) return 'kept';
+        return remove(lock, (content, st) => (unreadable ? content === null : content === mine)
+          && (typeof held?.ino !== 'number' || st?.ino === held.ino));
+      }, {
+        // A guard another holds frees within its 30-second deadline: wait that out.
+        now, pidAlive, remove, until: releaseUntil + LOCK_GUARD_HOLD_MS,
+      }).catch(() => 'failed');
+      if (released !== 'busy' || now() > releaseUntil) break;
+      // eslint-disable-next-line no-await-in-loop
+      await new Promise((resolve) => { setTimeout(resolve, Math.min(pollMs, 100)); });
+    }
   }
 };
 
@@ -922,6 +961,7 @@ export const seatLockAbandoned = (content, mtimeMs, {
  */
 export const withSeatLock = (home, fn, {
   waitMs = SEAT_LOCK_WAIT_MS, holdMs = INSTALL_LOCK_MAX_MS, pollMs = 250, now = Date.now, pidAlive = defaultPidAlive,
+  _remove,
 } = {}) => {
   let deadline = 0;
   return withFileLock(dirname(home), `.${basename(home)}.lock`, () => fn({ pastDeadline: () => now() > deadline }), {
@@ -929,6 +969,7 @@ export const withSeatLock = (home, fn, {
     pollMs,
     now,
     pidAlive,
+    ...(_remove ? { remove: _remove } : {}),
     suffix: () => {
       deadline = now() + holdMs;
       return ` ${deadline}`;

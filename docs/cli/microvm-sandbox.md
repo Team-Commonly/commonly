@@ -201,8 +201,12 @@ and acts only on the file it judged. It first renames the file to a name only
 it knows (atomic on Windows and macOS), then checks that file's content and
 inode there; a file that is not the judged one is put back with a no-clobber
 hard link. A takeover also re-reads the lock under the guard and goes ahead
-only if the same file, with the same content and age, is still abandoned. The
-guard follows the same rule as the lock: it is taken over only when its pid is
+only if the same file, with the same content and age, is still abandoned. A
+release reads the lock under the guard first and moves aside only a file it
+read as its own (or one that can't be read at all); a successor's lock is
+never moved, since moving it would free the path for a third turn's create.
+A release Windows refuses to move is retried for five seconds, reading afresh
+each time, then left to the next waiter's takeover rules. The guard follows the same rule as the lock: it is taken over only when its pid is
 gone or its own deadline has passed, never on age while its holder may act,
 and a guard holder past its deadline removes nothing. Node has no kernel file
 lock (`flock`) without a native addon, so this is the mechanism. A second turn of the seat

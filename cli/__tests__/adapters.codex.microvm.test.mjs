@@ -490,6 +490,32 @@ describe('the codex adapter in a microVM', () => {
       expect(closed).toBe(1);
     });
 
+    test('oversized sibling folders share one budget: the whole walk reads at most the cap plus one', async () => {
+      const sessions = path.join(home, 'codex-home', 'sessions');
+      const siblings = ['c', 'b', 'a'];
+      for (const name of siblings) fs.mkdirSync(path.join(sessions, name), { recursive: true });
+      let reads = 0;
+      const opened = [];
+      const dirent = (name) => ({ name, isSymbolicLink: () => false, isDirectory: () => true, isFile: () => false });
+      const openDir = async (dir) => {
+        opened.push(path.basename(dir));
+        const queue = dir === sessions ? siblings.map(dirent) : null;
+        return {
+          // The sessions folder lists the three siblings; each sibling never ends.
+          read: async () => {
+            reads += 1;
+            if (queue) return queue.shift() || (reads -= 1, null);
+            return dirent(`e${reads}`);
+          },
+          close: async () => {},
+        };
+      };
+      const found = await codexModule.guestRolloutExists(path.join(home, 'codex-home'), SESSION, 50, { openDir });
+      expect(found).toBe(false);
+      expect(reads).toBeLessThanOrEqual(51);
+      expect(opened).toEqual(['sessions', 'c']);
+    });
+
     test('a rollout reached only through a link counts as absent', async () => {
       const elsewhere = fs.mkdtempSync(path.join(os.tmpdir(), 'cli-cmv-rollouts-'));
       try {

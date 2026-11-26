@@ -1729,11 +1729,13 @@ export const guestRolloutExists = async (codexHome, sessionId, cap = GUEST_ROLLO
   const suffix = `-${sessionId}.jsonl`;
   // sessions/ is guest-writable: a planted tree of many folders, or one folder
   // of a million entries, must not stall the host or run it out of memory
-  // (it holds the seat lock meanwhile). Each folder is read one entry at a
-  // time and at most the remaining budget plus one is read; past the cap the
-  // thread counts as absent and starts fresh, which only costs this seat its
-  // thread. Only a list that fits is sorted.
+  // (it holds the seat lock meanwhile). Folders are read one entry at a time,
+  // and every entry read, in any folder, is charged to one budget for the whole
+  // walk. The read that goes past it ends the whole walk (cap + 1 reads at
+  // most), and the thread counts as absent and starts fresh, which only costs
+  // this seat its thread. Only a list that fits is sorted.
   let budget = cap;
+  let exhausted = false;
   const dirsIn = async (dir) => {
     const info = await lstat(dir).catch(() => null);
     if (!info || info.isSymbolicLink() || !info.isDirectory()) return null;
@@ -1745,8 +1747,12 @@ export const guestRolloutExists = async (codexHome, sessionId, cap = GUEST_ROLLO
         // eslint-disable-next-line no-await-in-loop
         const entry = await handle.read();
         if (!entry) break;
+        budget -= 1;
+        if (budget < 0) {
+          exhausted = true;
+          return null;
+        }
         entries.push(entry);
-        if (entries.length > budget) return null;
       }
     } finally {
       await handle.close().catch(() => {});
@@ -1756,10 +1762,8 @@ export const guestRolloutExists = async (codexHome, sessionId, cap = GUEST_ROLLO
   const walk = async (dir, depth) => {
     const entries = await dirsIn(dir);
     if (!entries) return false;
-    budget -= entries.length;
-    if (budget < 0) return false;
     for (const entry of entries) {
-      if (budget < 0) return false;
+      if (exhausted) return false;
       if (entry.isSymbolicLink()) continue;
       if (depth === 3) {
         if (entry.isFile() && entry.name.endsWith(suffix)) return true;

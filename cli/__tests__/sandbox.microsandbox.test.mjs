@@ -792,6 +792,57 @@ describe('the lock guard', () => {
     expect(readdirSync(seats).sort()).toEqual(['.abc123-public.lock', 'abc123-public']);
   });
 
+  test('a release finds a successor\'s lock and never moves it, so no third turn can slip in', async () => {
+    const successor = `4242 cafecafecafecafe ${Date.now() + 60 * 60 * 1000}\n`;
+    const remove = jest.fn((path, isJudged) => removeIfJudged(path, isJudged));
+    let before = null;
+    await withSeatLock(home, async () => {
+      // A took over from us while we ran: our lock is gone and B's is there.
+      rmSync(lock);
+      writeFileSync(lock, successor);
+      before = statSync(lock).ino;
+    }, { _remove: remove, pidAlive: (pid) => pid === 4242 || pid === process.pid });
+    expect(remove.mock.calls.filter(([path]) => path === lock)).toHaveLength(0);
+    expect(statSync(lock).ino).toBe(before);
+    expect(readFileSync(lock, 'utf8')).toBe(successor);
+    const third = jest.fn();
+    await expect(withSeatLock(home, third, { pidAlive: (pid) => pid === 4242, pollMs: 10, waitMs: 60 }))
+      .rejects.toMatchObject({ code: 'microvm_seat_busy' });
+    expect(third).not.toHaveBeenCalled();
+  });
+
+  test.each([
+    ['the lock', (path) => !path.endsWith('.guard')],
+    ['the guard', (path) => path.endsWith('.guard')],
+  ])('a release Windows refuses at first (busy) is tried again until %s goes', async (label, isTarget) => {
+    let refusals = 0;
+    const remove = jest.fn(async (path, isJudged) => {
+      if (isTarget(path) && refusals < 3) {
+        refusals += 1;
+        return 'busy';
+      }
+      return removeIfJudged(path, isJudged);
+    });
+    await withSeatLock(home, async () => {}, { _remove: remove, pollMs: 10 });
+    expect(refusals).toBe(3);
+    expect(existsSync(lock)).toBe(false);
+    expect(existsSync(guard)).toBe(false);
+  });
+
+  test('a release that stays busy gives up after its cleanup period instead of hanging', async () => {
+    let clock = 1_000_000;
+    const now = () => clock;
+    const remove = jest.fn(async (path) => {
+      clock += 1000;
+      return path.endsWith('.guard') ? removeIfJudged(path, (c) => true) : 'busy';
+    });
+    await withSeatLock(home, async () => {}, { _remove: remove, now, pollMs: 1 });
+    const lockTries = remove.mock.calls.filter(([path]) => path === lock).length;
+    expect(lockTries).toBeGreaterThan(1);
+    expect(lockTries).toBeLessThan(10);
+    expect(existsSync(lock)).toBe(true);
+  });
+
   test('a release whose lock was taken over leaves the new holder\'s lock', async () => {
     let releaseLock = null;
     await withSeatLock(home, async () => {

@@ -209,7 +209,17 @@ const tryWrite = (path) => { try { writeFileSync(path, 'x'); return 'written'; }
 // gateway accepting a plain-HTTP connection and answering 403 with a JSON body
 // whose code is network_policy_denied (docs/plans/microsandbox-windows-spike.md,
 // "Network fence"). Any other status or body is the site answering: reachable.
+// "No connection" is a request error, but not every request error: a TLS
+// certificate error (CERT_*, UNABLE_TO_*, DEPTH_ZERO_SELF_SIGNED_CERT,
+// SELF_SIGNED_CERT_IN_CHAIN, ERR_TLS_CERT_ALTNAME_INVALID) means a TLS peer
+// answered with a certificate, so something on the internet side spoke TLS:
+// reached, and the check fails. Resets, hang-ups, refusals and timeouts stay
+// blocked. The socket's `connect` event is no signal either way: msb's gateway
+// may accept the TCP connection of a blocked HTTPS request and then drop it.
+const TLS_PEER_ANSWERED = /^(CERT_|UNABLE_TO_|DEPTH_ZERO_SELF_SIGNED_CERT$|SELF_SIGNED_CERT_IN_CHAIN$|ERR_TLS_CERT_ALTNAME_INVALID$)/;
 const publicBlockKind = (outcome) => {
+  const errored = /^blocked \((.*)\)$/s.exec(String(outcome));
+  if (errored && TLS_PEER_ANSWERED.test(errored[1])) return null;
   if (String(outcome).startsWith('blocked')) return `no connection (${outcome})`;
   const denied = /^status 403 (.*)$/s.exec(String(outcome));
   if (!denied) return null;
@@ -229,7 +239,7 @@ const runMsb = (msb, args) => new Promise((resolve, reject) => {
   child.on('close', (code) => resolve({ code, stdout }));
 });
 
-const main = async () => {
+const runSmoke = async (root) => {
   if (process.env[MICROVM_FLAG_ENV] !== '1') throw new Error(`${MICROVM_FLAG_ENV}=1 must be set for this smoke`);
 
   step('1. WHP');
@@ -238,7 +248,6 @@ const main = async () => {
   if (!whp.available) throw new Error(`this runner has no WHP: ${whp.error}`);
 
   step('2. msb, pinned and checksum-verified');
-  const root = mkdtempSync(join(tmpdir(), 'commonly-msb-codex-'));
   const msb = await ensureMsb({ root });
   console.log(msb);
 
@@ -398,6 +407,14 @@ const main = async () => {
       const homeWrite = /HOME_WRITE=(\w+)/.exec(out)?.[1] || 'unknown';
       const homeFs = /HOME_FS=(\S+)/.exec(out)?.[1] || 'unknown';
       console.log(`the shell's write to the Codex home: ${homeWrite}, on ${homeFs} as the shell sees it`);
+      // A refused write passes. A write that "succeeds" must have landed in
+      // bwrap's private tmpfs, the documented behaviour; anything else is a
+      // view of the Codex home this smoke does not understand.
+      if (homeWrite === 'written' && homeFs !== 'tmpfs') {
+        fail(`the shell's write to the Codex home succeeded on ${homeFs}, not bwrap's private tmpfs`);
+      } else if (homeWrite !== 'written' && homeWrite !== 'refused') {
+        fail(`the shell's write to the Codex home gave no answer (${homeWrite})`);
+      }
       if (existsSync(join(workspace, 'tool-planted'))) fail('a file the shell wrote is in the workspace');
       if (existsSync(join(toolCodexHome, 'tool-planted'))) fail('a file the shell wrote reached the seat HOME\'s Codex home');
       // Positive control: Codex itself (outside bwrap) does write its home, so
@@ -500,7 +517,8 @@ const main = async () => {
       if (!report.otherHostPort.startsWith('blocked')) fail(`a non-allowed host port was reachable: ${report.otherHostPort}`);
       for (const [name, outcome] of [['https', report.publicHttps], ['http', report.publicHttp]]) {
         const kind = publicBlockKind(outcome);
-        console.log(`public ${name}: ${kind ? `blocked by ${kind}` : 'REACHABLE'}`);
+        const tls = !kind && /^blocked \(/.test(String(outcome));
+        console.log(`public ${name}: ${kind ? `blocked by ${kind}` : (tls ? `reached (tls): ${outcome}` : 'REACHABLE')}`);
         if (!kind) fail(`the public internet (${name}) was reachable: ${outcome}`);
       }
       if (!report.workspaceWrite.startsWith('refused')) fail(`the read-only workspace took a write: ${report.workspaceWrite}`);
@@ -668,6 +686,26 @@ const main = async () => {
     process.exitCode = 1;
   } else {
     console.log('\nOK: a public Codex turn ran inside the microVM, and the fence held');
+  }
+};
+
+// msb and its install go under a fresh `root`, removed once every step is done
+// (the turns' msb children have exited by then, and the orphan stand-in was
+// killed). msb's named agents volume lives in msb's own store, not here, and
+// is left alone.
+const main = async () => {
+  const root = mkdtempSync(join(tmpdir(), 'commonly-msb-codex-'));
+  try {
+    await runSmoke(root);
+  } finally {
+    try {
+      // Windows can hold a just-exited msb.exe open for a moment: retry.
+      rmSync(root, {
+        recursive: true, force: true, maxRetries: 10, retryDelay: 500,
+      });
+    } catch (error) {
+      console.error(`could not remove ${root}: ${error?.message || error}`);
+    }
   }
 };
 
