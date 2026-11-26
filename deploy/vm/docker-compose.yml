@@ -46,6 +46,13 @@ x-logging: &default-logging
   options:
     max-size: "10m"
     max-file: "3"
+    # Non-blocking: a container's stdout write never waits on dockerd. Node writes
+    # stdout to a pipe synchronously, so with the default blocking mode a slow
+    # dockerd (it runs at CPUWeight=20 on the VM since 2026-11-26, so image unpacks
+    # yield to prod) would stall the backend's event loop on a log line. Under
+    # extreme pressure Docker drops lines past the 4m buffer rather than block.
+    mode: non-blocking
+    max-buffer-size: "4m"
     # Each line carries "attrs":{"com.docker.compose.service":"<service>"}, so
     # a log filter can tell services apart without matching on line content.
     # This anchor is shared: changing it recreates every service on the next

@@ -370,6 +370,12 @@ describe('single-VM compose: safety properties', () => {
     expect(compose['x-logging'].options.labels).toBe('com.docker.compose.service');
   });
 
+  // A blocking log pipe stalls node's event loop whenever dockerd falls behind.
+  it('never lets a log write block the container', () => {
+    expect(compose['x-logging'].options.mode).toBe('non-blocking');
+    expect(compose['x-logging'].options['max-buffer-size']).toMatch(/^\d+m$/);
+  });
+
   it.each(services)('%s mounts no docker socket', (service) => {
     (compose.services[service].volumes || []).forEach((volume) => expect(volume).not.toMatch(/docker\.sock/));
   });
