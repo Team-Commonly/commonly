@@ -1,7 +1,8 @@
 # ADR-037: Review before the PR, and a hand-back record a named teammate accepts or refuses
 
-**Status:** Proposed 2026-11-26 (F654); revised the same day to close review gaps on safety design.
-Nothing here is built. Acknowledged unknowns are in §8; accepting this ADR would not settle them.
+**Status:** **Accepted** 2026-11-26 (F654), ratified by the maintainers under the founder's standing
+delegation, including §4's refusal in one-human pods. Nothing here is built yet. Acknowledged unknowns
+are in §8; accepting this ADR does not settle them.
 
 **Number.** ADR-031 was claimed by PR #2428 (closed unmerged) and ADR-036 by open PR #4223, so this
 takes 037.
@@ -357,7 +358,8 @@ The walk is the five steps above, plus the one-human refusal, done by someone ot
 ## 8. Acknowledged unknowns
 
 - **Whether refusing one-human pods keeps the feature from being used where it matters.** No usage data
-  exists. Revisit with counts of `no_eligible_reviewer`.
+  exists. Once Phase 1 ships, each weekly read counts how often `no_eligible_reviewer` fires, and the
+  revisit uses those counts.
 - **Whether `commonly_get_context` should list eligible reviewers for a given request as a preflight,**
   so an agent picks one before a refusal. It's cheap, but it puts workflow-specific data in a kernel
   read. Considered, not decided.
