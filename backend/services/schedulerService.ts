@@ -54,7 +54,7 @@ const chatSummarizerService = require('./chatSummarizerService');
 const dailyDigestService = require('./dailyDigestService');
 // eslint-disable-next-line global-require
 const digestEmailService = require('./digestEmailService');
-const { logOutboundFailure } = require('../utils/safeErrorLog');
+const { logOutboundFailure, warnOutboundFailure } = require('../utils/safeErrorLog');
 // eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
 const { performance } = require('perf_hooks') as typeof import('perf_hooks');
 
@@ -178,6 +178,27 @@ interface SummarizeResult {
 
 const HEARTBEAT_DISPATCH_LEASE_ID = 'agent-heartbeat-dispatch';
 const DIGEST_WAKE_DEFAULT_MINUTES = 60;
+// The unread-digest pass reads installs for its groups in $or batches of this
+// many scopes (F634): a few hundred keeps each query well under Mongo's limits.
+const DIGEST_WAKE_INSTALL_CHUNK = 200;
+const DIGEST_WAKE_INSTALL_FIELDS = 'agentName instanceId podId config.digestWake config.heartbeat config.runtime';
+
+type DigestWakeScope = { agentName: string; instanceId: string; podId: unknown };
+
+// How the old per-group findOne matched: the schema lowercases agentName on
+// the query, Mongoose casts podId to an ObjectId (so a string and an ObjectId
+// of the same id match), and instanceId is compared as stored.
+const digestInstallKey = (agentName: unknown, instanceId: unknown, podId: unknown): string => (
+  `${String(agentName ?? '').toLowerCase()}:${String(instanceId)}:${String(podId)}`);
+// allowsDigestWake's sibling identity: agentName lowercased, instanceId as stored.
+const digestIdentityKey = (agentName: unknown, instanceId: unknown): string => (
+  `${String(agentName ?? '').toLowerCase()}:${String(instanceId)}`);
+
+const chunked = <T>(items: T[], size: number): T[][] => {
+  const chunks: T[][] = [];
+  for (let i = 0; i < items.length; i += size) chunks.push(items.slice(i, i + size));
+  return chunks;
+};
 // A rollout briefly runs the old and new schedulers together (~40 seconds).
 // Keep the lease long enough to cover that overlap, but shorter than the
 // one-minute cron cadence so an otherwise healthy tick is never skipped.
@@ -1457,6 +1478,103 @@ class SchedulerService {
     return !isHostedInstallation(sibling);
   }
 
+  /**
+   * Every active, autonomy-on install for these scopes, read in $or batches
+   * and keyed as the old per-group findOne matched (digestInstallKey). The
+   * unique index on (agentName, podId, instanceId) allows one row per scope;
+   * should a legacy duplicate exist, the oldest _id wins, where findOne
+   * returned whichever it met first.
+   */
+  static async findActiveDigestInstalls(scopes: DigestWakeScope[]): Promise<Map<string, InstallationDoc>> {
+    const unique = new Map<string, DigestWakeScope>();
+    scopes.forEach((scope) => {
+      unique.set(digestInstallKey(scope.agentName, scope.instanceId, scope.podId), scope);
+    });
+    const batches = await Promise.all(chunked([...unique.values()], DIGEST_WAKE_INSTALL_CHUNK).map((chunk) => (
+      AgentInstallation.find({
+        status: 'active',
+        'config.autonomy.enabled': { $ne: false },
+        $or: chunk.map(({ agentName, instanceId, podId }) => ({ agentName, instanceId, podId })),
+      }).select(DIGEST_WAKE_INSTALL_FIELDS).sort({ _id: 1 }).lean() as Promise<InstallationDoc[]>)));
+    const byKey = new Map<string, InstallationDoc>();
+    batches.flat().forEach((doc) => {
+      const key = digestInstallKey(doc.agentName, doc.instanceId, doc.podId);
+      if (!byKey.has(key)) byKey.set(key, doc);
+    });
+    return byKey;
+  }
+
+  /**
+   * allowsDigestWake for many installs, with the sibling reads batched (F634):
+   * the same rule and the same sibling, the identity's newest active row with
+   * a runtimeType. A failed sibling read holds those installs' wakes for this
+   * tick, as a failed allowsDigestWake always has, and logs once.
+   */
+  static async allowsDigestWakeBatch(installs: InstallationDoc[]): Promise<Map<InstallationDoc, boolean>> {
+    const allowed = new Map<InstallationDoc, boolean>();
+    const needSibling: Array<{ install: InstallationDoc; key: string }> = [];
+    const pairs = new Map<string, { agentName: string; instanceId: string }>();
+    installs.forEach((install) => {
+      if (install?.config?.heartbeat?.enabled === true) {
+        allowed.set(install, true);
+      } else if (readRuntimeConfig(install).runtimeType) {
+        allowed.set(install, !isHostedInstallation(install));
+      } else {
+        const agentName = String(install.agentName || '').toLowerCase();
+        const instanceId = String(install.instanceId || 'default');
+        const key = digestIdentityKey(agentName, instanceId);
+        needSibling.push({ install, key });
+        pairs.set(key, { agentName, instanceId });
+      }
+    });
+    if (!needSibling.length) return allowed;
+    try {
+      const batches = await Promise.all(chunked([...pairs.values()], DIGEST_WAKE_INSTALL_CHUNK).map((chunk) => (
+        AgentInstallation.find({
+          status: 'active',
+          'config.runtime.runtimeType': { $exists: true },
+          $or: chunk,
+        }).select('agentName instanceId config.runtime').sort({ createdAt: -1, _id: -1 })
+          .lean() as Promise<InstallationDoc[]>)));
+      // Each chunk is sorted newest first, and a pair sits in one chunk only,
+      // so the first row seen for a pair is its newest.
+      const newest = new Map<string, InstallationDoc>();
+      batches.flat().forEach((doc) => {
+        const key = digestIdentityKey(doc.agentName, doc.instanceId);
+        if (!newest.has(key)) newest.set(key, doc);
+      });
+      needSibling.forEach(({ install, key }) => {
+        allowed.set(install, !isHostedInstallation(newest.get(key) ?? null));
+      });
+    } catch (err) {
+      // Holds rather than spend an owner's turn it may not owe; the digest
+      // stays unread and the next tick reads again.
+      warnOutboundFailure('[scheduler] digest wake runtime lookup failed; holding these wakes this tick:', err);
+      needSibling.forEach(({ install }) => allowed.set(install, false));
+    }
+    return allowed;
+  }
+
+  /**
+   * The old per-group install read and runtime check, used only when the
+   * batched install read fails, so a failed batch never drops wakes.
+   */
+  static async lookupDigestInstallPerGroup(scope: DigestWakeScope): Promise<{
+    active: InstallationDoc | null; allowed: boolean;
+  }> {
+    const active: InstallationDoc | null = await AgentInstallation.findOne({
+      ...scope, status: 'active', 'config.autonomy.enabled': { $ne: false },
+    }).select(DIGEST_WAKE_INSTALL_FIELDS).lean();
+    if (!active) return { active: null, allowed: false };
+    // A failed runtime lookup holds this wake for one tick rather than
+    // spend an owner's turn it may not owe; the digest stays unread.
+    const allowed = await SchedulerService.allowsDigestWake(active).catch((err: Error) => {
+      console.warn('[scheduler] digest wake runtime lookup failed:', err.message);
+      return false;
+    });
+    return { active, allowed };
+  }
+
   /** One slow wake for a pod with unread digest, never for an empty inbox. */
   static async dispatchUnreadDigestHeartbeats(now: Date = new Date()): Promise<number> {
     // The default is also the shortest wait, so this query finds every candidate.
@@ -1478,33 +1596,59 @@ class SchedulerService {
     rawGroups.forEach((row) => addGroup(row._id, new Date(row.oldestAt)));
     foldedGroups.forEach(({ agentName, instanceId, podId, unreadSince }) => (
       addGroup({ agentName, instanceId, podId }, new Date(unreadSince))));
-    let enqueued = 0;
-    for (const { scope: rowScope, oldestAt } of groups.values()) {
-      const scope = {
+    const candidates = [...groups.values()].map(({ scope: rowScope, oldestAt }) => ({
+      scope: {
         agentName: rowScope.agentName,
         instanceId: rowScope.instanceId || 'default',
         podId: rowScope.podId,
-      };
-      // A retired projection has no listener. Its old digest remains for GC,
-      // but must not create a new wake every hour.
-      // eslint-disable-next-line no-await-in-loop
-      const active: InstallationDoc | null = await AgentInstallation.findOne({
-        ...scope, status: 'active', 'config.autonomy.enabled': { $ne: false },
-      }).select('agentName instanceId config.digestWake config.heartbeat config.runtime').lean();
-      if (!active) continue;
-      // A failed runtime lookup holds this wake for one tick rather than
-      // spend an owner's turn it may not owe; the digest stays unread.
-      // eslint-disable-next-line no-await-in-loop
-      const allowed = await SchedulerService.allowsDigestWake(active).catch((err: Error) => {
-        console.warn('[scheduler] digest wake runtime lookup failed:', err.message);
-        return false;
+      } as DigestWakeScope,
+      oldestAt,
+    }));
+    const waitMsOf = (active: InstallationDoc) => SchedulerService.resolveDigestWakeAfterMinutes(active) * 60 * 1000;
+    const waited = (active: InstallationDoc, oldestAt: Date) => (
+      now.getTime() - oldestAt.getTime() >= waitMsOf(active));
+
+    // A retired projection has no listener. Its old digest remains for GC, but
+    // must not create a new wake every hour. Most groups have no active
+    // install, and each used to cost a round trip per minute just to be
+    // skipped; one batched read finds them all (F634). The checks below are
+    // the old ones, in a cheaper order: none depends on another.
+    const due: Array<{ scope: DigestWakeScope; active: InstallationDoc }> = [];
+    let installs: Map<string, InstallationDoc> | null = null;
+    try {
+      installs = await SchedulerService.findActiveDigestInstalls(candidates.map(({ scope }) => scope));
+    } catch (err) {
+      // Toward over-delivery (review-checklist rule 19): a failed batch falls
+      // back to the old per-group reads for this pass, never drops the wakes.
+      logOutboundFailure('[scheduler] digest wake install batch read failed; reading per group this pass:', err);
+    }
+    if (installs) {
+      const found = installs;
+      const waitedCandidates = candidates.flatMap(({ scope, oldestAt }) => {
+        const active = found.get(digestInstallKey(scope.agentName, scope.instanceId, scope.podId));
+        return active && waited(active, oldestAt) ? [{ scope, active }] : [];
       });
-      if (!allowed) continue;
-      const waitMs = SchedulerService.resolveDigestWakeAfterMinutes(active) * 60 * 1000;
-      if (now.getTime() - oldestAt.getTime() < waitMs) continue;
-      const windowStart = new Date(now.getTime() - waitMs);
+      const allowed = await SchedulerService.allowsDigestWakeBatch(
+        [...new Set(waitedCandidates.map(({ active }) => active))],
+      );
+      waitedCandidates.forEach((candidate) => {
+        if (allowed.get(candidate.active) === true) due.push(candidate);
+      });
+    } else {
+      for (const { scope, oldestAt } of candidates) {
+        // eslint-disable-next-line no-await-in-loop
+        const { active, allowed } = await SchedulerService.lookupDigestInstallPerGroup(scope);
+        if (active && allowed && waited(active, oldestAt)) due.push({ scope, active });
+      }
+    }
+
+    let enqueued = 0;
+    for (const { scope, active } of due) {
+      const windowStart = new Date(now.getTime() - waitMsOf(active));
       // An existing wake will carry the digest. A recent completed wake says
-      // the seat has already had a turn inside this install's wait.
+      // the seat has already had a turn inside this install's wait. Checked
+      // one group at a time, after the previous enqueue, as before: two groups
+      // that land on one scope still wake it once.
       // eslint-disable-next-line no-await-in-loop
       const [pendingWake, recentWake] = await Promise.all([
         AgentEvent.exists({ ...scope, status: 'pending', deliveryMode: { $ne: 'digest' } }),
