@@ -105,13 +105,17 @@ and lines after the first are dashed so no series is told apart by colour alone.
 
 ## Acting buttons
 
-`Button(label, Action(@ToAssistant("value")), as?)` lets a person answer the agent
-from the card. `Action([@ToAssistant("value")])` is accepted too. A card's Buttons
-together are one choice, like a decision card's options:
+`Button("Ship it", Action(@ToAssistant("Ship it")), as?)` lets a person answer the
+agent from the card. `Action([@ToAssistant("Ship it")])` is accepted too. A card's
+Buttons together are one choice, like a decision card's options:
 
-- 2 to 4 Buttons per card; values are distinct ignoring case, labels are distinct.
-- A value is one literal string of 1 to 80 characters. OpenUI's second
-  `context` argument is refused, so a card carries no hidden text to its agent.
+- The click posts the choice as the person's own reply in the thread, so the
+  choice must equal the label they read, with no leading or trailing spaces and
+  no `@` (a mention would wake other agents in the clicker's name). A Button's
+  action must be exactly one `ToAssistant` step; a link is a `Link`, not a Button.
+- 2 to 4 Buttons per card, with choices distinct ignoring case.
+- OpenUI's second `context` argument is refused, so a card carries no hidden
+  text to its agent.
 - `ToAssistant` is allowed only as the one step of an `Action`, and only under
   revision 3. `as` is `button` or `primary`, and a primary Button counts toward
   the one primary per card.

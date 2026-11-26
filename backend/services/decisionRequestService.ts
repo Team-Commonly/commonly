@@ -639,17 +639,19 @@ const loadActingCard = async (
 }> => {
   if (!/^\d{1,18}$/.test(messageId)) return { status: 404, body: { error: 'Card not found' } };
   const message = await PGMessage.findById(messageId);
-  // eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
-  const { cardChoices } = require('./uiCardValidation');
-  const choices = message?.message_type === 'card' && message?.payload?.kind === 'ui'
-    ? cardChoices(message.payload, message.content) as Array<{ label: string; value: string }> : [];
-  if (!message || !choices.length) return { status: 404, body: { error: 'Card has no choices' } };
+  if (!message) return { status: 404, body: { error: 'Card not found' } };
+  // Who may choose is settled before anything about the message is revealed.
   const caller = await User.findById(callerUserId).select('username isBot').lean();
   if (!caller || caller.isBot) return { status: 403, body: { error: 'Only a person can choose on this card' } };
   const pod = await Pod.findById(String(message.pod_id)).select('members type').lean();
   if (!pod || !isListedPodMember(pod, callerUserId)) {
     return { status: 403, body: { error: 'Only pod members can choose on this card' } };
   }
+  // eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
+  const { cardChoices } = require('./uiCardValidation');
+  const choices = message.message_type === 'card' && message.payload?.kind === 'ui'
+    ? cardChoices(message.payload, message.content) as Array<{ label: string; value: string }> : [];
+  if (!choices.length) return { status: 404, body: { error: 'Card has no choices' } };
   return { message, pod, choices };
 };
 

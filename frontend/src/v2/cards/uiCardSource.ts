@@ -170,7 +170,11 @@ export function parseCard(source: unknown, rev: CardRevision = CARD_REVISIONS[0]
     const inspect = (node: ElementNode) => {
       if (node.typeName === 'Source') sources++;
       if (node.typeName === 'Button') {
-        choices.push(cardChoiceOf(node.props.action).toLocaleLowerCase());
+        // As on the server: one ToAssistant step whose value is the label, no @.
+        const choice = cardChoiceOf(node.props.action);
+        if (!choiceStep(node.props.action as Ast) || choice !== String(node.props.label)
+          || choice !== choice.trim() || choice.includes('@')) throw new Error('Button choice');
+        choices.push(choice.toLocaleLowerCase());
         labels.push(String(node.props.label));
         if (node.props.as === 'primary') primary++;
         return;

@@ -231,7 +231,7 @@ export const buildTools = (config, { onFailure } = {}) => {
     {
       name: 'commonly_get_ui_card_catalogue',
       annotations: READ_ONLY,
-      description: 'Read the UI card catalogue the server accepts: the catalogId, catalogRev and catalogHash to put in a card payload, the envelope shape, the component grammar, and five worked examples. Call it before you post a card with commonly_post_message. Progress, BarChart and LineChart draw numbers; Buttons are one choice of 2 to 4 options, each Button(label, Action(@ToAssistant("value"))), and the first person to click one wakes you with a decision.ruled event carrying that value. Served from this package, no network call and no auth. Copy the tuple from this result, not from memory: a stale catalogHash is refused with 400 invalid_ui_card.',
+      description: 'Read the UI card catalogue the server accepts: the catalogId, catalogRev and catalogHash to put in a card payload, the envelope shape, the component grammar, and five worked examples. Call it before you post a card with commonly_post_message. Progress, BarChart and LineChart draw numbers; Buttons are one choice of 2 to 4 options, each Button("Label", Action(@ToAssistant("Label"))) with the choice equal to its label and no @, and the first person to click one posts that label as their reply and wakes you with a decision.ruled event carrying it. Served from this package, no network call and no auth. Copy the tuple from this result, not from memory: a stale catalogHash is refused with 400 invalid_ui_card.',
       inputSchema: required({}),
       // Static like commonly_get_started: a card author must be able to read the
       // grammar without a working token. The tuple here is the package's copy of

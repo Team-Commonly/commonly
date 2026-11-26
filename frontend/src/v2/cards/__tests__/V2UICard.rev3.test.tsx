@@ -20,7 +20,7 @@ const message = (source: string, pin: object = revision3): V2Message => ({
 const show = (m: V2Message) => render(<MemoryRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
   <V2UICard message={m} authorLabel="Release" /></MemoryRouter>);
 const CHOICE = 'root = Card("Ship it?", [Text("The branch is green."), '
-  + 'Button("Ship", Action(@ToAssistant("ship")), "primary"), Button("Hold", Action(@ToAssistant("hold")))])';
+  + 'Button("Ship", Action(@ToAssistant("Ship")), "primary"), Button("Hold", Action(@ToAssistant("Hold")))])';
 const rev3 = cardRevision(revision3)!;
 
 beforeEach(() => {
@@ -30,11 +30,14 @@ beforeEach(() => {
 
 describe('revision 3 parse checks match the server', () => {
   it.each([
-    ['a single choice', 'root = Card("x", [Button("A", Action(@ToAssistant("a")))])'],
-    ['a repeated choice', 'root = Card("x", [Button("A", Action(@ToAssistant("a"))), Button("B", Action(@ToAssistant("A")))])'],
-    ['a repeated label', 'root = Card("x", [Button("Go", Action(@ToAssistant("a"))), Button("Go", Action(@ToAssistant("b")))])'],
+    ['a single choice', 'root = Card("x", [Button("A", Action(@ToAssistant("A")))])'],
+    ['a repeated choice', 'root = Card("x", [Button("Go", Action(@ToAssistant("Go"))), Button("go", Action(@ToAssistant("go")))])'],
+    ['a repeated label', 'root = Card("x", [Button("Go", Action(@ToAssistant("Go"))), Button("Go", Action(@ToAssistant("Go")))])'],
+    ['a choice that differs from its label', 'root = Card("x", [Button("Approve", Action(@ToAssistant("merge"))), Button("B", Action(@ToAssistant("B")))])'],
+    ['an @mention in the choice', 'root = Card("x", [Button("@codex go", Action(@ToAssistant("@codex go"))), Button("B", Action(@ToAssistant("B")))])'],
+    ['an OpenUrl button', 'root = Card("x", [Button("Open", Action(@OpenUrl("https://github.com"))), Button("B", Action(@ToAssistant("B")))])'],
     ['a loose ToAssistant', 'root = Text("x")\nloose = ToAssistant("a")'],
-    ['hidden context', 'root = Card("x", [Button("A", Action(@ToAssistant("a", "c"))), Button("B", Action(@ToAssistant("b")))])'],
+    ['hidden context', 'root = Card("x", [Button("A", Action(@ToAssistant("A", "c"))), Button("B", Action(@ToAssistant("B")))])'],
     ['a short series', 'root = BarChart(["a", "b"], [Series("x", [1])])'],
   ])('refuses %s', (_name, source) => {
     expect(parseCard(source, rev3)).toBeNull();
@@ -62,19 +65,19 @@ test('progress and both charts render with their numbers readable', async () => 
 });
 
 test('a click sends the choice, then the card shows who chose and locks', async () => {
-  mockApi.post.mockResolvedValue({ ok: true, decision: { ruling: { value: 'ship', by: 'Sam' } } });
+  mockApi.post.mockResolvedValue({ ok: true, decision: { ruling: { value: 'Ship', by: 'Sam' } } });
   show(message(CHOICE));
   const ship = await screen.findByRole('button', { name: 'Ship' });
   await waitFor(() => expect(mockApi.get).toHaveBeenCalledWith('/api/activity/cards/700/choice'));
   await act(async () => { fireEvent.click(ship); });
-  expect(mockApi.post).toHaveBeenCalledWith('/api/activity/cards/700/choose', { value: 'ship' });
+  expect(mockApi.post).toHaveBeenCalledWith('/api/activity/cards/700/choose', { value: 'Ship' });
   expect(await screen.findByText('Sam chose')).toBeInTheDocument();
   expect(screen.getByRole('button', { name: 'Ship' })).toHaveAttribute('aria-pressed', 'true');
   expect(screen.getByRole('button', { name: 'Hold' })).toBeDisabled();
 });
 
 test('a card someone already chose on opens locked on that choice', async () => {
-  mockApi.get.mockResolvedValue({ decision: { ruling: { value: 'hold', by: 'Ola' } } });
+  mockApi.get.mockResolvedValue({ decision: { ruling: { value: 'Hold', by: 'Ola' } } });
   show(message(CHOICE));
   expect(await screen.findByText('Ola chose')).toBeInTheDocument();
   expect(screen.getByRole('button', { name: 'Hold' })).toHaveAttribute('aria-pressed', 'true');
@@ -82,7 +85,7 @@ test('a card someone already chose on opens locked on that choice', async () => 
 });
 
 test('a click that loses the race shows the standing choice; a refused one says why', async () => {
-  mockApi.post.mockRejectedValueOnce({ response: { status: 409, data: { decision: { ruling: { value: 'hold', by: 'Ola' } } } } });
+  mockApi.post.mockRejectedValueOnce({ response: { status: 409, data: { decision: { ruling: { value: 'Hold', by: 'Ola' } } } } });
   show(message(CHOICE));
   await act(async () => { fireEvent.click(await screen.findByRole('button', { name: 'Ship' })); });
   expect(await screen.findByText('Ola chose')).toBeInTheDocument();

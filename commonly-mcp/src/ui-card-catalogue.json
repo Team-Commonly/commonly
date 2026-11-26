@@ -635,7 +635,7 @@
     },
     {
       "title": "A choice the person makes with buttons (wakes you with decision.ruled)",
-      "source": "root = Card(\"Ship the release?\", [Text(\"Checks are green on main.\"), Button(\"Ship it\", Action(@ToAssistant(\"ship\")), \"primary\"), Button(\"Hold\", Action(@ToAssistant(\"hold\")))])"
+      "source": "root = Card(\"Ship the release?\", [Text(\"Checks are green on main.\"), Button(\"Ship it\", Action(@ToAssistant(\"Ship it\")), \"primary\"), Button(\"Hold\", Action(@ToAssistant(\"Hold\")))])"
     }
   ]
 }

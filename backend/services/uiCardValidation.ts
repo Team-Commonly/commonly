@@ -127,7 +127,16 @@ function validatePresentation(root: ElementNode): void {
       if (props.as === 'primary') primary += 1;
     }
     if (node.typeName === 'Button') {
-      choices.push(choiceOf(props.action));
+      // The click posts the choice as the person's own reply, so the person must
+      // see exactly what they send: one ToAssistant step whose value is the label.
+      // No @ either, or the reply would wake other agents in the clicker's name.
+      if (!choiceStep(props.action as AstNode)) refuse('A Button action must be one ToAssistant step');
+      const choice = choiceOf(props.action);
+      if (choice !== String(props.label)) refuse('A Button choice must equal its label');
+      if (choice !== choice.trim() || choice.includes('@')) {
+        refuse('A Button choice has no leading or trailing spaces and no @');
+      }
+      choices.push(choice);
       labels.push(String(props.label));
       if (props.as === 'primary') primary += 1;
       // The action is the parsed node: never walk it as presentation.
