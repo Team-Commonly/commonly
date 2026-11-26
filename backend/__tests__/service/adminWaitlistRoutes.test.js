@@ -14,6 +14,7 @@
  * pg mode is pinned at the end: every write route refuses before any write.
  */
 const express = require('express');
+const rateLimit = require('express-rate-limit');
 const request = require('supertest');
 const mongoose = require('mongoose');
 const { setupMongoDb, closeMongoDb } = require('../utils/testUtils');
@@ -42,6 +43,9 @@ const authController = require('../../controllers/authController');
 
 const app = express();
 app.use(express.json());
+// routes/auth.ts serves this behind waitlistLimiter; this harness keeps a
+// limiter in front of it too, set far above anything the tests send.
+app.use(rateLimit({ windowMs: 60_000, limit: 10_000, standardHeaders: false, legacyHeaders: false }));
 app.post('/auth/waitlist', authController.requestWaitlist);
 app.use('/admin/users', require('../../routes/admin/users'));
 
