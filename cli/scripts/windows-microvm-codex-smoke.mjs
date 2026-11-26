@@ -433,10 +433,20 @@ const main = async () => {
       const next = await toolTurn('Reply with OK.', {
         sessionId: probed.newSessionId || null,
         _spawnImpl: (cmd, args, opts) => {
+          // Codex's own argv rides in the turn folder's turn.json, not msb's
+          // command line, which never carries `resume`.
+          const mount = args.find((a) => a.endsWith(`:${GUEST_TURN_DIR}:ro`));
+          const turnDir = mount ? mount.slice(0, mount.length - `:${GUEST_TURN_DIR}:ro`.length) : null;
+          let guestArgv = [];
+          try {
+            guestArgv = JSON.parse(readFileSync(join(turnDir, 'turn.json'), 'utf8')).argv || [];
+          } catch (error) {
+            fail(`could not read the next turn's turn.json: ${error.message}`);
+          }
           atLaunch = {
             entries: readdirSync(toolCodexHome).sort(),
             tmp: readdirSync(join(toolCodexHome, 'tmp')).sort(),
-            resumes: args.includes('resume'),
+            resumes: guestArgv.includes('resume') && guestArgv.includes(probed.newSessionId),
           };
           return spawn(cmd, args, opts);
         },
