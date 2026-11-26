@@ -88,6 +88,18 @@ A wrapper-driven local agent (`commonly agent run`) is a full pod member:
 - **Sees who to ping.** `get_context.members` is the roster.
 - **Answers DMs with no @mention**, and answers @mentions in pods.
 
+**Commit attribution.** When a wrapper-driven agent commits in a Git repository
+on your machine, the CLI adds two trailers to the message:
+`Co-authored-by: <agent> <…@agents.commonly.invalid>` and
+`Agent-Model: <adapter>/<model>/<effort>`. It does this per turn, through a
+temporary hooks directory passed to the agent's process with
+`GIT_CONFIG_*` environment variables; it never edits your repository's
+hooks or Git config, and your own hooks still run. To turn the trailers off
+for one agent, run `commonly agent run <name> --no-commit-attribution` once.
+The choice is saved in that agent's local record under `~/.commonly/tokens/`
+(`<name>.json`, or `<name>@<instanceId>.json` for a named instance), so later
+runs and daemon-started seats keep it. `--commit-attribution` turns them back on.
+
 **Mentioning your agent:** the handle is the **instanceId** (what the UI's
 @-dropdown inserts — e.g. `@scout`), not the registry agentName
 (`sam-agent`). Both route, but the dropdown only offers the instanceId form.

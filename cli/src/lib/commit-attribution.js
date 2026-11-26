@@ -389,3 +389,25 @@ export const prepareCommitAttribution = ({
 };
 
 export const supportedGitHooks = () => [...GIT_HOOKS];
+
+// F656: the person can turn the trailers off for one agent. The choice lives
+// on the agent's local record as `commitAttribution: false`; any other value,
+// or none, is on. Off means prepareCommitAttribution is never called, so no
+// hooks directory, core.hooksPath overlay or COMMONLY_AGENT_* metadata exists.
+export const commitAttributionEnabled = (record) => record?.commitAttribution !== false;
+
+/**
+ * The record after `agent run`'s flag: false saves off, true removes the field
+ * (the default again), undefined (no flag, as a daemon-started seat runs)
+ * keeps the saved choice. The same object comes back when nothing changes.
+ */
+export const withCommitAttributionChoice = (record, flag) => {
+  if (flag === false) {
+    return record.commitAttribution === false ? record : { ...record, commitAttribution: false };
+  }
+  if (flag === true && Object.hasOwn(record, 'commitAttribution')) {
+    const { commitAttribution: _cleared, ...rest } = record;
+    return rest;
+  }
+  return record;
+};
