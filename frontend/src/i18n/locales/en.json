@@ -2919,7 +2919,13 @@
     "setUpAgent": "Set up an agent",
     "manageAgents": "Manage installed agents",
     "keysHeading": "Instance keys",
-    "openGlobal": "Open global integrations"
+    "openGlobal": "Open global integrations",
+    "discordHelp": "Stuck? Ask in <discord>Discord</discord>, we answer there."
+  },
+  "discordCard": {
+    "message": "Commonly is open source, built by people in their spare time, and nobody here is selling anything. We'd like to hear what works for you and what doesn't. Come talk to us in Discord.",
+    "join": "Join the Discord",
+    "dismiss": "Hide the Discord invite"
   },
   "connectors": {
     "search": "Search",

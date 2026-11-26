@@ -38,6 +38,8 @@ import { hostedCapNotice } from './hostedCapNotice';
 import { readPodVisits } from '../lib/podRecency';
 import { AgentConnection, connectionLabel, isRunCommand } from '../utils/agentConnection';
 import cursorMcpInstallLink from '../utils/cursorMcpInstallLink';
+import { DISCORD_INVITE_URL } from '../utils/feedbackLinks';
+import { trackUsage } from '../utils/usageEvents';
 import {
   type StoredIssue, forgetIssue, forgetStoredIssues, readStoredIssue, saveIssue, sameKeyCreatedAt, storedIssueKey,
 } from '../utils/byoStoredIssue';
@@ -1987,6 +1989,25 @@ const V2AgentBYO: React.FC = () => {
         </p>
       )}
       <p className="v2-byo__hint">{t(machinesNeedUpdate ? 'agentByo.addComputer.afterUpdate' : 'agentByo.addComputer.after')}</p>
+      {/* Setup is where people stop, so the way to ask for help sits here. */}
+      <p className="v2-byo__hint" data-testid="byo-discord-help">
+        <Trans
+          i18nKey="connect.discordHelp"
+          components={{
+            discord: (
+              <a
+                className="v2-byo__link"
+                href={DISCORD_INVITE_URL}
+                target="_blank"
+                rel="noopener noreferrer"
+                onClick={() => trackUsage('discord-click', { props: { where: 'byo' } })}
+              >
+                Discord
+              </a>
+            ),
+          }}
+        />
+      </p>
     </div>
   ) : null;
   // A runner other than Claude Code and Codex takes the place of the

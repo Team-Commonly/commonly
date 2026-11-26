@@ -4,6 +4,7 @@ import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import vm from 'node:vm';
 import {
   assertCompareSourced, assertNoOpenHolds, buildPageDefinitions, compareMarkdown, fitDescription, fitTitle, generateSeoPages,
   loadCompareSources, publicHitScript, renderMarkdown, renderStaticPage,
@@ -2755,6 +2756,34 @@ test('the public-hit script sends no identifier and keeps the API base inside it
   assert.match(script, /keepalive:true/);
   assert.match(script, /doNotTrack/);
   assert.match(script, /globalPrivacyControl/);
+});
+
+// Runs the script against a stub page and returns what a click on each link sent.
+const clicksSent = (hrefs, { inHeader = false } = {}) => {
+  const listeners = [];
+  const sent = [];
+  // The body between the tag we generate and its close, by position, not by pattern.
+  const tagged = publicHitScript('https://api.example.test');
+  const script = tagged.slice(tagged.indexOf('>') + 1, tagged.lastIndexOf('</script>'));
+  const sandbox = {
+    navigator: {},
+    window: {},
+    localStorage: { getItem: () => null },
+    location: { hostname: 'commonly.me', search: '', pathname: '/' },
+    document: { addEventListener: (type, fn) => { if (type === 'click') listeners.push(fn); } },
+    fetch: (_url, init) => { sent.push(JSON.parse(init.body)); return { catch: () => {} }; },
+  };
+  vm.runInNewContext(script, sandbox);
+  for (const href of hrefs) {
+    const anchor = { getAttribute: () => href, closest: (sel) => (sel === 'a[href]' ? anchor : (inHeader ? {} : null)) };
+    listeners.forEach((fn) => fn({ target: anchor }));
+  }
+  return sent.filter((body) => body.name === 'cta-click').map((body) => body.value);
+};
+
+test('the public-hit script counts a Discord link click, and still ignores other outside links', () => {
+  assert.deepEqual(clicksSent(['https://discord.gg/NsS3fzsJDw', 'https://github.com/Team-Commonly/commonly', '/register']), ['discord', 'hero-start']);
+  assert.deepEqual(clicksSent(['https://discord.gg/NsS3fzsJDw'], { inHeader: true }), ['discord']);
 });
 
 // Search engines find a page through links in other pages' text more than

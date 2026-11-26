@@ -90,7 +90,7 @@ const BYO_STEPS = new Set([
   'page-viewed', 'seat-created', 'mcp-command-copied', 'cli-command-copied', 'daemon-command-copied',
   'token-copied', 'listen-confirmed', 'listen-timeout', 'hosted-offer-shown', 'hosted-offer-clicked',
   'invite-card-shown', 'invite-card-dismissed', 'byo-offer-shown', 'welcome-shown',
-  'listen-stall-reported',
+  'listen-stall-reported', 'discord-card-shown', 'discord-card-dismissed',
 ]);
 // Why a Windows visitor says the agent isn't answering. Fixed names only; any
 // other value is dropped, never stored.
@@ -125,6 +125,12 @@ router.post('/byo-step', rateLimit({
   // record, so a repeat load adds no byo_telemetry row and reads no other field.
   if (step === 'welcome-shown') {
     markSurface(req.userId, 'welcomeShownAt');
+    return res.json({ ok: true });
+  }
+  // Same for the shell's Discord card: the account mark is the record, and the
+  // dismissal is what keeps the card from coming back on another device.
+  if (step === 'discord-card-shown' || step === 'discord-card-dismissed') {
+    markSurface(req.userId, step === 'discord-card-shown' ? 'discordCardShownAt' : 'discordCardDismissedAt');
     return res.json({ ok: true });
   }
   if (step === 'mcp-command-copied' || step === 'cli-command-copied') {

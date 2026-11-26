@@ -342,7 +342,7 @@ describe('markByoDaemonRegistered (TASK-661)', () => {
 });
 
 describe('markSurface', () => {
-  test.each(['inviteCardShownAt', 'inviteCardDismissedAt', 'byoOfferShownAt', 'welcomeShownAt'])('%s is write-once in the filter, never for bots', (mark) => {
+  test.each(['inviteCardShownAt', 'inviteCardDismissedAt', 'byoOfferShownAt', 'welcomeShownAt', 'discordCardShownAt', 'discordCardDismissedAt'])('%s is write-once in the filter, never for bots', (mark) => {
     markSurface('u1', mark);
     expect(mockUpdateOne).toHaveBeenCalledTimes(1);
     const [filter, update] = mockUpdateOne.mock.calls[0];

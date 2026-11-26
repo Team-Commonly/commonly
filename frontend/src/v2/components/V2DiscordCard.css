@@ -1,0 +1,80 @@
+/* The one-time Discord invite. It takes the authenticated shell's banner row
+   (row 1, the same `auto` row as the email reminder, which it never shows
+   beside), so it pushes the app down by its own height and covers nothing. */
+.v2-discord-card {
+  grid-row: 1;
+  box-sizing: border-box;
+  display: grid;
+  /* The spacer column keeps Join beside the text on a wide screen instead of
+     at the far edge, away from the words it answers. */
+  grid-template-columns: auto minmax(0, max-content) auto minmax(0, 1fr) 44px;
+  grid-template-areas: "glyph text join . dismiss";
+  align-items: center;
+  gap: 4px 10px;
+  min-width: 0;
+  padding: 6px 8px 6px 16px;
+  border-bottom: 1px solid var(--v2-border-soft);
+  background: var(--v2-accent-soft);
+  color: var(--v2-text-primary);
+}
+
+.v2-discord-card__glyph {
+  grid-area: glyph;
+  color: var(--v2-accent-text);
+}
+
+.v2-discord-card__text {
+  grid-area: text;
+  margin: 0;
+  max-width: 78ch;
+  font-size: 13.5px;
+  line-height: 20px;
+  overflow-wrap: anywhere;
+}
+
+/* `.v2-root a` paints links in text ink; the filled key needs its own. */
+.v2-root .v2-discord-card a.v2-discord-card__join {
+  grid-area: join;
+  height: 30px;
+  color: var(--v2-on-fill);
+  text-decoration: none;
+}
+
+.v2-root button.v2-discord-card__dismiss {
+  grid-area: dismiss;
+  display: grid;
+  width: 44px;
+  height: 44px;
+  padding: 0;
+  place-items: center;
+  border: 0;
+  border-radius: var(--v2-r-8);
+  background: transparent;
+  color: var(--v2-text-secondary);
+  cursor: pointer;
+}
+
+.v2-root button.v2-discord-card__dismiss:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px var(--v2-accent-soft), 0 0 0 1px var(--v2-accent);
+}
+
+@media (max-width: 760px) {
+  .v2-discord-card {
+    grid-template-columns: auto minmax(0, 1fr) 44px;
+    grid-template-areas:
+      "glyph text dismiss"
+      ". join join";
+    align-items: start;
+    padding: 8px 4px 10px 12px;
+  }
+
+  .v2-discord-card__glyph { margin-top: 2px; }
+
+  .v2-discord-card__text { font-size: 15px; line-height: 21px; }
+
+  .v2-root .v2-discord-card a.v2-discord-card__join {
+    justify-self: start;
+    height: 40px;
+  }
+}

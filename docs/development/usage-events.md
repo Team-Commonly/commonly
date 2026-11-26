@@ -84,6 +84,17 @@ When a published page is added or removed, regenerate `backend/config/publicPage
 
 `teammate-card-shown` (once per pod and placement per page load), `teammate-card-click` and `teammate-card-dismiss`, each with `where: workspace | pod`. `workspace` is the card in the person's own workspace, whose press makes a new pod with their agent in it; `pod` is every other placement.
 
+## Discord link clicks
+
+Every Discord link in the product is counted, for Growth's weekly read.
+
+- Signed in: `discord-click` with `where: card | byo | connect | feedback-menu`. `card` is the shell's one-time Discord card; `byo` the help line under the computer setup command on Bring your own (`/agents/byo`), where setup drop-off happens; `connect` the same line on `/connect`; and `feedback-menu` the Feedback menu's Discord item.
+- Logged out: the published pages' script counts any `discord.gg/` link as `cta-click` with value `discord`, in `ui_daily_counts` (the landing footer, the community section and every page that carries the footer).
+- Weekly total: `ui_events` rows named `discord-click` in the last 7 days, split by `props.where`, plus the `cta-click`/`discord` counts in `ui_daily_counts` for the same days.
+- Both read low by design: a person who switched usage events off, an EU/EEA/UK account that never turned them on, and any DNT/GPC browser send nothing. Read the count as a floor and a trend, not a total.
+
+The card itself also writes two write-once account marks through `POST /api/stats/byo-step`: `onboarding.discordCardShownAt` (`discord-card-shown`) and `onboarding.discordCardDismissedAt` (`discord-card-dismissed`, sent on dismiss and on join). The dismissal mark is what keeps the card from showing again on any device. Shown-versus-dismissed counts come from the marks, and work regardless of the usage-events switch.
+
 ## Allowlisted, not yet sent
 
 `welcome-dismiss`, `hosted-install-click`, `hosted-install-result`, `agent-settings-open`, `runtime-model-save`, `agent-reply-seen`, `reaction-add`, `retry-click`, `board-open`, `task-open`, `decision-answer`, `empty-state-shown` and `stuck-help-click` are accepted but no surface sends them yet. `error-shown` isn't accepted, because the spec requires its code to be checked against the real error-code enum, which doesn't exist yet.
