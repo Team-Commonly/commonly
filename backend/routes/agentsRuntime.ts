@@ -2063,6 +2063,9 @@ router.post(
         ...(payload !== undefined ? { payload } : {}),
         installationConfig: installation.config || null,
       });
+      // F639: same as the runtime message route. requireBotUser loads the
+      // whole bot row, so botMetadata.machineId is there.
+      if (result.success && !result.skipped && result.message) noteMachinePosted(user, { podId });
 
       return res.json({ ...describeSkippedPost(result), ...result });
     } catch (error: any) {
@@ -2136,6 +2139,12 @@ router.post(
         threadId,
         content,
       });
+      // F639: a bot user can be bound to a machine too (requireBotUser loads
+      // the whole row, botMetadata included). Same conditions as the runtime
+      // comment route, and the comment's target pod for the DM exclusion.
+      if (result.success && !result.skipped && !result.duplicate && result.comment) {
+        noteMachinePosted(user, { podId: targetPodId });
+      }
 
       return res.json(result);
     } catch (error: any) {

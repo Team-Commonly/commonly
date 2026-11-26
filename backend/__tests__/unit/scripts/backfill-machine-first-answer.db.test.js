@@ -12,6 +12,7 @@ let User;
 let Pod;
 let backfillMachineFirstAnswer;
 let productionDeps;
+let parseCursor;
 
 const REGISTERED = new Date('2026-11-01T00:00:00Z');
 const BEFORE = new Date('2026-10-20T00:00:00Z');
@@ -24,7 +25,9 @@ beforeAll(async () => {
   Machine = require('../../../models/Machine');
   User = require('../../../models/User');
   Pod = require('../../../models/Pod');
-  ({ backfillMachineFirstAnswer, productionDeps } = require('../../../scripts/backfill-machine-first-answer'));
+  ({
+    backfillMachineFirstAnswer, productionDeps, parseCursor,
+  } = require('../../../scripts/backfill-machine-first-answer'));
   const db = newDb();
   pool = new (db.adapters.createPg().Pool)();
   await pool.query(`CREATE TABLE messages (
@@ -76,7 +79,7 @@ const message = (userId, at, extra = {}) => pool.query(
   ],
 );
 const stampOf = async (row) => (await Machine.findById(row._id).lean()).firstAnswerAt;
-const run = (apply) => backfillMachineFirstAnswer(productionDeps(pool), { apply, paceMs: 0 });
+const run = (apply, extra = {}) => backfillMachineFirstAnswer(productionDeps(pool), { apply, paceMs: 0, ...extra });
 
 describe('backfill-machine-first-answer', () => {
   it('sets the earliest post by a bound agent since registration, not a system line or kernel notice', async () => {
@@ -155,6 +158,44 @@ describe('backfill-machine-first-answer', () => {
     }, { apply: true, paceMs: 0 });
     expect(report).toMatchObject({ toStamp: 1, applied: 0, alreadyStamped: 1 });
     expect(await stampOf(m)).toEqual(LATER);
+  });
+
+  // Machines that stay unset (no agents, no eligible post) are read again on
+  // every run; a fixed first page of them would hide every newer machine.
+  it('pages past a first batch of machines that stay unset to reach the next one', async () => {
+    await machine();
+    await machine();
+    const eligible = await machine();
+    const agent = await agentOn(eligible.machineId);
+    await message(agent._id, FIRST);
+    const listUnstamped = jest.fn(productionDeps(pool).listUnstamped);
+    const report = await backfillMachineFirstAnswer(
+      { ...productionDeps(pool), listUnstamped }, { apply: true, batch: 2, paceMs: 0 },
+    );
+    expect(listUnstamped).toHaveBeenCalledTimes(2);
+    expect(report).toMatchObject({ unstamped: 3, noAgents: 2, toStamp: 1, applied: 1, nextCursor: null });
+    expect(await stampOf(eligible)).toEqual(FIRST);
+  });
+
+  it('stops at --limit with a cursor that resumes after the last machine it read', async () => {
+    await machine();
+    await machine();
+    const eligible = await machine();
+    const agent = await agentOn(eligible.machineId);
+    await message(agent._id, FIRST);
+    const first = await run(true, { limit: 2, batch: 1 });
+    expect(first).toMatchObject({ unstamped: 2, noAgents: 2, applied: 0 });
+    expect(first.nextCursor).toMatch(/^\d{4}-\d\d-\d\dT[^_]+Z_[a-f0-9]{24}$/);
+    expect(await stampOf(eligible)).toBeNull();
+
+    const resumed = await run(true, { after: parseCursor(first.nextCursor) });
+    expect(resumed).toMatchObject({ unstamped: 1, applied: 1, nextCursor: null });
+    expect(await stampOf(eligible)).toEqual(FIRST);
+  });
+
+  it('refuses a cursor it did not print', () => {
+    expect(() => parseCursor('m-1')).toThrow(/--after/);
+    expect(() => parseCursor(`not-a-date_${'a'.repeat(24)}`)).toThrow(/--after/);
   });
 
   it('is bounded and paced, and prints no ids', async () => {

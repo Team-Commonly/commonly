@@ -28,14 +28,20 @@
  *  - Dry run by default; `--apply` writes.
  *  - Each write is `{ _id, firstAnswerAt: null }`, so a stamp a live post wrote
  *    in the meantime is never overwritten. Re-running is harmless.
- *  - Bounded (`--limit`, default 500 machines) and paced (`--pace-ms`, default
- *    100 ms between machines): one machine at a time, one Postgres read each.
- *  - Prints counts only: no machine, agent or owner names or ids.
+ *  - Pages the whole unstamped set in one run, in batches (`--batch`, default
+ *    100) on a `(createdAt, _id)` cursor, so machines that stay unset (no
+ *    agents, no eligible post) never hide newer ones. `--limit` (default 500)
+ *    caps the machines one run reads; paced (`--pace-ms`, default 100 ms
+ *    between machines), one machine at a time, one Postgres read each.
+ *  - Resumable: the report's `nextCursor` is `<createdAt ISO>_<machine row id>`
+ *    (null once the set is done); pass it back as `--after <cursor>`.
+ *  - Prints counts and that cursor only: no machine, agent or owner names.
  *
  * Runs in the ops-runner, never by exec into the serving backend
  * (docs/runbooks/ops-runner-and-no-exec-into-backend.md):
  *   cd backend && node dist/scripts/backfill-machine-first-answer.js               # dry run
  *   cd backend && node dist/scripts/backfill-machine-first-answer.js --apply
+ *   cd backend && node dist/scripts/backfill-machine-first-answer.js --apply --after <nextCursor>
  */
 /* eslint-disable no-console */
 
@@ -59,8 +65,15 @@ export interface UnstampedMachine {
   createdAt: Date;
 }
 
+/** Where a page starts: strictly after this `(createdAt, _id)`. */
+export interface MachineCursor {
+  createdAt: Date;
+  id: string;
+}
+
 export interface MachineFirstAnswerDeps {
-  listUnstamped: (limit: number) => Promise<UnstampedMachine[]>;
+  /** Unstamped machines after `after`, in `(createdAt, _id)` order, at most `size`. */
+  listUnstamped: (after: MachineCursor | null, size: number) => Promise<UnstampedMachine[]>;
   agentIdsOn: (machineId: string) => Promise<string[]>;
   earliestPost: (agentIds: string[], since: Date) => Promise<Date | null>;
   /** Rows changed: 0 when a live post stamped the machine first. */
@@ -77,65 +90,111 @@ export interface MachineFirstAnswerReport {
   applied: number;
   alreadyStamped: number;
   failed: number;
+  /** Resume point for `--after`; null when the unstamped set was read to its end. */
+  nextCursor: string | null;
 }
 
 export const DEFAULT_LIMIT = 500;
+export const DEFAULT_BATCH = 100;
 export const DEFAULT_PACE_MS = 100;
+
+export const formatCursor = (cursor: MachineCursor): string => `${cursor.createdAt.toISOString()}_${cursor.id}`;
+
+export const parseCursor = (raw: string): MachineCursor => {
+  const match = /^(.+)_([a-f0-9]{24})$/i.exec(raw);
+  const createdAt = match ? new Date(match[1]) : null;
+  if (!match || !createdAt || Number.isNaN(createdAt.getTime())) {
+    throw new Error('--after takes a cursor printed by an earlier run: <createdAt ISO>_<24-hex id>');
+  }
+  return { createdAt, id: match[2] };
+};
 
 export async function backfillMachineFirstAnswer(
   deps: MachineFirstAnswerDeps,
-  options: { apply?: boolean; limit?: number; paceMs?: number } = {},
+  options: {
+    apply?: boolean; limit?: number; batch?: number; paceMs?: number; after?: MachineCursor | null;
+  } = {},
 ): Promise<MachineFirstAnswerReport> {
   const apply = options.apply === true;
   const limit = options.limit && options.limit > 0 ? options.limit : DEFAULT_LIMIT;
+  const batch = options.batch && options.batch > 0 ? options.batch : DEFAULT_BATCH;
   const paceMs = options.paceMs !== undefined && options.paceMs >= 0 ? options.paceMs : DEFAULT_PACE_MS;
-  const machines = await deps.listUnstamped(limit);
   const report: MachineFirstAnswerReport = {
     dryRun: !apply,
-    unstamped: machines.length,
+    unstamped: 0,
     noAgents: 0,
     noPosts: 0,
     toStamp: 0,
     applied: 0,
     alreadyStamped: 0,
     failed: 0,
+    nextCursor: null,
   };
-  for (const [index, machine] of machines.entries()) {
+  let cursor: MachineCursor | null = options.after || null;
+  let exhausted = false;
+  while (report.unstamped < limit) {
+    const size = Math.min(batch, limit - report.unstamped);
     // eslint-disable-next-line no-await-in-loop
-    if (index > 0 && paceMs > 0) await deps.pause(paceMs);
-    try {
+    const page = await deps.listUnstamped(cursor, size);
+    for (const machine of page) {
       // eslint-disable-next-line no-await-in-loop
-      const agentIds = await deps.agentIdsOn(machine.machineId);
-      if (agentIds.length === 0) {
-        report.noAgents += 1;
-        continue;
-      }
+      if (report.unstamped > 0 && paceMs > 0) await deps.pause(paceMs);
+      report.unstamped += 1;
+      cursor = { createdAt: machine.createdAt, id: machine.id };
       // eslint-disable-next-line no-await-in-loop
-      const first = await deps.earliestPost(agentIds, machine.createdAt);
-      if (!first) {
-        report.noPosts += 1;
-        continue;
-      }
-      report.toStamp += 1;
-      if (!apply) continue;
-      // eslint-disable-next-line no-await-in-loop
-      const changed = await deps.stamp(machine.id, first);
-      if (changed > 0) report.applied += 1;
-      else report.alreadyStamped += 1;
-    } catch (error) {
-      // Counted, not named: the message is the driver's, never an id we print.
-      report.failed += 1;
-      console.error('[backfill-machine-first-answer] one machine failed:', (error as Error).message);
+      await processMachine(deps, machine, apply, report);
+    }
+    if (page.length < size) {
+      exhausted = true;
+      break;
     }
   }
+  report.nextCursor = !exhausted && cursor ? formatCursor(cursor) : null;
   return report;
 }
 
+async function processMachine(
+  deps: MachineFirstAnswerDeps,
+  machine: UnstampedMachine,
+  apply: boolean,
+  report: MachineFirstAnswerReport,
+): Promise<void> {
+  try {
+    const agentIds = await deps.agentIdsOn(machine.machineId);
+    if (agentIds.length === 0) {
+      report.noAgents += 1;
+      return;
+    }
+    const first = await deps.earliestPost(agentIds, machine.createdAt);
+    if (!first) {
+      report.noPosts += 1;
+      return;
+    }
+    report.toStamp += 1;
+    if (!apply) return;
+    const changed = await deps.stamp(machine.id, first);
+    if (changed > 0) report.applied += 1;
+    else report.alreadyStamped += 1;
+  } catch (error) {
+    // Counted, not named: the message is the driver's, never an id we print.
+    report.failed += 1;
+    console.error('[backfill-machine-first-answer] one machine failed:', (error as Error).message);
+  }
+}
+
 export const productionDeps = (pool: PgPool | null): MachineFirstAnswerDeps => ({
-  listUnstamped: async (limit) => {
-    const rows = await Machine.find({ firstAnswerAt: null })
-      .sort({ createdAt: 1 })
-      .limit(limit)
+  listUnstamped: async (after, size) => {
+    const filter: Record<string, unknown> = { firstAnswerAt: null };
+    if (after) {
+      const id = new mongoose.Types.ObjectId(after.id);
+      filter.$or = [
+        { createdAt: { $gt: after.createdAt } },
+        { createdAt: after.createdAt, _id: { $gt: id } },
+      ];
+    }
+    const rows = await Machine.find(filter)
+      .sort({ createdAt: 1, _id: 1 })
+      .limit(size)
       .select('_id machineId createdAt')
       .lean() as Array<{ _id: unknown; machineId: string; createdAt?: Date }>;
     return rows.map((row) => ({
@@ -182,6 +241,11 @@ export const productionDeps = (pool: PgPool | null): MachineFirstAnswerDeps => (
   pause: (ms) => new Promise((resolve) => { setTimeout(resolve, ms); }),
 });
 
+const argValue = (flag: string): string | undefined => {
+  const at = process.argv.indexOf(flag);
+  return at >= 0 ? process.argv[at + 1] : undefined;
+};
+
 const argNumber = (flag: string): number | undefined => {
   const at = process.argv.indexOf(flag);
   if (at < 0) return undefined;
@@ -195,12 +259,15 @@ export async function main(): Promise<void> {
   const { pool } = require('../config/db-pg') as { pool: PgPool | null };
   if (!pool) throw new Error('Postgres is required: agent chat messages live there');
   const apply = process.argv.includes('--apply');
+  const afterRaw = argValue('--after');
+  const after = afterRaw ? parseCursor(afterRaw) : null;
   await mongoose.connect(process.env.MONGO_URI);
   try {
     const report = await backfillMachineFirstAnswer(productionDeps(pool), {
-      apply, limit: argNumber('--limit'), paceMs: argNumber('--pace-ms'),
+      apply, limit: argNumber('--limit'), batch: argNumber('--batch'), paceMs: argNumber('--pace-ms'), after,
     });
     console.log(`[backfill-machine-first-answer] ${JSON.stringify(report)}`);
+    if (report.nextCursor) console.log(`More machines remain: re-run with --after ${report.nextCursor}`);
     if (!apply) console.log('DRY RUN — nothing written. Re-run with --apply.');
     if (report.failed > 0) throw new Error(`${report.failed} machine(s) failed; re-running retries them`);
   } finally {

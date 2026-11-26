@@ -174,6 +174,57 @@ describe('a daemon seat\'s post stamps its machine\'s first answer (F639)', () =
   });
 });
 
+// The /bot/* routes post as the bot user with a user API token. That bot user
+// can be bound to a machine too.
+describe('a bot-token post stamps its machine too', () => {
+  const apiTokenFor = async (seat) => {
+    const account = await User.findById(seat.bot._id);
+    const token = account.generateApiToken();
+    await account.save();
+    return token;
+  };
+
+  it('stamps from POST /bot/pods/:podId/messages', async () => {
+    const owner = await person();
+    const machine = await machineFor(owner);
+    const seat = await seatIn(owner, machine);
+    const res = await request(app)
+      .post(`/api/agents/runtime/bot/pods/${seat.pod._id}/messages`)
+      .set('Authorization', `Bearer ${await apiTokenFor(seat)}`)
+      .send({ content: 'an answer', continueAnyway: true });
+    expect(res.status).toBe(200);
+    expect(res.body.skipped).not.toBe(true);
+    expect(await settle(machine, true)).toBeInstanceOf(Date);
+  });
+
+  it('does not stamp from a bot-token NO_REPLY', async () => {
+    const owner = await person();
+    const machine = await machineFor(owner);
+    const seat = await seatIn(owner, machine);
+    const res = await request(app)
+      .post(`/api/agents/runtime/bot/pods/${seat.pod._id}/messages`)
+      .set('Authorization', `Bearer ${await apiTokenFor(seat)}`)
+      .send({ content: 'NO_REPLY', continueAnyway: true });
+    expect(res.body.skipped).toBe(true);
+    await new Promise((resolve) => { setTimeout(resolve, 100); });
+    expect(await stampOf(machine)).toBeNull();
+  });
+
+  it('stamps from POST /bot/threads/:threadId/comments', async () => {
+    const owner = await person();
+    const machine = await machineFor(owner);
+    const seat = await seatIn(owner, machine);
+    const post = await Post.create({ content: 'a question', userId: owner._id, podId: seat.pod._id });
+    const res = await request(app)
+      .post(`/api/agents/runtime/bot/threads/${post._id}/comments`)
+      .set('Authorization', `Bearer ${await apiTokenFor(seat)}`)
+      .send({ content: 'a comment' });
+    expect(res.status).toBe(200);
+    expect(res.body.success).toBe(true);
+    expect(await settle(machine, true)).toBeInstanceOf(Date);
+  });
+});
+
 // "First answer" is a person seeing their agent answer. An agent-dm pod holds
 // two agents and no person (ADR-001 §3.10), so a post there is not one.
 describe('a post into an agent-to-agent DM is not the machine\'s first answer', () => {
