@@ -672,8 +672,7 @@ export const cardChoiceState = async (
 ): Promise<{ status: number; body: Record<string, unknown> }> => {
   const loaded = await loadActingCard(String(input.messageId || ''), String(input.callerUserId || ''));
   if ('status' in loaded) return loaded;
-  const row = await DecisionRequest.findOne({ messageId: String(loaded.message.id) })
-    .sort({ createdAt: 1, _id: 1 }).lean();
+  const row = await DecisionRequest.findOne({ cardMessageId: String(loaded.message.id) }).lean();
   return { status: 200, body: { decision: row?.status === 'ruled' ? decisionPayload(row) : null } };
 };
 
@@ -696,10 +695,11 @@ export const chooseCardButton = async (
 
   const content = String(message.content || '').trim();
   const firstLine = content.split('\n')[0] || 'Card';
-  // Two first clicks can both reach here. Each upserts on the message, then all
-  // rule the oldest row, whose compare-and-set lets exactly one of them win.
+  // Two first clicks can both reach here. The unique cardMessageId index keeps
+  // them on one row, and chooseDecision's compare-and-set lets one of them win.
+  const cardKey = { cardMessageId: String(message.id) };
   await DecisionRequest.findOneAndUpdate(
-    { messageId: String(message.id) },
+    cardKey,
     {
       $setOnInsert: {
         podId: String(message.pod_id),
@@ -716,8 +716,12 @@ export const chooseCardButton = async (
       },
     },
     { upsert: true, new: true },
-  );
-  const row = await DecisionRequest.findOne({ messageId: String(message.id) }).sort({ createdAt: 1, _id: 1 }).lean();
+  ).catch((error: { code?: number }) => {
+    // The other first click inserted the row between our read and our insert.
+    if (error?.code !== 11000) throw error;
+  });
+  const row = await DecisionRequest.findOne(cardKey).lean();
+  if (!row) return { status: 409, body: { error: 'Try again', code: 'card_choice_conflict' } };
   return chooseDecision({
     decisionId: String(row._id), callerUserId, value, origin: { via: 'workspace' },
   });

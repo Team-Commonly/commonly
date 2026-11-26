@@ -33,7 +33,7 @@ const rev3 = require('../../../config/uiCardCatalogueRevision.rev3.json');
 const { chooseCardButton, cardChoiceState } = require('../../../services/decisionRequestService');
 
 const chain = (value) => ({ select: () => ({ lean: async () => value }) });
-const sorted = (value) => ({ sort: () => ({ lean: async () => value }) });
+const sorted = (value) => ({ lean: async () => value, sort: () => ({ lean: async () => value }) });
 const CARD_SOURCE = 'root = Card("Ship it?", [Text("PR #4358 is green."), '
   + 'Button("Ship", Action(@ToAssistant("Ship")), "primary"), Button("Hold", Action(@ToAssistant("Hold")))])';
 const cardMessage = (overrides = {}) => ({
@@ -76,7 +76,8 @@ describe('an agent card\'s acting Buttons', () => {
     const result = await chooseCardButton({ messageId: '700', callerUserId: 'human-1', value: 'Ship' });
 
     expect(result).toMatchObject({ status: 200, body: { ok: true, decision: { ruling: { value: 'Ship', by: 'Sam' } } } });
-    expect(mockDecision.findOneAndUpdate.mock.calls[0][0]).toEqual({ messageId: '700' });
+    expect(mockDecision.findOneAndUpdate.mock.calls[0][0]).toEqual({ cardMessageId: '700' });
+    expect(mockDecision.findOne).toHaveBeenCalledWith({ cardMessageId: '700' });
     expect(mockDecision.findOneAndUpdate.mock.calls[0][1].$setOnInsert).toMatchObject({
       podId: 'pod-1', agentUserId: 'agent-user-1', agentName: 'release-agent', instanceId: 'seat-1',
       title: 'Ship it?', options: [{ label: 'Ship' }, { label: 'Hold' }], status: 'pending', messageId: '700', threadRootId: '612',
@@ -100,6 +101,30 @@ describe('an agent card\'s acting Buttons', () => {
     expect(mockEnqueue).not.toHaveBeenCalled();
     expect(await cardChoiceState({ messageId: '700', callerUserId: 'human-1' }))
       .toMatchObject({ status: 200, body: { decision: { ruling: { value: 'Ship', by: 'Sam' } } } });
+  });
+
+  test('a first click that loses the insert race rules the row the other click opened', async () => {
+    stored = { _id: 'decision-other', createdAt: new Date(), status: 'pending', messageId: '700',
+      cardMessageId: '700', podId: 'pod-1', agentUserId: 'agent-user-1', agentName: 'release-agent',
+      instanceId: 'seat-1', title: 'Ship it?', options: [{ label: 'Ship' }, { label: 'Hold' }] };
+    const upsert = mockDecision.findOneAndUpdate.getMockImplementation();
+    mockDecision.findOneAndUpdate.mockImplementation(async (filter, update) => {
+      if (update.$setOnInsert) throw Object.assign(new Error('E11000 duplicate key'), { code: 11000 });
+      return upsert(filter, update);
+    });
+
+    const result = await chooseCardButton({ messageId: '700', callerUserId: 'human-1', value: 'Ship' });
+
+    expect(result).toMatchObject({ status: 200, body: { decision: { ruling: { value: 'Ship' } } } });
+    expect(mockEnqueue).toHaveBeenCalledWith(expect.objectContaining({
+      payload: expect.objectContaining({ decisionId: 'decision-other' }),
+    }));
+  });
+
+  test('an upsert error other than a duplicate key is not swallowed', async () => {
+    mockDecision.findOneAndUpdate.mockRejectedValueOnce(new Error('connection reset'));
+    await expect(chooseCardButton({ messageId: '700', callerUserId: 'human-1', value: 'Ship' })).rejects.toThrow('connection reset');
+    expect(mockEnqueue).not.toHaveBeenCalled();
   });
 
   test('a value the card does not offer is refused before anything is written', async () => {

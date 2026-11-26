@@ -6,7 +6,11 @@ import { join } from 'node:path';
 import { spawnSync } from 'node:child_process';
 
 // One grammar + pin pair per revision; revision 1 is never edited in place.
-const REVISIONS = [['uiCardCatalogue.json', 'uiCardCatalogueRevision.json'], ['uiCardCatalogue.rev2.json', 'uiCardCatalogueRevision.rev2.json']];
+const REVISIONS = [
+  ['uiCardCatalogue.json', 'uiCardCatalogueRevision.json'],
+  ['uiCardCatalogue.rev2.json', 'uiCardCatalogueRevision.rev2.json'],
+  ['uiCardCatalogue.rev3.json', 'uiCardCatalogueRevision.rev3.json'],
+];
 const FILES = REVISIONS.flat();
 
 for (const [grammarFile, pinFile] of REVISIONS) {
