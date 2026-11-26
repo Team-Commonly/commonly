@@ -46,6 +46,33 @@ describe('copy-paste setup commands follow the page instance', () => {
     expect(daemonSetupCommandFor('unix', undefined, { unsandboxed: true })).toBe(daemonSetupCommand());
   });
 
+  // F641: a revoked computer with no OS on record falls back to the page's OS,
+  // and keeps the same opt-in rule as a known one: the flag only for a stored
+  // opt-in, and the "how to keep it" note when the choice is unknown.
+  describe('the revoked-computer line with no OS on record', () => {
+    const { revokedComputerSetup } = require('../components/V2DaemonRevokedReason');
+    // Built inside each test: the page instance is set in beforeEach.
+    const plain = () => daemonSetupCommandFor('windows', undefined, { unsandboxed: false });
+    const flagged = () => daemonSetupCommandFor('windows');
+
+    test.each([
+      ['unknown', null, plain, false, true],
+      ['missing', undefined, plain, false, true],
+      ['not opted in', false, plain, false, false],
+      ['opted in', true, flagged, true, false],
+    ])('a Windows page, opt-in %s', (_label, optIn, command, keepsUnsandboxed, unsandboxedUnknown) => {
+      expect(revokedComputerSetup({ platform: null, unsandboxedOptIn: optIn }, 'windows'))
+        .toEqual({ command: command(), keepsUnsandboxed, unsandboxedUnknown });
+    });
+
+    test('a Unix page is unchanged, whatever the opt-in', () => {
+      [null, false, true].forEach((optIn) => {
+        expect(revokedComputerSetup({ platform: null, unsandboxedOptIn: optIn }, 'unix'))
+          .toEqual({ command: daemonSetupCommand(), keepsUnsandboxed: false, unsandboxedUnknown: false });
+      });
+    });
+  });
+
   test('no v2 source hardcodes the production API host', () => {
     expect(SOURCES.length).toBeGreaterThan(20);
     SOURCES.forEach((rel) => {

@@ -28,18 +28,15 @@ export interface RevokedComputerHost { platform?: string | null; unsandboxedOptI
 // the owner's choice: `daemon setup` without `--unsandboxed` turns an opt-in
 // off, and with it turns one on. An unknown choice on Windows gets the line
 // without the flag and a note saying how to keep an opt-in. With no OS on
-// record, the browser's line, as every other surface gives it.
+// record, the page's OS stands in, under the same opt-in rule.
 export const revokedComputerSetup = (
   host: RevokedComputerHost | null | undefined,
   fallbackOs: 'windows' | 'unix',
   apiUrl?: string,
 ): { command: string; keepsUnsandboxed: boolean; unsandboxedUnknown: boolean } => {
-  if (!host?.platform) {
-    return { command: daemonSetupCommandFor(fallbackOs, apiUrl), keepsUnsandboxed: false, unsandboxedUnknown: false };
-  }
-  const windows = host.platform === 'win32';
-  const keepsUnsandboxed = windows && host.unsandboxedOptIn === true;
-  const unsandboxedUnknown = windows && typeof host.unsandboxedOptIn !== 'boolean';
+  const windows = host?.platform ? host.platform === 'win32' : fallbackOs === 'windows';
+  const keepsUnsandboxed = windows && host?.unsandboxedOptIn === true;
+  const unsandboxedUnknown = windows && typeof host?.unsandboxedOptIn !== 'boolean';
   return {
     command: daemonSetupCommandFor(windows ? 'windows' : 'unix', apiUrl, { unsandboxed: keepsUnsandboxed }),
     keepsUnsandboxed,
