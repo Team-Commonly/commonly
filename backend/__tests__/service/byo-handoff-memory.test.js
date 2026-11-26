@@ -471,8 +471,12 @@ describe('hosted memory copied into a local agent', () => {
     expect(await AgentMemory.findOne({ agentName: 'local-handoff' })).toBeNull();
   });
 
-  it('a new installation receives copied memory before its greeting', async () => {
+  it('a new installation receives copied memory, and posts no greeting before the agent connects', async () => {
     await AgentInstallation.deleteOne({ agentName: 'local-handoff' });
+    // F651: a local agent that has never connected gets no intro post (its
+    // installer sees the start command instead), so nothing can be posted
+    // ahead of the copied memory. A greeting that does post still runs after
+    // the copy: the install writes memory before composing any intro.
     const post = jest.spyOn(AgentMessageService, 'postMessage').mockImplementation(async () => {
       expect((await AgentMemory.findOne({ agentName: 'local-handoff' }).lean()).content).toContain('remember-X-468');
       return { id: 'fixture-greeting' };
@@ -481,7 +485,8 @@ describe('hosted memory copied into a local agent', () => {
     expect(result.status).toBe(200);
     expect(result.body.memoryCopy.copied).toBe(true);
     expect(await AgentInstallation.countDocuments({ agentName: 'local-handoff' })).toBe(1);
-    expect(post).toHaveBeenCalledTimes(1);
+    expect((await AgentMemory.findOne({ agentName: 'local-handoff' }).lean()).content).toContain('remember-X-468');
+    expect(post).not.toHaveBeenCalled();
   });
 
   it('an existing BYO handoff resumes with memory copied and retries idempotently', async () => {
