@@ -109,8 +109,12 @@ router.get('/placement', bindingRateLimit, auth, async (req: express.Request & {
       isBot: true, 'botMetadata.agentName': agentName, 'botMetadata.instanceId': instanceId,
     }).select('botMetadata.machineId botMetadata.requestedMachineId +removedMachine').lean();
     if (!identity) return res.status(404).json({ message: 'Agent identity not found' });
-    const machines = await Machine.find({ ownerUserId: req.user?.id }).select('machineId name createdAt').lean();
-    type PlacementMachine = { machineId: string; name: string; createdAt: Date };
+    const machines = await Machine.find({ ownerUserId: req.user?.id })
+      .select('machineId name createdAt host.platform hostUnsandboxedOptIn').lean();
+    type PlacementMachine = {
+      machineId: string; name: string; createdAt: Date;
+      host?: { platform?: string | null } | null; hostUnsandboxedOptIn?: boolean;
+    };
     const activeMachines = (await Promise.all(machines.map(async (machine: PlacementMachine) => ({
       machineId: machine.machineId,
       name: machine.name,
@@ -132,6 +136,14 @@ router.get('/placement', bindingRateLimit, auth, async (req: express.Request & {
       requestedMachineId: identity.botMetadata?.requestedMachineId || null,
       boundMachineRevoked,
       boundMachineRevokedReason,
+      // F641: for that notice, the revoked computer's OS and sandbox opt-in, so
+      // the app gives back its own setup line; null without a reason.
+      boundMachineHost: boundMachineRevokedReason
+        ? (() => {
+          const bound = machines.find((machine: PlacementMachine) => machine.machineId === boundMachineId);
+          return { platform: bound?.host?.platform ?? null, unsandboxedOptIn: bound?.hostUnsandboxedOptIn === true };
+        })()
+        : null,
       // F476: the computer whose removal unbound it, until a daemon adopts it.
       removedMachine: !boundMachineId && identity.removedMachine
         ? { name: identity.removedMachine.name, at: identity.removedMachine.at } : null,

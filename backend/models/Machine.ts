@@ -44,6 +44,11 @@ export interface IMachine extends Document {
   // sandbox (native Windows, `commonly daemon install --unsandboxed`). Grants
   // are refused for every seat bound to this machine while it is true.
   hostUnconfined: boolean;
+  // F641: the daemon's last sandbox report was 'unsandboxed-opted-in', the
+  // user's own `--unsandboxed`. hostUnconfined is also true for a plain
+  // 'native-windows' report, so it can't say whether the user opted in; the
+  // setup line the app gives back for this computer keeps this choice.
+  hostUnsandboxedOptIn: boolean;
   // F356: when a heartbeat last reported the host's sandbox at all. Null until
   // the first report (the daemon adopts seats before its first heartbeat, and a
   // daemon older than #3388 never reports), and a null host is never confined.
@@ -73,6 +78,7 @@ const MachineSchema = new Schema<IMachine>(
     runtimeInventory: { type: Schema.Types.Mixed, default: [] },
     inventoryAt: { type: Date, default: null },
     hostUnconfined: { type: Boolean, default: false },
+    hostUnsandboxedOptIn: { type: Boolean, default: false },
     hostSandboxReportedAt: { type: Date, default: null },
     host: {
       type: new Schema({

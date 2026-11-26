@@ -111,6 +111,24 @@ test('with no computer left, the reason points at the setup command the panel al
   expect(screen.getByTestId('agent-machine-placement')).toHaveTextContent(daemonSetupCommandFor('unix'));
 });
 
+test('with no computer left, the line below is the revoked computer\'s own, keeping its opt-in', async () => {
+  const placement = (host) => axios.get.mockImplementation((url) => Promise.resolve({ data: url.includes('/agent-binding/placement')
+    ? { boundMachineId: 'old', requestedMachineId: null, boundMachineRevoked: true, boundMachineRevokedReason: 'cli_duplicate_daemons',
+      boundMachineHost: host, activeMachines: [] } : response }));
+  placement({ platform: 'win32', unsandboxedOptIn: true });
+  const { unmount } = renderSection();
+  const opted = await screen.findByTestId('agent-machine-revoked-setup');
+  expect(opted.querySelector('code')).toHaveTextContent(daemonSetupCommandFor('windows'));
+  expect(opted).toHaveTextContent('--unsandboxed keeps this computer’s choice to run without a sandbox: agents act with your own access to files and commands, and get no connector grants.');
+  unmount();
+
+  placement({ platform: 'win32', unsandboxedOptIn: false });
+  renderSection();
+  const plain = await screen.findByTestId('agent-machine-revoked-setup');
+  expect(plain.querySelector('code').textContent).toBe(daemonSetupCommandFor('windows', undefined, { unsandboxed: false }));
+  expect(plain).not.toHaveTextContent('--unsandboxed');
+});
+
 test('a revoke without a reason keeps the generic line and no connect link', async () => {
   axios.get.mockImplementation((url) => Promise.resolve({ data: url.includes('/agent-binding/placement')
     ? { boundMachineId: 'old', requestedMachineId: null, boundMachineRevoked: true, boundMachineRevokedReason: null,
@@ -120,6 +138,7 @@ test('a revoke without a reason keeps the generic line and no connect link', asy
   await waitFor(() => expect(row).toHaveTextContent('This computer’s key was revoked. Choose another computer to run this agent.'));
   expect(row).not.toHaveTextContent('bug in our CLI');
   expect(screen.queryByTestId('agent-machine-revoked-reason')).not.toBeInTheDocument();
+  expect(screen.queryByTestId('agent-machine-revoked-setup')).not.toBeInTheDocument();
   expect(within(row).queryByRole('link')).not.toBeInTheDocument();
 });
 

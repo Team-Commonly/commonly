@@ -31,6 +31,13 @@ interface MachineView {
   // instance of an agent only to a computer whose daemon keeps a key per
   // instance (F427).
   cliVersion: string | null;
+  // F641: only on a computer revoked with a reason (the list otherwise carries
+  // nothing of the host but its CLI version, F427): the OS its daemon last
+  // reported (Node's process.platform name, or null from a CLI too old to say)
+  // and whether its owner opted out of the sandbox there, so the notice gives
+  // back that computer's own setup line.
+  platform?: string | null;
+  unsandboxedOptIn?: boolean;
   // F641: why an operator revoked this computer's key, as a stable code, while
   // no live key has replaced it. Absent for a revoke that gave no reason.
   revokedReason?: DaemonRevokedReason;
@@ -278,7 +285,13 @@ export async function listMachinesForOwner(ownerUserId: Types.ObjectId | string)
     machines: machines.map((machine: Record<string, unknown>) => {
       const view = serializeMachine(machine, now);
       const revokedReason = reasons.get(view.machineId);
-      return revokedReason ? { ...view, revokedReason } : view;
+      if (!revokedReason) return view;
+      return {
+        ...view,
+        revokedReason,
+        platform: normalizeHostReport(machine.host)?.platform ?? null,
+        unsandboxedOptIn: machine.hostUnsandboxedOptIn === true,
+      };
     }),
     offlineAfterMs: MACHINE_OFFLINE_AFTER_MS,
   };
@@ -355,9 +368,11 @@ export async function recordMachineHeartbeat(
   if (inventory !== null) { set.runtimeInventory = inventory; set.inventoryAt = now; }
   if (typeof hostSandbox === 'string' && HOST_SANDBOX_REPORTS.unconfined.includes(hostSandbox)) {
     set.hostUnconfined = true;
+    set.hostUnsandboxedOptIn = hostSandbox === 'unsandboxed-opted-in';
     set.hostSandboxReportedAt = now;
   } else if (hostSandbox === HOST_SANDBOX_REPORTS.confined) {
     set.hostUnconfined = false;
+    set.hostUnsandboxedOptIn = false;
     set.hostSandboxReportedAt = now;
   }
   // F623: a check-in is a last-write-wins status report, so it is one atomic

@@ -37,6 +37,15 @@ describe('copy-paste setup commands follow the page instance', () => {
     );
   });
 
+  // F641: a known Windows computer whose owner never opted in gets the line
+  // without the flag, so setup doesn't turn the opt-in on for them.
+  test('the Windows form drops --unsandboxed only when asked to', () => {
+    expect(daemonSetupCommandFor('windows', undefined, { unsandboxed: false })).toBe(
+      'npx.cmd -y @commonlyai/cli@latest daemon setup --instance https://api-dev.example.test',
+    );
+    expect(daemonSetupCommandFor('unix', undefined, { unsandboxed: true })).toBe(daemonSetupCommand());
+  });
+
   test('no v2 source hardcodes the production API host', () => {
     expect(SOURCES.length).toBeGreaterThan(20);
     SOURCES.forEach((rel) => {

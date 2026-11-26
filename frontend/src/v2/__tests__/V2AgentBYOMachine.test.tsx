@@ -114,6 +114,39 @@ describe('BYO on-my-computer mode', () => {
     expect(screen.getByTestId('byo-add-computer')).toBeInTheDocument();
   });
 
+  // F641: the notice gives the line for THAT computer (its OS, its sandbox
+  // choice), not this browser's. The jsdom browser reads as a Mac.
+  const revokedPick = async (fields) => {
+    const revoked = { id: 'm2', machineId: 'mach-b', name: 'Windows PC', status: 'offline', agentStates: [], revokedReason: 'cli_duplicate_daemons', ...fields };
+    mockGet({ machines: [machineRow, revoked] });
+    renderPage();
+    await waitFor(() => expect(screen.getByTestId('byo-mode-machine')).toBeInTheDocument());
+    fireEvent.click(screen.getByTestId('byo-mode-machine'));
+    fireEvent.change(screen.getByTestId('byo-machine-select'), { target: { value: 'mach-b' } });
+    return screen.getByTestId('byo-machine-revoked-reason');
+  };
+  const KEEPS = 'keeps this computer’s choice to run without a sandbox: agents act with your own access to files and commands, and get no connector grants.';
+
+  test('a revoked Windows computer that opted in gets its Windows line with --unsandboxed, from a Mac browser', async () => {
+    const note = await revokedPick({ platform: 'win32', unsandboxedOptIn: true });
+    const code = note.querySelector('code').textContent;
+    expect(code).toMatch(/^npx\.cmd -y @commonlyai\/cli@latest daemon setup --instance \S+ --unsandboxed$/);
+    expect(note).toHaveTextContent(`--unsandboxed ${KEEPS}`);
+  });
+
+  test('a revoked Windows computer that never opted in gets no --unsandboxed and no flag note', async () => {
+    const note = await revokedPick({ platform: 'win32', unsandboxedOptIn: false });
+    const code = note.querySelector('code').textContent;
+    expect(code).toMatch(/^npx\.cmd -y @commonlyai\/cli@latest daemon setup --instance \S+$/);
+    expect(note).not.toHaveTextContent('--unsandboxed');
+  });
+
+  test('a revoked computer with no OS on record falls back to the browser line', async () => {
+    const note = await revokedPick({ platform: null, unsandboxedOptIn: true });
+    expect(note.querySelector('code').textContent).toMatch(/^npx -y @commonlyai\/cli@latest daemon setup --instance \S+$/);
+    expect(note).not.toHaveTextContent(KEEPS);
+  });
+
   // F641: arriving from the settings link with a live computer selected, the
   // setup command is on screen without a click: its fold opens for such a computer.
   test('a computer revoked with a reason shows the setup command on arrival, no clicks', async () => {

@@ -206,9 +206,17 @@ describe('placement request', () => {
     expect(plain.body.boundMachineRevoked).toBe(true);
     expect(plain.body.boundMachineRevokedReason ?? null).toBeNull();
 
+    expect(plain.body.boundMachineHost ?? null).toBeNull();
+
     await AgentCredential.updateOne({ _id: daemonCredA._id }, { $set: { revokedReason: 'cli_duplicate_daemons' } });
     const withReason = await placement().expect(200);
     expect(withReason.body).toMatchObject({ boundMachineRevoked: true, boundMachineRevokedReason: 'cli_duplicate_daemons' });
+    // No host report yet: the app falls back to the browser's OS.
+    expect(withReason.body.boundMachineHost).toEqual({ platform: null, unsandboxedOptIn: false });
+
+    // F641: the notice's setup line follows the revoked computer's OS and opt-in.
+    await Machine.updateOne({ machineId: 'machine-a' }, { $set: { host: { platform: 'win32' }, hostUnsandboxedOptIn: true } });
+    expect((await placement().expect(200)).body.boundMachineHost).toEqual({ platform: 'win32', unsandboxedOptIn: true });
 
     global.__CALLER_ID = String(new mongoose.Types.ObjectId());
     const outsider = await placement().expect(403);

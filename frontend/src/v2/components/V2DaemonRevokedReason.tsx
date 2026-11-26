@@ -1,6 +1,7 @@
 import React from 'react';
 import { Link } from 'react-router-dom';
 import { Trans } from 'react-i18next';
+import { daemonSetupCommandFor } from '../utils/daemonSetupCommand';
 
 // F641: what a person reads when an operator revoked their computer's key and
 // said why. The server sends a stable code (revokedReason), never text; a code
@@ -16,5 +17,33 @@ const V2DaemonRevokedReason: React.FC<{ reason?: string | null; commandBelow?: b
     ? <Trans i18nKey="agentManage.runtime.machineRevokedCliBugBelow" />
     : <Trans i18nKey="agentManage.runtime.machineRevokedCliBug" components={{ byo: <Link to="/v2/agents/byo" /> }} />;
 };
+
+// What the server keeps about the revoked computer: the OS its daemon last
+// reported (Node's platform name; null from a CLI too old to say) and whether
+// its owner opted out of the sandbox there ('unsandboxed-opted-in').
+export interface RevokedComputerHost { platform?: string | null; unsandboxedOptIn?: boolean }
+
+// F641: the setup line for THAT computer, not the browser's. On Windows it keeps
+// the owner's choice: `daemon setup` without `--unsandboxed` turns an opt-in
+// off, and with it turns one on. With no OS on record, the browser's line, as
+// every other surface gives it.
+export const revokedComputerSetup = (
+  host: RevokedComputerHost | null | undefined,
+  fallbackOs: 'windows' | 'unix',
+  apiUrl?: string,
+): { command: string; keepsUnsandboxed: boolean } => {
+  if (!host?.platform) return { command: daemonSetupCommandFor(fallbackOs, apiUrl), keepsUnsandboxed: false };
+  const windows = host.platform === 'win32';
+  const keepsUnsandboxed = windows && host.unsandboxedOptIn === true;
+  return {
+    command: daemonSetupCommandFor(windows ? 'windows' : 'unix', apiUrl, { unsandboxed: keepsUnsandboxed }),
+    keepsUnsandboxed,
+  };
+};
+
+// The flag's cost, next to a line that carries it to keep an opt-in.
+export const V2KeepsUnsandboxedNote: React.FC = () => (
+  <Trans i18nKey="agentManage.runtime.keepsUnsandboxed" components={{ cmd: <code /> }} />
+);
 
 export default V2DaemonRevokedReason;

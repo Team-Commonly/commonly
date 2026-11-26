@@ -178,6 +178,40 @@ describe('ADR-026 machine lifecycle service', () => {
     expect(cleared.hostUnconfined).toBe(false);
   });
 
+  // F641: the revoked-computer notice builds that computer's own setup line,
+  // so the record keeps whether its owner opted out of the sandbox. Only
+  // 'unsandboxed-opted-in' is the opt-in; a Windows daemon without it reports
+  // 'native-windows', which is unconfined but not opted in.
+  it('keeps the sandbox opt-in apart from unconfined, and lists it only for a computer revoked with a reason', async () => {
+    const ownerUserId = new mongoose.Types.ObjectId();
+    const { machine } = await machineService.registerMachine({ ownerUserId, name: 'Windows PC' });
+    const optIn = async () => (await Machine.findById(machine.id).lean()).hostUnsandboxedOptIn;
+    const beat = (sandbox, host) => Machine.findById(machine.id)
+      .then((m) => machineService.recordMachineHeartbeat(m, [], undefined, sandbox, host));
+    expect(await optIn()).toBe(false);
+
+    expect(await beat('unsandboxed-opted-in', { platform: 'win32' })).toMatchObject({ hostUnconfined: true });
+    expect(await optIn()).toBe(true);
+    // A check-in that says nothing about the sandbox leaves the opt-in standing.
+    await beat(undefined);
+    expect(await optIn()).toBe(true);
+    // Without a reason the list carries nothing of the host but its CLI version (F427).
+    let { machines } = await machineService.listMachinesForOwner(ownerUserId);
+    expect(machines[0]).not.toHaveProperty('platform');
+    expect(machines[0]).not.toHaveProperty('unsandboxedOptIn');
+
+    const daemon = await AgentCredential.findOne({ machineId: machine.machineId, kind: 'daemon' });
+    await AgentCredential.revokeCascade(daemon._id, { reason: 'cli_duplicate_daemons' });
+    ({ machines } = await machineService.listMachinesForOwner(ownerUserId));
+    expect(machines[0]).toMatchObject({ revokedReason: 'cli_duplicate_daemons', platform: 'win32', unsandboxedOptIn: true });
+
+    expect(await beat('native-windows')).toMatchObject({ hostUnconfined: true });
+    expect(await optIn()).toBe(false);
+    await beat('unsandboxed-opted-in');
+    expect(await beat('default')).toMatchObject({ hostUnconfined: false });
+    expect(await optIn()).toBe(false);
+  });
+
   it('keeps only the four stored seat fields when a daemon reports its full payload', () => {
     // FILTER 1 of 2. This pins the rebuild in normalizeAgentStates
     // (backend/services/machineService.ts:28-47). Do not move this assertion up

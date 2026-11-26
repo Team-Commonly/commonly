@@ -11,7 +11,9 @@ import ConnectorLogo, { connectorName } from '../connectors/ConnectorLogo';
 import V2RuntimeControls, { runtimeNotReady, RuntimeSettings, RuntimeUpdate } from './V2RuntimeControls';
 import { browserIsWindows, daemonSetupCommandFor } from '../utils/daemonSetupCommand';
 import { usePhone } from '../connectors/usePhone';
-import V2DaemonRevokedReason, { hasDaemonRevokedReasonText } from './V2DaemonRevokedReason';
+import V2DaemonRevokedReason, {
+  hasDaemonRevokedReasonText, revokedComputerSetup, RevokedComputerHost, V2KeepsUnsandboxedNote,
+} from './V2DaemonRevokedReason';
 
 export interface Runtime extends RuntimeSettings {}
 
@@ -37,6 +39,8 @@ interface Placement {
   boundMachineRevoked: boolean;
   // F641: why the bound computer's key was revoked, as a stable code, or null.
   boundMachineRevokedReason?: string | null;
+  // F641: with a reason, the revoked computer's OS and sandbox opt-in, for its own setup line.
+  boundMachineHost?: RevokedComputerHost | null;
   // F476: the computer whose removal unbound this agent, while it sits unplaced.
   removedMachine?: { name: string; at: string } | null;
   activeMachines: Array<{ machineId: string; name: string; createdAt?: string | null }>;
@@ -164,6 +168,11 @@ const V2AgentRuntimeBody: React.FC<Props> = ({
   const needsAttention = Boolean(placementError) || (showsPlacement && canMove)
     || Boolean(runtimeNotReady(runtime));
   useEffect(() => { onNeedsAttention?.(needsAttention); }, [needsAttention, onNeedsAttention]);
+  // F641: a computer revoked with a reason gets back ITS setup line (its OS, its
+  // sandbox choice); anything else keeps the browser's line, as before.
+  const revokedSetup = placement?.boundMachineRevoked && hasDaemonRevokedReasonText(placement.boundMachineRevokedReason)
+    ? revokedComputerSetup(placement.boundMachineHost, browserIsWindows() ? 'windows' : 'unix')
+    : null;
   const machineState = placement && <>
     {placement.boundMachineRevoked && <span role="status">{t('agentManage.runtime.machineRevoked')}</span>}
     {removedMachine && !waitingForMachine && <span role="status">{t('agentManage.runtime.machineRemoved', { name: removedMachine.name })}</span>}
@@ -202,7 +211,10 @@ const V2AgentRuntimeBody: React.FC<Props> = ({
                   <button type="button" className="b b-s b-sm" disabled={!machineChoice || moving} onClick={() => { void moveAgent(); }}>
                     {moving ? t('agentManage.runtime.moving') : t('agentManage.runtime.move')}
                   </button>
-                </div> : <p className="v2-agent-settings-page__live">{t('agentManage.runtime.noActiveMachine')} <code>{daemonSetupCommandFor(browserIsWindows() ? 'windows' : 'unix')}</code></p>}
+                </div> : revokedSetup ? <p className="v2-agent-settings-page__live" data-testid="agent-machine-revoked-setup">
+                  {t('agentManage.runtime.noActiveMachine')} <code>{revokedSetup.command}</code>
+                  {revokedSetup.keepsUnsandboxed && <>{' '}<V2KeepsUnsandboxedNote /></>}
+                </p> : <p className="v2-agent-settings-page__live">{t('agentManage.runtime.noActiveMachine')} <code>{daemonSetupCommandFor(browserIsWindows() ? 'windows' : 'unix')}</code></p>}
               </div>
             </details>
           ) : (

@@ -3436,6 +3436,7 @@
       "machineRevoked": "This computer’s key was revoked. Choose another computer to run this agent.",
       "machineRevokedCliBug": "This computer was disconnected because of a bug in our CLI. Run the computer setup command again from <byo>Bring your own agent</byo> to get the fixed version.",
       "machineRevokedCliBugBelow": "This computer was disconnected because of a bug in our CLI. Run the computer setup command below on it again to get the fixed version.",
+      "keepsUnsandboxed": "<cmd>--unsandboxed</cmd> keeps this computer’s choice to run without a sandbox: agents act with your own access to files and commands, and get no connector grants.",
       "machineRemoved": "{{name}} was removed. Choose another computer to run this agent.",
       "currentMachine": "Running on {{name}}",
       "machineRequested": "Waiting for {{name}} to start this agent",

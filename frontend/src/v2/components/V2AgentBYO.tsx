@@ -18,7 +18,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { Trans, useTranslation } from 'react-i18next';
-import { hasDaemonRevokedReasonText } from './V2DaemonRevokedReason';
+import { hasDaemonRevokedReasonText, revokedComputerSetup, V2KeepsUnsandboxedNote } from './V2DaemonRevokedReason';
 import axios from '../../utils/axiosConfig';
 import { recordByoStep, type ByoCopyType, type ByoStallReason, type ByoStep } from '../utils/byoTelemetry';
 import getApiBaseUrl from '../../utils/apiBaseUrl';
@@ -221,6 +221,10 @@ type MachineRow = {
   hostUnconfined?: boolean;
   // The CLI version its daemon last reported running; null when too old to say.
   cliVersion?: string | null;
+  // F641: its OS (Node's platform name; null when too old to say) and whether
+  // its owner opted out of the sandbox, for its own setup line.
+  platform?: string | null;
+  unsandboxedOptIn?: boolean;
   // F641: why an operator revoked its key, as a stable code, while no live key replaced it.
   revokedReason?: string;
 };
@@ -1841,6 +1845,11 @@ const V2AgentBYO: React.FC = () => {
   // One line, run through npx — nothing to install first. It works as is in
   // PowerShell, so there is no per-line split any more (Windows form: the util).
   const daemonCommand = daemonSetupCommandFor(setupOs === 'windows' ? 'windows' : 'unix', apiUrl);
+  // F641: a computer revoked with a reason gets ITS line (its OS, its sandbox
+  // choice), not this browser's; with no OS on record, the browser's.
+  const revokedSetup = hasDaemonRevokedReasonText(selectedMachine?.revokedReason)
+    ? revokedComputerSetup(selectedMachine, setupOs === 'windows' ? 'windows' : 'unix', apiUrl)
+    : null;
 
   const claudeSnippet = issued
     ? `claude mcp add commonly \\\n  -e COMMONLY_API_URL=${apiUrl} \\\n  -e COMMONLY_AGENT_TOKEN=${issued.token} \\\n  -- npx -y @commonlyai/mcp`
@@ -2420,9 +2429,10 @@ const V2AgentBYO: React.FC = () => {
             </label>
           )}
           {/* F641: outside the <label>, so nothing here selects the picker. */}
-          {mode === 'machine' && hasDaemonRevokedReasonText(selectedMachine?.revokedReason) && (
+          {mode === 'machine' && revokedSetup && (
             <p className="v2-byo__needs" data-testid="byo-machine-revoked-reason">
-              {t('agentByo.machine.revokedCliBug')} <code>{daemonCommand}</code>
+              {t('agentByo.machine.revokedCliBug')} <code>{revokedSetup.command}</code>
+              {revokedSetup.keepsUnsandboxed && <>{' '}<V2KeepsUnsandboxedNote /></>}
             </p>
           )}
           {mode === 'machine' && (
