@@ -107,6 +107,44 @@ describe('model policy', () => {
   });
 });
 
+describe('saving', () => {
+  test('a refused save shows the error, re-reads nothing, and can be retried', async () => {
+    mockGet.mockResolvedValue(connected());
+    await renderPage();
+    mockGet.mockClear();
+    mockPost.mockRejectedValueOnce({ response: { data: { error: 'Policy store unavailable' } } });
+
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Save Policy' })); });
+    await waitFor(() => expect(screen.getByRole('alert')).toHaveTextContent('Policy store unavailable'));
+    expect(screen.getByRole('button', { name: 'Save Policy' })).toBeEnabled();
+    expect(screen.getByRole('button', { name: 'Save Model Policy' })).toBeEnabled();
+    expect(mockGet).not.toHaveBeenCalled();
+    expect(screen.queryByText('Global social publishing policy saved.')).not.toBeInTheDocument();
+
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Save Policy' })); });
+    await waitFor(() => expect(screen.getByText('Global social publishing policy saved.')).toBeInTheDocument());
+    expect(mockGet).toHaveBeenCalledTimes(1);
+  });
+
+  test('the forms stay locked until the post-save re-read lands, so no edit is overwritten by it', async () => {
+    mockGet.mockResolvedValue(connected());
+    await renderPage();
+    let finishRead;
+    mockGet.mockReturnValueOnce(new Promise((resolve) => { finishRead = resolve; }));
+
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Save Policy' })); });
+    // The POST is done and the re-read is pending: nothing can be edited.
+    expect(screen.getByLabelText('Backend Model')).toBeDisabled();
+    expect(screen.getByLabelText('Social Mode')).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Save Model Policy' })).toBeDisabled();
+
+    await act(async () => { finishRead(connected()); });
+    expect(screen.getByLabelText('Backend Model')).toBeEnabled();
+    await act(async () => { fireEvent.change(screen.getByLabelText('Backend Model'), { target: { value: 'claude-sonnet-5-5' } }); });
+    expect(screen.getByLabelText('Backend Model')).toHaveValue('claude-sonnet-5-5');
+  });
+});
+
 describe('a failed first read', () => {
   test('offers no save over the fallback values, only the error and a retry', async () => {
     mockGet.mockRejectedValueOnce({ response: { data: { error: 'Database unavailable' } } });

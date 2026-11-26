@@ -308,6 +308,9 @@ const V2GlobalIntegrations: React.FC = () => {
         </div>
       )}
 
+      {/* A save holds `saving` through its re-read, so nothing typed meanwhile
+          is overwritten when that read lands. */}
+      <fieldset className="v2-global-int__form" disabled={saving}>
       <p className="v2-global-int__eyebrow">Social</p>
       <div className="v2-global-int__pair">
         <section className="v2-global-int__card" aria-labelledby="v2-global-int-x">
@@ -490,6 +493,7 @@ const V2GlobalIntegrations: React.FC = () => {
           Posts from these integrations are automatically available to all curator agents via <code>GET /api/posts?category=Social</code>
         </p>
       </section>
+      </fieldset>
     </div>
   );
 };
