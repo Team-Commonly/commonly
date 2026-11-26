@@ -81,8 +81,11 @@ on the launcher's (reused) pid counted as alive, and its dead stdout pipe was sw
   refuses with 400 a registration whose host says `win32` with a CLI below it, or with no valid
   version. That is the path an old daemon takes back after its key is revoked. Set it only once a
   fixed CLI has published.
-- **Clearing leftover copies.** Old copies don't know about the lock. Reboot, or run
-  `npx @commonlyai/cli@latest daemon setup`, which ends the task and starts one daemon on the new CLI.
+- **Clearing leftover copies.** Old copies hold no lock, and `daemon setup` doesn't remove them:
+  `schtasks /End` ends the task's launcher only, never a `node` it started, and an old copy whose
+  launcher watch already failed keeps running beside the new daemon. So reboot, or end the leftover
+  `node` processes running `commonly daemon run` (Task Manager, Details tab, with the Command line
+  column on), then run `npx @commonlyai/cli@latest daemon setup`.
 
 ## No sandbox on Windows, and the opt-in
 

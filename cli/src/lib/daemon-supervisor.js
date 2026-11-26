@@ -121,6 +121,11 @@ export const createDaemonSupervisor = ({
   // F637: true from a 429 until the next success, so the duplicate-daemon
   // notice is logged once per stretch of rate limiting.
   let rateLimited = false;
+  // F637 review: bumped by every failure that sets a wait. A request records
+  // it when it starts, and its success clears the wait only if no failure came
+  // after that start: a heartbeat in flight when a tick got a 429 must not
+  // cut the cooldown short by succeeding (or, below, by failing some other way).
+  let failureEpoch = 0;
 
   const connectionFailure = (error, label) => {
     if (isTerminalAuthError(error)) {
@@ -129,6 +134,7 @@ export const createDaemonSupervisor = ({
       return;
     }
     reconnectFailures += 1;
+    failureEpoch += 1;
     if (error?.status === 429) {
       // The server's limiter keys on this computer's daemon key. Retrying in
       // a second or two keeps it shut, for every copy sharing the key, so wait
@@ -145,12 +151,14 @@ export const createDaemonSupervisor = ({
         log(RATE_LIMIT_NOTICE);
       }
     } else {
-      reconnectAfter = now() + reconnectDelayMs(reconnectFailures, random);
+      // Never shorter than a wait already set (a 429's cooldown).
+      reconnectAfter = Math.max(reconnectAfter, now() + reconnectDelayMs(reconnectFailures, random));
     }
     log(`${label}: ${error.message}; reconnect after ${Math.round((reconnectAfter - now()) / 1000)}s`);
   };
 
-  const connectionRestored = () => {
+  const connectionRestored = (startedAtEpoch) => {
+    if (startedAtEpoch !== failureEpoch) return;
     reconnectFailures = 0;
     reconnectAfter = 0;
     rateLimited = false;
@@ -531,6 +539,7 @@ export const createDaemonSupervisor = ({
 
   const tick = async () => {
     if (stopped || now() < reconnectAfter) return;
+    const startedAtEpoch = failureEpoch;
     let assigned;
     try {
       assigned = await client.get('/api/agent-binding/assigned');
@@ -538,7 +547,7 @@ export const createDaemonSupervisor = ({
       connectionFailure(error, 'work-list fetch failed');
       return;
     }
-    connectionRestored();
+    connectionRestored(startedAtEpoch);
     const rows = Array.isArray(assigned?.agents) ? assigned.agents : [];
 
     const bound = [];
@@ -629,13 +638,14 @@ export const createDaemonSupervisor = ({
 
   const heartbeat = async () => {
     if (stopped || now() < reconnectAfter) return;
+    const startedAtEpoch = failureEpoch;
     try {
       await client.post(`/api/machines/${record.machineDbId}/heartbeat`, {
         ...machineReport(),
         agents: agentStates(),
         runtimeInventory: await runtimeInventory(),
       });
-      connectionRestored();
+      connectionRestored(startedAtEpoch);
     } catch (error) {
       connectionFailure(error, 'heartbeat failed');
     }

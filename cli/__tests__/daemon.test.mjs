@@ -463,3 +463,59 @@ describe('firstSupervisionPass (the launcher watch is armed before the first tic
     expect(order).toEqual(['tick']);
   });
 });
+
+// F637 review: a throw from the first tick (a later seat's token read) used to
+// skip all cleanup: the earlier seat's child kept running and the lock stayed
+// held. The first pass now stops the supervisor and releases the lock first.
+describe('firstSupervisionPass cleans up after a failed first tick', () => {
+  test('the first seat is stopped and the lock is free when the second seat\'s token read throws', async () => {
+    const { EventEmitter } = await import('events');
+    const { createDaemonSupervisor } = await import('../src/lib/daemon-supervisor.js');
+    const { tryAcquireDaemonLock } = await import('../src/lib/daemon-lock.js');
+    const dir = process.platform === 'win32'
+      ? fs.mkdtempSync(path.join(os.tmpdir(), 'cl-'))
+      : fs.mkdtempSync('/tmp/cl-');
+    const lockPath = process.platform === 'win32'
+      ? `\\\\.\\pipe\\commonly-daemon-test-first-pass-${process.pid}`
+      : path.join(dir, 'fp.sock');
+    try {
+      const lock = await tryAcquireDaemonLock({ lockPath });
+      expect(lock.ok).toBe(true);
+      const children = [];
+      const row = (agentName) => ({
+        agentName, instanceId: 'default', state: 'bound', podIds: ['pod-1'], runtime: { runtimeType: 'wrapper' },
+      });
+      const supervisor = createDaemonSupervisor({
+        record: daemonRecord,
+        client: { get: jest.fn(async () => ({ agents: [row('seat-a'), row('seat-b')] })), post: jest.fn() },
+        spawnChild: jest.fn(() => {
+          const child = new EventEmitter();
+          child.kill = jest.fn();
+          children.push(child);
+          return child;
+        }),
+        loadToken: (name) => {
+          if (name === 'seat-b') throw new Error('token file is unreadable');
+          return { agentName: name, adapter: 'claude' };
+        },
+        saveToken: jest.fn(),
+        resolveAdapter: jest.fn(async () => 'claude'),
+        setTimeoutFn: () => 1,
+        clearTimeoutFn: () => {},
+      });
+      await expect(firstSupervisionPass({
+        supervisor,
+        armLauncherWatch: () => {},
+        onLauncherGone: () => {},
+        releaseLock: lock.release,
+      })).rejects.toThrow('token file is unreadable');
+      expect(children).toHaveLength(1);
+      expect(children[0].kill).toHaveBeenCalledWith('SIGTERM');
+      const again = await tryAcquireDaemonLock({ lockPath });
+      expect(again.ok).toBe(true);
+      await again.release();
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+});

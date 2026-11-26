@@ -118,9 +118,10 @@ const held = (server, lockPath) => {
     if (released) { resolve(); return; }
     released = true;
     process.off('exit', onExit);
-    // Unlinked once, before the close: unlinking after it could remove the
-    // socket of a daemon that took the lock in between.
-    unlinkOwn();
+    // close() unlinks a unix socket server's path itself (libuv's
+    // uv__pipe_close, synchronously inside the call), so no unlink of our own
+    // here: a second one could remove the socket of a daemon that bound in
+    // between. The exit hook above covers exits that skip release.
     server.close(() => resolve());
   });
   return { ok: true, lockPath, release };

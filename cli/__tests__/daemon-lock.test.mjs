@@ -117,6 +117,29 @@ describe('acquiring the lock', () => {
     }
   });
 
+  // F637 review: close() unlinks a unix socket's path itself (libuv), so
+  // release() does not unlink again; a second unlink could remove the socket
+  // of a daemon that bound in between.
+  posixOnly('release leaves no socket file, and a released holder never removes the next one\'s', async () => {
+    const dir = shortTmp();
+    const lockPath = lockPathIn(dir);
+    try {
+      const first = await tryAcquireDaemonLock({ lockPath });
+      await first.release();
+      expect(fs.existsSync(lockPath)).toBe(false);
+      const second = await tryAcquireDaemonLock({ lockPath });
+      expect(second.ok).toBe(true);
+      // The first holder's release, run again, leaves it alone.
+      await first.release();
+      expect(fs.existsSync(lockPath)).toBe(true);
+      expect(await tryAcquireDaemonLock({ lockPath })).toEqual({ ok: false, holderPid: process.pid });
+      await second.release();
+      expect(fs.existsSync(lockPath)).toBe(false);
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
   posixOnly('a socket file left by a killed holder is reclaimed', async () => {
     const dir = shortTmp();
     const lockPath = lockPathIn(dir);

@@ -378,6 +378,7 @@ export const firstSupervisionPass = async ({
   onLauncherGone,
   isEnded = () => false,
   armLauncherWatch = watchWindowsLauncher,
+  releaseLock = async () => {},
 }) => {
   let launcherGone = false;
   armLauncherWatch({
@@ -388,9 +389,19 @@ export const firstSupervisionPass = async ({
   });
   const stopped = () => launcherGone || isEnded();
   if (stopped()) return false;
-  await supervisor.tick();
-  if (stopped()) return false;
-  await supervisor.heartbeat();
+  try {
+    await supervisor.tick();
+    if (stopped()) return false;
+    await supervisor.heartbeat();
+  } catch (error) {
+    // F637 review: a throw here (a later seat's token read, say) comes after
+    // earlier seats have started. The caller's catch can't reach them or the
+    // lock, so stop them and free the lock before the error goes on, as the
+    // runtime-failure and shutdown paths do.
+    supervisor.stop();
+    await releaseLock();
+    throw error;
+  }
   return !stopped();
 };
 
@@ -857,6 +868,7 @@ Examples:
             shutdown();
           },
           isEnded: () => terminalEnded,
+          releaseLock: () => lock.release(),
         });
         if (!started) {
           releaseLock();
