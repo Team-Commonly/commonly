@@ -60,18 +60,21 @@ describe('ActivityService.getDecisionQueue', () => {
     });
   });
 
+  const F645_POD_ID = '64b0000000000000000000b1';
+  const F645_MEMBER_ID = '64b0000000000000000000b2';
+
   // F645: the Activity ruling line reads "Alex ruled", not the handle.
   it('names each ruler by display name and keeps the handle in by', async () => {
-    mockPodFind.mockReturnValue(chain([{ _id: 'pod-1', name: 'Current', members: ['member-1'] }]));
+    mockPodFind.mockReturnValue(chain([{ _id: F645_POD_ID, name: 'Current', members: [F645_MEMBER_ID] }]));
     mockDecisionCountDocuments.mockResolvedValue(2);
     mockDecisionFind.mockReturnValue(decisionChain([
       {
-        _id: 'decision-1', podId: 'pod-1', status: 'ruled', messageId: '42', agentName: 'scout',
+        _id: 'decision-1', podId: F645_POD_ID, status: 'ruled', messageId: '42', agentName: 'scout',
         title: 'Choose', question: 'Which?', options: [],
         ruling: { value: 'B', byUserId: '64b000000000000000000001', byUsername: 'growth-t002-10160904a', messageId: '43' },
       },
       {
-        _id: 'decision-2', podId: 'pod-1', status: 'ruled', messageId: '52', agentName: 'scout',
+        _id: 'decision-2', podId: F645_POD_ID, status: 'ruled', messageId: '52', agentName: 'scout',
         title: 'Choose', question: 'Which?', options: [],
         ruling: { value: 'A', byUserId: '64b000000000000000000002', byUsername: 'gone-person', messageId: '53' },
       },
@@ -80,7 +83,7 @@ describe('ActivityService.getDecisionQueue', () => {
       { _id: '64b000000000000000000001', username: 'growth-t002-10160904a', displayName: 'Alex' },
     ]));
 
-    const history = await ActivityService.getDecisionHistory('member-1', { podId: 'pod-1' });
+    const history = await ActivityService.getDecisionHistory(F645_MEMBER_ID, { podId: F645_POD_ID });
 
     expect(history.items[0].ruling).toMatchObject({ by: 'growth-t002-10160904a', byName: 'Alex' });
     // A ruler who is gone falls back to the stored handle.

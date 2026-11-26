@@ -147,6 +147,26 @@ describe('F645: the decision card reads display names', () => {
     expect(within(card).queryByText(/growth-t002-10160904a/)).not.toBeInTheDocument();
   });
 
+  // The card's actor name and the author line come from one resolution: a
+  // member whose row carries only the handle reads by the pod's label on both.
+  test('a person\'s author line reads the pod label the card would use', async () => {
+    const own = {
+      id: '43', pod_id: 'pod-1', user_id: '64b000000000000000000001',
+      user: { username: 'growth-t002-10160904a', isBot: false },
+      content: 'A note from Alex.', message_type: 'text', created_at: '2026-09-05T12:30:00.000Z',
+    };
+    const { container } = render(
+      <AuthContext.Provider value={auth}>
+        <MemoryRouter><V2Thread detail={{ ...detail, messages: [...detail.messages, own] }} /></MemoryRouter>
+      </AuthContext.Provider>,
+    );
+    await screen.findByText('A note from Alex.');
+    const authors = Array.from(container.querySelectorAll('.v2-msg__author, .v2-msg__author-btn'))
+      .map((node) => node.textContent);
+    expect(authors).toContain('Alex');
+    expect(authors).not.toContain('growth-t002-10160904a');
+  });
+
   test('the ruling names the ruler by display name', async () => {
     renderThread();
     fireEvent.click(await screen.findByRole('button', { name: 'Rule: Short path (Recommended)' }));
@@ -154,5 +174,40 @@ describe('F645: the decision card reads display names', () => {
     const ruling = await screen.findByTestId('decision-ruling-row');
     expect(ruling).toHaveTextContent('Alex');
     expect(ruling).not.toHaveTextContent('growth-t002-10160904a');
+  });
+
+  // The PG readers select only the ruler's username, so a durable ruling row
+  // that is already loaded carries no display name. It reads the ruling's
+  // byName, the same as the stand-in row, whatever the load order. The ruler
+  // here has left the pod, so no member label can supply the name.
+  test('a loaded durable ruling row names the ruler by byName, content and handle unchanged', async () => {
+    const durable = {
+      id: 'ruling-42', pod_id: 'pod-1', user_id: '64b000000000000000000009',
+      user: { username: 'former-ruler-77', isBot: false },
+      content: 'Short path', message_type: 'text', created_at: '2026-09-05T12:01:00.000Z',
+    };
+    const settled = {
+      id: 'decision-42', kind: 'decision', podId: 'pod-1', messageId: '42', actorName: 'claude-code',
+      title: 'Pick the demo path', detail: 'Which path?',
+      options: [{ label: 'Short path' }, { label: 'Long path' }],
+      status: 'ruled', ruling: {
+        value: 'Short path', by: 'former-ruler-77', byName: 'Morgan', messageId: 'ruling-42', at: '2026-09-05T12:01:00.000Z',
+      },
+    };
+    mockGet.mockImplementation((url) => {
+      if (url === '/api/activity/decision-queue') return Promise.resolve({ data: { items: [] } });
+      if (url === '/api/activity/decision-history') return Promise.resolve({ data: { items: [settled] } });
+      return Promise.resolve({ data: {} });
+    });
+    render(
+      <AuthContext.Provider value={auth}>
+        <MemoryRouter><V2Thread detail={{ ...detail, messages: [...detail.messages, durable] }} /></MemoryRouter>
+      </AuthContext.Provider>,
+    );
+    const ruling = await screen.findByTestId('decision-ruling-row');
+    expect(ruling).toHaveTextContent('Morgan');
+    expect(ruling).toHaveTextContent('Short path');
+    expect(ruling).not.toHaveTextContent('former-ruler-77');
+    expect(durable.user).toEqual({ username: 'former-ruler-77', isBot: false });
   });
 });

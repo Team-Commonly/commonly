@@ -100,21 +100,26 @@ export const buildMentionLabels = (members: V2PodMember[] = [], agents: V2Agent[
     }
   });
   // Then every installed agent, by each handle that reaches it, with the same
-  // name its author line shows.
-  agents.forEach((agent) => {
+  // name its author line shows. Effective handles (the username and the
+  // handle the composer inserts) go first for every install; a fallback
+  // `usualValue` fills only a key no install owns as its own handle, so a
+  // default's display slug can't take a sibling's instanceId handle.
+  const entries = agents.flatMap((agent) => {
     const name = rawAgentName(agent);
-    if (!name) return;
+    if (!name) return [];
     const username = buildAgentUsername(name, agent.instanceId);
     const label = agentDisplayLabel(agent, memberByUsername.get(username));
-    if (!label) return;
-    const { value, usualValue } = agentMentionValues(agent, agents);
-    [username, value, usualValue].forEach((handle) => {
-      const key = handle.toLowerCase();
-      const owner = memberByUsername.get(key);
-      if (!key || (owner && !owner.isBot) || labels.has(key)) return;
-      labels.set(key, label);
-    });
+    if (!label) return [];
+    return [{ label, username, ...agentMentionValues(agent, agents) }];
   });
+  const claim = (handle: string, label: string) => {
+    const key = handle.toLowerCase();
+    const owner = memberByUsername.get(key);
+    if (!key || (owner && !owner.isBot) || labels.has(key)) return;
+    labels.set(key, label);
+  };
+  entries.forEach(({ label, username, value }) => [username, value].forEach((handle) => claim(handle, label)));
+  entries.forEach(({ label, usualValue }) => claim(usualValue, label));
   // A bot member with no install row in this pod keeps the server's label.
   members.forEach((member) => {
     const username = (member?.username || '').toLowerCase();

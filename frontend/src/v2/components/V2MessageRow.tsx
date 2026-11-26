@@ -618,11 +618,15 @@ const V2MessageRow: React.FC<V2MessageRowProps> = ({ message, introConnectedNow 
   const overriddenDisplay = agentDisplayNames?.get(rawUsername);
   // `user.displayName` is only set on a row the client builds (the ruling
   // stand-in, F645), so `username` stays a handle for the handle-keyed maps.
-  const author = overriddenDisplay || message.user?.displayName || rawUsername;
-  // F645: the pod's label for this author, used when the author line has no
-  // install name for it. Never the runtime name.
+  // F645: the pod's label for this author, used after the explicit names
+  // above. Never the runtime name. The author line and a decision card's
+  // asker both read this one `author`; `rawUsername` stays the identity key.
   const mentionLabels = useMentionLabels();
-  const knownLabel = mentionLabels.get(rawUsername.toLowerCase());
+  // A label that is only this handle in another case adds nothing; the row's
+  // own spelling stands.
+  const podLabel = mentionLabels.get(rawUsername.toLowerCase());
+  const knownLabel = podLabel && podLabel.toLowerCase() !== rawUsername.toLowerCase() ? podLabel : undefined;
+  const author = overriddenDisplay || message.user?.displayName || knownLabel || rawUsername;
   // Click is gated by agentAuthorKeys — backend may serve either raw username
   // or displayName on `message.user.username`, and the v2 set covers both.
   const isClickable = !!onAuthorClick && !!agentAuthorKeys?.has(rawUsername.toLowerCase());
@@ -717,10 +721,10 @@ const V2MessageRow: React.FC<V2MessageRowProps> = ({ message, introConnectedNow 
     return (
       <div id={`message-${message.id}`} data-source-message-id={sourceMessageId != null ? String(sourceMessageId) : undefined} tabIndex={-1} className={`v2-message-row v2-message-row--decision${enterClass}`}>
         <V2DecisionCard
-          // The card names its asker the way its author line does, then by the
-          // pod's label. The decision row's actorName is the install's
-          // agentName, which can be the runtime, so it is never used.
-          decision={{ ...decision, actorName: overriddenDisplay || knownLabel || author }}
+          // The card names its asker exactly as its author line does. The
+          // decision row's actorName is the install's agentName, which can be
+          // the runtime, so it is never used.
+          decision={{ ...decision, actorName: author }}
           onRuled={onDecisionRuled}
         />
       </div>

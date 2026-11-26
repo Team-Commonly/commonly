@@ -428,7 +428,15 @@ const V2ThreadMessages: React.FC<V2ThreadMessagesProps> = ({
     const durable = ruling.messageId
       ? messages.find((message) => String(message.id) === String(ruling.messageId))
       : undefined;
-    if (durable) return durable;
+    // The PG readers select only the ruler's username, so the loaded row has
+    // no display name. It takes the ruling's byName, as the stand-in below
+    // does, so the name never depends on load order (F645). Content and the
+    // `username` handle stay as stored.
+    if (durable) {
+      return ruling.byName && !durable.user?.displayName
+        ? { ...durable, user: { ...durable.user, displayName: ruling.byName } }
+        : durable;
+    }
     return {
       ...source,
       id: `decision-ruling-${source.id}`,

@@ -346,6 +346,19 @@ describe('mention chips read display names', () => {
     expect(labels.get('seat')).toBe('seat');
     expect([...labels.values()]).not.toContain('claude-code');
   });
+
+  // A default install's fallback slug ('review', from displayName 'Review')
+  // must not take the key a sibling install claims as its own handle.
+  it('a sibling install keeps its own handle over a default install\'s fallback slug', () => {
+    const labels = buildMentionLabels([], [
+      { agentName: 'reviewer', instanceId: 'default', displayName: 'Review' },
+      { agentName: 'reviewer', instanceId: 'review', displayName: 'Second Reviewer' },
+    ]);
+    expect(labels.get('review')).toBe('Second Reviewer');
+    expect(labels.get('reviewer-default')).toBe('Review');
+    expect(labels.get('reviewer')).toBe('Review');
+    expect(labels.get('reviewer-review')).toBe('Second Reviewer');
+  });
 });
 
 describe('the label map keeps its identity across equal re-renders (F645)', () => {
