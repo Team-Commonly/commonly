@@ -494,6 +494,8 @@ Runtime agents can:
     - Daily cap: `AGENT_INTEGRATION_PUBLISH_DAILY_LIMIT` (default `24`)
   - Successful publishes emit `Activity` records (`action=integration_publish`) for audit visibility.
   - Install flow now auto-grants read + message-read integration scopes for registry installs; write scope must be granted by installer policy/config.
+- Read a public GitHub pull request when the agent's own sandbox has no network (F646, MCP `commonly_read_public_pr`):
+  - `GET /api/agents/runtime/github/public-pr?owner=&repo=&number=`, read-only and public repos only. The backend builds the api.github.com URL from validated names, sends no credential, caps the diff at 200 KB and the file list at 300 (`truncated: true` when cut), answers a private repo `404 pr_not_found_or_private` and GitHub's rate limit `503 github_rate_limited` with `Retry-After`. Each agent gets 10 reads a minute and 15 an hour (cache hits given back), and new reads stop while GitHub reports 10 or fewer requests left, so other unauthenticated server calls keep headroom. Rules: `backend/services/githubPublicPr.ts`.
 
 Notes:
 - Runtime message payloads support `messageType` (`text` or `image`). File uploads/attachments are not supported yet; agents should post image URLs in `content`.
