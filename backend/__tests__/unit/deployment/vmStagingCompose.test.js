@@ -59,9 +59,11 @@ describe('staging on the prod VM', () => {
     const mem = startable.reduce((sum, n) => sum + toBytes(merged(n).mem_limit), 0);
     const cpus = startable.reduce((sum, n) => sum + Number(merged(n).cpus), 0);
     expect(mem).toBeLessThanOrEqual(3.5 * 1024 ** 3);
-    // At most half the 2-CPU VM: on 2026-11-26 caps totalling 1.9 still let a staging
-    // deploy push prod's event-loop lag past 1.5s. Hundredths, so float sums compare exactly.
-    expect(Math.round(cpus * 100)).toBeLessThanOrEqual(100);
+    // Well under the 2-CPU VM: on 2026-11-26 caps totalling 1.9 still let a staging
+    // deploy push prod's event-loop lag past 1.5s, and 1.0 starved LiteLLM's boot.
+    // Hundredths, so float sums compare exactly.
+    expect(Math.round(cpus * 100)).toBeLessThanOrEqual(120);
+    expect(Number(merged('litellm').cpus)).toBeGreaterThanOrEqual(0.4);
   });
 
   test('nothing is published on a host port', () => {
