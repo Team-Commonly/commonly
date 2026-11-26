@@ -105,6 +105,9 @@ module.exports = {
           }, {
             group: ['**/models/AgentProviderKey', '**/models/AgentProviderKey.*'],
             message: 'Use repositories/agentProviderKeyRepository.',
+          }, {
+            group: ['**/models/HostedMcpDcrRegistration', '**/models/HostedMcpDcrRegistration.*'],
+            message: 'Use repositories/hostedMcpDcrRegistrationRepository.',
           }],
         }],
         'no-restricted-modules': ['error', {
@@ -120,6 +123,7 @@ module.exports = {
             '**/models/NeedsYouEmail', '**/models/NeedsYouEmail.*',
             '**/models/AgentTaskRowWakeState', '**/models/AgentTaskRowWakeState.*',
             '**/models/AgentProviderKey', '**/models/AgentProviderKey.*',
+            '**/models/HostedMcpDcrRegistration', '**/models/HostedMcpDcrRegistration.*',
           ],
         }],
       },

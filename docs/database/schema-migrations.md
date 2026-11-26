@@ -342,10 +342,48 @@ must be applied after `0025`, never before it.
   has the read's secret and generation.
 
 In `mongo` each makes its pre-step-2 Mongoose call. In `dual` and `pg-read`
-the owner read is `findOneWhere`, the sweep's is `findPageMongo`, the set,
-commit and remove are `findOneAndUpdateWhere` (decided on Mongo, the whole
+the owner read is `findOneWhere`, a launch's and the sweep's are `findPageMongo`
+(so neither decides on a lagging Postgres row), the set, commit and remove are `findOneAndUpdateWhere` (decided on Mongo, the whole
 document copied, so an `$inc` lands in Postgres as Mongo computed it), and the
 stamp is `setWhere`. `pg` refuses the writes until step 4, before any write.
+
+## Twelfth model: HostedMcpDcrRegistration
+
+`HostedMcpDcrRegistration` (the instance's OAuth Dynamic Client Registration
+client per hosted-MCP catalogue entry) follows the same template. Its table is
+`hosted_mcp_dcr_registrations` (`0027`): the Mongo `_id` as `id`, `entry_id`,
+`issuer`, `client_id`, `redirect_uri`, `token_endpoint_auth_method`,
+`client_secret_ref`, `client_secret_expires_at`, `current` (boolean), nullable
+`retired_at`, `refused_at` and `asked_at`, and nullable `created_at` and
+`updated_at`. Its two unique indexes are Mongo's: `(entry_id, issuer) WHERE
+current` and `(entry_id, issuer, client_id)`. Neither store has a TTL.
+`client_secret_ref` is the id of the `ConnectorSecret` that holds a
+confidential client's secret encrypted, never the secret.
+`STORE_MODE_HOSTED_MCP_DCR_REGISTRATION` selects the store. Its callers,
+`services/hostedMcpDcrRegistry.ts`, the orphaned-secret sweep in
+`services/installable/installableReconciler.ts` and
+`scripts/retire-hosted-mcp-dcr-client.ts`, import
+`repositories/hostedMcpDcrRegistrationRepository`; ESLint fences the model.
+`0027` must be applied after `0026`, never before it.
+
+- `findCurrentDcrRegistration(entry)` and `findUsableDcrRegistration(entry,
+  clientId)` read the client a start may reuse and the one a row may use.
+- `findDcrRegistrationSecretOwner(id)` tells the sweep whether a registration
+  still owns a secret; `listCurrentDcrRegistrations()` is the script's list.
+- `claimCurrentDcrRegistration(entry, fields)` is the first-start claim, one
+  winner by the partial unique index.
+- `retireDcrRegistrationById` and `retireCurrentDcrRegistration` stop a client
+  serving new starts.
+- `refuseDcrRegistration` marks a client the vendor refused, returning the
+  pre-image to exactly one caller; `claimDcrAsk` takes the once-an-interval
+  right to ask the vendor about a client.
+
+In `mongo` each makes its pre-step-2 Mongoose call (hydrated documents
+included). In `dual` and `pg-read` every read is `findPageMongo` (each one feeds
+a security decision, so none reads a possibly lagging Postgres row), the claim,
+refusal and ask are `findOneAndUpdateWhere` (decided on Mongo), and the retires
+are `setWhere`. `pg` reads Postgres and refuses the writes until step 4, before
+any write.
 
 For the next aggregate, expose its domain operations, keep Mongoose queries
 inside its repository, and return plain values. Do not expose `find`, `save`,
