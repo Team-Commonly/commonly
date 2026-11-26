@@ -180,16 +180,30 @@ guest never mounts. The file names its holder (pid, a per-take token, and a
 deadline: the turn's timeout plus 15 minutes from the take), and only an
 exclusive create takes it. Age alone never frees it. A waiter reclaims it only
 when the holder's pid is gone, or when the holder's own deadline has passed.
-The holder checks that deadline before preparing the HOME, before writing
-`config.toml`, before booting the VM, after msb exits, again after the
-post-exit VM check (which can take minutes) and before the cleanup, and
-touches the HOME no more after it, so a live pid past it is a reused pid or a
-holder that has stopped acting. One window is left: a check passes, then the
-host sleeps past the deadline before the step it guarded runs. That needs a
-suspend landing in that gap of milliseconds plus a guest winning a link race. A pid check that fails counts as alive. A lock that names no
-holder yet (between its create and its write) is left alone for a minute. A
-reclaim re-reads the file under a guard and deletes it only if the same file,
-with the same content and age, is still abandoned. A second turn of the seat
+The holder checks that deadline before every host step under the HOME: before
+preparing it, before writing `config.toml`, before booting the VM, after msb
+exits, after the post-exit VM check (which can take minutes), and inside the
+reply read and the cleanup before each folder check, read and removal. Once it
+has passed, the holder stops and touches the HOME no more, so a live pid past
+it is a reused pid or a holder that has stopped acting. This narrows the
+window and does not remove it: a check passes, then the holder stalls (a
+suspended laptop, a stopped process) for longer than the 15-minute margin
+before the one step that check guarded runs, a waiter takes the lock
+meanwhile, and that step then runs while the next turn's VM is up. A pid
+check that fails counts as alive. A lock that names no holder yet (between its
+create and its write) is left alone for a minute.
+
+Every removal of the lock, a takeover or the holder's release, runs under a
+short guard file (`<lock>.guard`, reading pid, token and a 30-second deadline)
+and acts only on the file it judged. It first renames the file to a name only
+it knows (atomic on Windows and macOS), then checks that file's content and
+inode there; a file that is not the judged one is put back with a no-clobber
+hard link. A takeover also re-reads the lock under the guard and goes ahead
+only if the same file, with the same content and age, is still abandoned. The
+guard follows the same rule as the lock: it is taken over only when its pid is
+gone or its own deadline has passed, never on age while its holder may act,
+and a guard holder past its deadline removes nothing. Node has no kernel file
+lock (`flock`) without a native addon, so this is the mechanism. A second turn of the seat
 waits up to two minutes, then refuses with `microvm_seat_busy`. It never runs
 unlocked.
 
@@ -290,7 +304,9 @@ instead of failing to resume it on every turn.
   `sandbox.microsandbox.test.mjs` covers the lock itself: a dead holder's lock
   is reclaimed, and so is one past its holder's deadline; a live holder's is
   never taken on age; an empty lock waits out its grace period; a lock replaced
-  during the judgement survives. It also covers the orphan sweep, the exact
+  during the judgement survives; a live guard inside its deadline is never
+  taken on age, and a removal puts back any file but the one it judged. It
+  also covers the orphan sweep, the exact
   version match, and the MCP declaration check `attach` shares with the turn.
 - `.github/workflows/cli-microsandbox-windows.yml` runs these on Windows. It then
   boots a real fenced VM with `cli/scripts/windows-microvm-smoke.mjs` and probes

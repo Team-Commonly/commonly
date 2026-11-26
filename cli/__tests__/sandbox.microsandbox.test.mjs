@@ -8,7 +8,7 @@
 import { jest } from '@jest/globals';
 import { createHash } from 'crypto';
 import {
-  existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, utimesSync, writeFileSync,
+  existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, utimesSync, writeFileSync,
 } from 'fs';
 import { tmpdir } from 'os';
 import { join } from 'path';
@@ -31,6 +31,7 @@ import {
   ensureMsb,
   ensureNoSeatVm,
   withSeatLock,
+  removeIfJudged,
   seatLockAbandoned,
   reportsVersion,
   stopOrphanSeatMsb,
@@ -687,6 +688,95 @@ describe('withSeatLock', () => {
   });
 });
 
+describe('the lock guard', () => {
+  let seats;
+  let home;
+  let lock;
+  let guard;
+  beforeEach(() => {
+    seats = mkdtempSync(join(tmpdir(), 'cli-seat-guard-'));
+    home = join(seats, 'abc123-public');
+    mkdirSync(home);
+    lock = join(seats, '.abc123-public.lock');
+    guard = `${lock}.guard`;
+  });
+  afterEach(() => { rmSync(seats, { recursive: true, force: true }); });
+
+  test('an old guard whose holder is alive and inside its deadline is never taken on age', async () => {
+    // An abandoned lock (dead pid), but its guard is held by a live process
+    // that is still inside its own deadline, though the file is old.
+    writeFileSync(lock, '999999 deadbeefdeadbeef 1\n');
+    writeFileSync(guard, `4242 cafecafecafecafe ${Date.now() + 10 * 60 * 1000}\n`);
+    const old = new Date(Date.now() - 10 * 60 * 1000);
+    utimesSync(guard, old, old);
+    const ran = jest.fn();
+    await expect(withSeatLock(home, ran, { pidAlive: (pid) => pid === 4242, pollMs: 10, waitMs: 150 }))
+      .rejects.toMatchObject({ code: 'microvm_seat_busy' });
+    expect(ran).not.toHaveBeenCalled();
+    expect(readFileSync(guard, 'utf8')).toMatch(/^4242 cafecafecafecafe /);
+    expect(readFileSync(lock, 'utf8')).toBe('999999 deadbeefdeadbeef 1\n');
+  });
+
+  test('a guard whose holder is gone, or past its own deadline, is taken over', async () => {
+    for (const content of ['999999 deadbeefdeadbeef 9999999999999\n', `4242 cafecafecafecafe ${Date.now() - 1000}\n`]) {
+      writeFileSync(lock, '999999 deadbeefdeadbeef 1\n');
+      writeFileSync(guard, content);
+      const ran = jest.fn();
+      // eslint-disable-next-line no-await-in-loop
+      await withSeatLock(home, ran, { pidAlive: (pid) => pid === 4242, pollMs: 10, waitMs: 1000 });
+      expect(ran).toHaveBeenCalledTimes(1);
+      expect(existsSync(guard)).toBe(false);
+      expect(existsSync(lock)).toBe(false);
+    }
+  });
+
+  test('removeIfJudged removes only the file it judged, and puts back any other', async () => {
+    writeFileSync(lock, 'B\n');
+    expect(await removeIfJudged(lock, (content) => content === 'A\n')).toBe('kept');
+    expect(readFileSync(lock, 'utf8')).toBe('B\n');
+    expect(await removeIfJudged(lock, (content) => content === 'B\n')).toBe('removed');
+    expect(existsSync(lock)).toBe(false);
+    expect(await removeIfJudged(lock, () => true)).toBe('gone');
+    expect(readdirSync(seats)).toEqual(['abc123-public']);
+  });
+
+  test('a lock swapped in after the judgement is the one put back, never removed', async () => {
+    // The judged file is replaced at the path between the check and the move:
+    // what is moved aside is the new one, so it fails the judgement and returns.
+    writeFileSync(lock, 'judged\n');
+    const realRename = (await import('fs/promises')).rename;
+    let swapped = false;
+    const io = {
+      rename: async (from, to) => {
+        if (!swapped && from === lock) {
+          swapped = true;
+          rmSync(lock);
+          writeFileSync(lock, 'new holder\n');
+        }
+        return realRename(from, to);
+      },
+      stat: (await import('fs/promises')).stat,
+      readFile: (await import('fs/promises')).readFile,
+      link: (await import('fs/promises')).link,
+      rm: (await import('fs/promises')).rm,
+    };
+    expect(await removeIfJudged(lock, (content) => content === 'judged\n', { io })).toBe('kept');
+    expect(readFileSync(lock, 'utf8')).toBe('new holder\n');
+    expect(readdirSync(seats).sort()).toEqual(['.abc123-public.lock', 'abc123-public']);
+  });
+
+  test('a release whose lock was taken over leaves the new holder\'s lock', async () => {
+    let releaseLock = null;
+    await withSeatLock(home, async () => {
+      releaseLock = readFileSync(lock, 'utf8');
+      writeFileSync(lock, '4242 cafecafecafecafe 9999999999999\n');
+    });
+    expect(releaseLock).toMatch(new RegExp(`^${process.pid} `));
+    expect(readFileSync(lock, 'utf8')).toBe('4242 cafecafecafecafe 9999999999999\n');
+    expect(existsSync(guard)).toBe(false);
+  });
+});
+
 describe('the install lock', () => {
   test('a live holder\'s lock under its hour is left alone (unchanged behaviour)', async () => {
     const root = mkdtempSync(join(tmpdir(), 'cli-install-lock-'));
@@ -701,8 +791,20 @@ describe('the install lock', () => {
 });
 
 describe('refuseMicrovmMcpDeclarations', () => {
-  test('a stdio server with a command passes; http, sse and a missing command refuse', () => {
-    expect(() => refuseMicrovmMcpDeclarations([{ name: 'commonly', command: ['node', 'x.js'] }])).not.toThrow();
+  test('only the Commonly server over stdio passes: the shipped spec, or a build whose package.json names it', () => {
+    expect(() => refuseMicrovmMcpDeclarations([{ name: 'commonly', command: ['npx', '-y', '@commonlyai/mcp'] }])).not.toThrow();
+    const describe = (command) => (command[1] === '/b/node_modules/@commonlyai/mcp/src/index.js' ? { isCommonly: true } : null);
+    expect(() => refuseMicrovmMcpDeclarations(
+      [{ name: 'commonly', command: ['node', '/b/node_modules/@commonlyai/mcp/src/index.js'] }],
+      { describe },
+    )).not.toThrow();
+    expect(() => refuseMicrovmMcpDeclarations([{ name: 'other', command: ['node', '/x/server.js'] }], { describe }))
+      .toThrow(/only the Commonly MCP server, on this computer, and other is another server/);
+    expect(() => refuseMicrovmMcpDeclarations([{ name: 'fs', command: ['npx', '-y', '@modelcontextprotocol/server-filesystem'] }]))
+      .toThrow(/fs is another server/);
+  });
+
+  test('http, sse and a missing command refuse', () => {
     expect(() => refuseMicrovmMcpDeclarations(undefined)).not.toThrow();
     expect(() => refuseMicrovmMcpDeclarations([{ name: 'broker', transport: 'http', url: 'https://x' }]))
       .toThrow(/over stdio, and broker is a http server/);

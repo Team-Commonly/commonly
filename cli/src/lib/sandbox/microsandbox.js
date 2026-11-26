@@ -31,11 +31,13 @@ import { createHash, randomBytes } from 'crypto';
 import { spawnSync } from 'child_process';
 import { existsSync, readFileSync, writeFileSync } from 'fs';
 import {
-  chmod, mkdir, mkdtemp, readFile, readdir, rename, rm, stat, writeFile,
+  chmod, link, mkdir, mkdtemp, readFile, readdir, rename, rm, stat, writeFile,
 } from 'fs/promises';
 import { homedir, tmpdir } from 'os';
 import { basename, dirname, join } from 'path';
 
+import { isShippedCommonlyMcpCommand } from '../declared-mcp-guard.js';
+import { describeMcpCommand } from '../mcp-server-version.js';
 import {
   MCP_BRIDGE_ENV, MCP_BRIDGE_SECRET_ENV, MCP_SHIM_SOURCE, hostMcpServers, startMcpBridge,
 } from './microsandbox-mcp-bridge.js';
@@ -196,9 +198,13 @@ export const checkMicrovmAttach = ({
 /**
  * Refuses an MCP declaration the microVM Codex turn can never run: anything
  * but a stdio server with a command (an HTTP or SSE server, the grant broker
- * included). Run at attach, before any registry write, and on every turn.
+ * included), and any stdio server that is not the Commonly MCP server (the
+ * shipped `npx -y @commonlyai/mcp` spec, or a build whose package.json names
+ * it). Run at attach, before any registry write, and on every turn. The turn
+ * resolves only the shipped spec to a home build (mcp-home.js planMcpSpawn),
+ * so judging the declared command here refuses the same set it would.
  */
-export const refuseMicrovmMcpDeclarations = (servers) => {
+export const refuseMicrovmMcpDeclarations = (servers, { describe = describeMcpCommand } = {}) => {
   for (const server of servers || []) {
     if (!server?.name) continue;
     const transport = typeof server.transport === 'string' ? server.transport.trim().toLowerCase() : 'stdio';
@@ -206,6 +212,10 @@ export const refuseMicrovmMcpDeclarations = (servers) => {
       throw new Error(`The microVM sandbox runs only the Commonly MCP server, over stdio, and ${server.name} `
         + `is ${transport === 'stdio' ? 'declared without a command' : `a ${transport} server`}. `
         + 'Remove it to run this seat in the microVM.');
+    }
+    if (!(isShippedCommonlyMcpCommand(server.command) || Boolean(describe(server.command)?.isCommonly))) {
+      throw new Error(`The microVM sandbox runs only the Commonly MCP server, on this computer, and ${server.name} `
+        + 'is another server: it would run outside the VM. Remove it to run this seat in the microVM.');
     }
   }
 };
@@ -667,38 +677,98 @@ const lockAbandoned = (content, mtimeMs, {
   return age > staleMs;
 };
 
-// The guard is held only for a read and an unlink, so one older than this was
-// left by a process that died inside that window.
-const INSTALL_LOCK_GUARD_STALE_MS = 30 * 1000;
+// How long a guard holder may act: it is held only for a read and a removal.
+// The guard reads `<pid> <token> <deadline>`, and its holder acts on the lock
+// only before that deadline.
+const LOCK_GUARD_HOLD_MS = 30 * 1000;
 
 /**
- * Runs `fn` holding `guard`, a short-lived lock that serialises every removal
- * of the install lock (a takeover or a release), so no removal can act on a
- * lock that changed after it was read.
+ * Removes `path` only if the file there is the one `isJudged(content, stat)`
+ * accepts. The file is first moved, atomically, to a name only this call
+ * knows, and judged there, so the file judged is the file removed. One that
+ * is not the judged file is put back with a no-clobber link; if the path was
+ * taken meanwhile, the moved file is dropped (its holder's own release then
+ * finds a lock that is not its own and leaves it). Returns 'gone' (nothing
+ * there), 'busy' (Windows would not move it now), 'removed' or 'kept'.
  */
-const withLockGuard = async (guard, fn, { now }) => {
+export const removeIfJudged = async (path, isJudged, { io = { rename, stat, readFile, link, rm } } = {}) => {
+  const aside = `${path}.${randomBytes(8).toString('hex')}.aside`;
+  try {
+    await io.rename(path, aside);
+  } catch (error) {
+    if (error?.code === 'ENOENT') return 'gone';
+    if (['EPERM', 'EBUSY', 'EACCES'].includes(error?.code)) return 'busy';
+    throw error;
+  }
+  const held = await io.stat(aside).catch(() => null);
+  const content = await io.readFile(aside, 'utf8').catch(() => null);
+  if (isJudged(content, held)) {
+    await io.rm(aside, { recursive: true, force: true });
+    return 'removed';
+  }
+  try {
+    await io.link(aside, path);
+  } catch (error) {
+    if (error?.code !== 'EEXIST') {
+      // No hard links on this filesystem: move it back if the path is still free.
+      const free = await io.stat(path).then(() => false, (e) => e?.code === 'ENOENT');
+      if (free) {
+        await io.rename(aside, path).catch(() => {});
+        return 'kept';
+      }
+    }
+  }
+  await io.rm(aside, { recursive: true, force: true });
+  return 'kept';
+};
+
+/**
+ * Runs `fn(stillMine)` holding `guard`, a short-lived lock that serialises
+ * every removal of the lock (a takeover or a release). A guard is taken over
+ * only as seatLockAbandoned says (its pid gone, or its own deadline passed;
+ * never on age while its holder may act), through removeIfJudged, so a
+ * waiter never removes a guard another waiter has just taken. `stillMine()`
+ * is false once this holder's deadline has passed, and the holder then
+ * removes nothing. Past `until` (when given), a waiter stops with `busy()`.
+ */
+const withLockGuard = async (guard, fn, {
+  now, pidAlive = defaultPidAlive, until = Infinity, busy = () => new Error(`${guard} is held`),
+}) => {
+  const token = randomBytes(8).toString('hex');
+  let mine;
+  let deadline;
   for (;;) {
+    deadline = now() + LOCK_GUARD_HOLD_MS;
+    mine = `${process.pid} ${token} ${deadline}\n`;
     try {
       // eslint-disable-next-line no-await-in-loop
-      await writeFile(guard, `${process.pid}\n`, { flag: 'wx' });
+      await writeFile(guard, mine, { flag: 'wx' });
       break;
     } catch (error) {
       if (error?.code !== 'EEXIST') throw error;
       // eslint-disable-next-line no-await-in-loop
       const held = await stat(guard).catch(() => null);
-      if (held && now() - held.mtimeMs > INSTALL_LOCK_GUARD_STALE_MS) {
+      // eslint-disable-next-line no-await-in-loop
+      const content = held ? await readFile(guard, 'utf8').catch(() => null) : null;
+      if (held && content !== null && seatLockAbandoned(content, held.mtimeMs, {
+        now, pidAlive, graceMs: LOCK_GUARD_HOLD_MS,
+      })) {
         // eslint-disable-next-line no-await-in-loop
-        await rm(guard, { force: true });
+        await removeIfJudged(guard, (c, st) => c === content && st?.ino === held.ino);
+      } else if (now() > until) {
+        throw busy();
       } else {
         // eslint-disable-next-line no-await-in-loop
         await new Promise((resolve) => { setTimeout(resolve, 20); });
       }
     }
   }
+  const stillMine = () => now() <= deadline;
   try {
-    return await fn();
+    return await fn(stillMine);
   } finally {
-    await rm(guard, { force: true }).catch(() => {});
+    // Past its deadline the guard may be another's already: leave it.
+    if (stillMine()) await removeIfJudged(guard, (c) => c === mine).catch(() => {});
   }
 };
 
@@ -722,6 +792,7 @@ export const withInstallLock = (root, fn, {
   waitMs,
   pollMs,
   now,
+  pidAlive,
   abandoned: (content, mtimeMs) => lockAbandoned(content, mtimeMs, { now, pidAlive }),
   busy: (lock) => new Error(`another turn is still installing the microVM sandbox (${lock}); try again shortly`),
 });
@@ -736,7 +807,7 @@ export const withInstallLock = (root, fn, {
 // of a lock that was replaced in between (its new holder still writing an
 // empty file) is never applied to the replacement.
 const withFileLock = async (root, name, fn, {
-  waitMs, pollMs = 500, now = Date.now, busy, abandoned, suffix = () => '',
+  waitMs, pollMs = 500, now = Date.now, busy, abandoned, suffix = () => '', pidAlive = defaultPidAlive,
 }) => {
   await mkdir(root, { recursive: true });
   const lock = join(root, name);
@@ -761,14 +832,17 @@ const withFileLock = async (root, name, fn, {
       // eslint-disable-next-line no-await-in-loop
       const seen = await observe();
       if (seen && abandoned(seen.content, seen.held.mtimeMs)) {
+        // The file judged is the file removed: removeIfJudged moves it aside
+        // and checks it there against the judgement.
+        const isJudged = (content, held) => content === seen.content && held?.ino === seen.held.ino
+          && held.mtimeMs === seen.held.mtimeMs && abandoned(content, held.mtimeMs);
         // eslint-disable-next-line no-await-in-loop
-        await withLockGuard(guard, async () => {
+        await withLockGuard(guard, async (stillMine) => {
           const again = await observe();
-          if (again && again.content === seen.content && again.held.ino === seen.held.ino
-            && again.held.mtimeMs === seen.held.mtimeMs && abandoned(again.content, again.held.mtimeMs)) {
-            await rm(lock, { force: true });
-          }
-        }, { now });
+          if (again && isJudged(again.content, again.held) && stillMine()) await removeIfJudged(lock, isJudged);
+        }, {
+          now, pidAlive, until: deadline, busy: () => busy(lock),
+        });
       } else if (now() > deadline) {
         throw busy(lock);
       } else {
@@ -780,12 +854,10 @@ const withFileLock = async (root, name, fn, {
   try {
     return await fn();
   } finally {
-    await withLockGuard(guard, async () => {
-      const current = await readFile(lock, 'utf8').then((text) => text, (error) => error);
-      // Not `instanceof Error`: fs errors can come from another realm (a test VM).
-      const unreadable = typeof current !== 'string' && current?.code !== 'ENOENT';
-      if (current === mine || unreadable) await rm(lock, { recursive: true, force: true });
-    }, { now }).catch(() => {});
+    await withLockGuard(guard, async (stillMine) => {
+      // Our own lock, or one that can't be read at all (never left behind).
+      if (stillMine()) await removeIfJudged(lock, (content) => content === mine || content === null);
+    }, { now, pidAlive }).catch(() => {});
   }
 };
 
@@ -807,10 +879,12 @@ const SEAT_LOCK_EMPTY_GRACE_MS = 60 * 1000;
  * A lock with no readable pid is abandoned only past SEAT_LOCK_EMPTY_GRACE_MS
  * (a holder still writing it).
  */
-export const seatLockAbandoned = (content, mtimeMs, { now = Date.now, pidAlive = defaultPidAlive } = {}) => {
+export const seatLockAbandoned = (content, mtimeMs, {
+  now = Date.now, pidAlive = defaultPidAlive, graceMs = SEAT_LOCK_EMPTY_GRACE_MS,
+} = {}) => {
   const [pidText, , deadlineText] = String(content).trim().split(/\s+/);
   const pid = Number.parseInt(pidText, 10);
-  if (!(Number.isInteger(pid) && pid > 0)) return now() - mtimeMs > SEAT_LOCK_EMPTY_GRACE_MS;
+  if (!(Number.isInteger(pid) && pid > 0)) return now() - mtimeMs > graceMs;
   let alive = true;
   try { alive = pidAlive(pid); } catch { alive = true; }
   if (!alive) return true;
@@ -837,6 +911,7 @@ export const withSeatLock = (home, fn, {
     waitMs,
     pollMs,
     now,
+    pidAlive,
     suffix: () => {
       deadline = now() + holdMs;
       return ` ${deadline}`;

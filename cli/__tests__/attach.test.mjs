@@ -789,6 +789,25 @@ describe('performAttach', () => {
     expect(client.post).not.toHaveBeenCalled();
   });
 
+  test('on win32 with the microVM flag, a public Codex seat declaring a third-party stdio server refuses before publishing', async () => {
+    const { error, client } = await attachMicrovm({
+      adapterName: 'codex',
+      whp: { available: true },
+      mcp: [{ name: 'files', command: ['npx', '-y', '@modelcontextprotocol/server-filesystem', '/'] }],
+    });
+    expect(error?.message).toMatch(/only the Commonly MCP server, on this computer, and files is another server/);
+    expect(client.post).not.toHaveBeenCalled();
+  });
+
+  test('on win32 with the microVM flag, the shipped Commonly MCP spec passes the declaration check', async () => {
+    const { error } = await attachMicrovm({
+      adapterName: 'codex',
+      whp: { available: true },
+      mcp: [{ name: 'commonly', command: ['npx', '-y', '@commonlyai/mcp'] }],
+    });
+    expect(error?.message || '').not.toMatch(/only the Commonly MCP server/);
+  });
+
   test('on win32 with the microVM flag, a public Codex seat with WHP off refuses before publishing', async () => {
     const { error, client } = await attachMicrovm({
       adapterName: 'codex', whp: { available: false, error: 'WinHvPlatform.dll is missing' },

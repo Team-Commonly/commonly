@@ -474,6 +474,22 @@ describe('the codex adapter in a microVM', () => {
       expect(await codexModule.guestRolloutExists(codexHome, SESSION, 10)).toBe(false);
     });
 
+    test('a folder of more entries than the cap is read only to the cap plus one, then closed', async () => {
+      // A stand-in for a folder of a million entries: the reader counts what
+      // is read from it and never ends on its own.
+      let reads = 0;
+      let closed = 0;
+      const openDir = async () => ({
+        read: async () => { reads += 1; return { name: `e${reads}`, isSymbolicLink: () => false, isDirectory: () => true, isFile: () => false }; },
+        close: async () => { closed += 1; },
+      });
+      fs.mkdirSync(path.join(home, 'codex-home', 'sessions'), { recursive: true });
+      const found = await codexModule.guestRolloutExists(path.join(home, 'codex-home'), SESSION, 50, { openDir });
+      expect(found).toBe(false);
+      expect(reads).toBe(51);
+      expect(closed).toBe(1);
+    });
+
     test('a rollout reached only through a link counts as absent', async () => {
       const elsewhere = fs.mkdtempSync(path.join(os.tmpdir(), 'cli-cmv-rollouts-'));
       try {
@@ -759,6 +775,9 @@ describe('the codex adapter in a microVM', () => {
       ['before writing config.toml', 1, /before writing config\.toml/],
       ['before booting the VM', 2, /before booting the VM/],
       ['before reading the reply', 4, /before reading the reply/],
+      // Inside readMicrovmReply: each of its host steps is checked too.
+      ['before the replies folder check of the read', 5, /before checking the replies folder/],
+      ['between the folder check and the file read', 6, /before reading the reply/],
     ])('a deadline passed %s stops the turn there, with no later HOME step', async (label, okCalls, message) => {
       fs.mkdirSync(path.join(home, 'codex-home'));
       fs.writeFileSync(path.join(home, 'codex-home', 'AGENTS.override.md'), 'from the guest');
@@ -790,6 +809,23 @@ describe('the codex adapter in a microVM', () => {
           .rejects.toThrow(/past its seat lock's deadline/);
       });
       expect(leftBehind().config).toBe(true);
+    });
+
+    test('a deadline that passes in the middle of the cleanup stops it before its next host step', async () => {
+      // The deadline passes once the reply has been removed: config.toml, the
+      // next step, must then be left for the next turn's prepare.
+      let replied = false;
+      const repliesEmpty = () => {
+        try { return fs.readdirSync(path.join(home, 'replies')).length === 0; } catch { return false; }
+      };
+      const lockedMid = (dir, fn) => fn({ pastDeadline: () => replied && repliesEmpty() });
+      const { impl } = recorder({ write: (hostReply) => { fs.writeFileSync(hostReply, 'ok'); replied = true; } });
+      const result = await withFlag('1', () => run(impl, {
+        extra: { _startProviderProxy: proxyStub().start, _withSeatLock: lockedMid },
+      }));
+      expect(result.text).toBe('ok');
+      expect(repliesEmpty()).toBe(true);
+      expect(fs.existsSync(path.join(home, 'codex-home', 'config.toml'))).toBe(true);
     });
 
     test('a VM msb could not confirm gone after its own exit: no reply is read and nothing is cleaned', async () => {

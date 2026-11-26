@@ -53,6 +53,7 @@ import {
   lstat,
   mkdir,
   mkdtemp,
+  opendir,
   readFile,
   readdir,
   readlink,
@@ -1528,6 +1529,8 @@ export const microvmHostMcpConfig = (servers, ctx = {}) => {
       unavailable.push(server.name);
       continue;
     }
+    // Our own server only: refuseMicrovmMcpDeclarations above judged the
+    // declared command, and the resolved one must be ours as well.
     if (!(isShippedCommonlyMcpCommand(server.command) || Boolean(describeMcpCommand(spawnCommand)?.isCommonly))) {
       throw new Error(`The microVM sandbox runs only the Commonly MCP server, on this computer, and ${server.name} `
         + 'is another server: it would run outside the VM. Remove it to run this seat in the microVM.');
@@ -1676,8 +1679,12 @@ export const prepareMicrovmCodexHome = async (home, ctx) => {
 
 // The turn's reply, read from the seat HOME after msb has exited, with every
 // folder on the way checked again (the guest could write them during the turn).
-const readMicrovmReply = async (home, name) => {
+// `beforeStep(step)` runs before each host step and throws once the seat
+// lock's deadline has passed, so no step starts after it.
+const readMicrovmReply = async (home, name, beforeStep = () => {}) => {
+  beforeStep('checking the replies folder');
   const replies = await ensureGuestDir(home, [GUEST_REPLIES_NAME]);
+  beforeStep('reading the reply');
   const read = await readGuestFile(replies, name, { maxBytes: MICROVM_REPLY_MAX_BYTES });
   if (!read) return '';
   const text = read.text.trim();
@@ -1686,15 +1693,28 @@ const readMicrovmReply = async (home, name) => {
 
 // After the turn: the reply and this turn's config.toml (it names the turn's
 // bridge secret) go, by the same no-follow rules. A refusal here leaves the
-// entry, since removing through a link is exactly what must not happen.
-const cleanMicrovmHome = async (home, replyName) => {
+// entry, since removing through a link is exactly what must not happen. Each
+// host step is preceded by `beforeStep`; once it throws (past the seat lock's
+// deadline) nothing more is touched, and the next turn's prepare clears what
+// is left.
+const cleanMicrovmHome = async (home, replyName, beforeStep = () => {}) => {
+  const step = async (name, action) => {
+    beforeStep(name);
+    return action();
+  };
   try {
-    await removeGuestEntry(await ensureGuestDir(home, [GUEST_REPLIES_NAME]), replyName);
-  } catch { /* left in place */ }
+    const replies = await step('checking the replies folder', () => ensureGuestDir(home, [GUEST_REPLIES_NAME]));
+    await step('removing the reply', () => removeGuestEntry(replies, replyName));
+  } catch (error) {
+    if (error?.code === MICROVM_PAST_DEADLINE) return;
+  }
   try {
-    await removeGuestEntry(await ensureGuestDir(home, [GUEST_CODEX_HOME_NAME]), 'config.toml');
+    const codexHome = await step('checking the Codex home', () => ensureGuestDir(home, [GUEST_CODEX_HOME_NAME]));
+    await step('removing config.toml', () => removeGuestEntry(codexHome, 'config.toml'));
   } catch { /* left in place */ }
 };
+
+const MICROVM_PAST_DEADLINE = 'microvm_past_seat_deadline';
 
 // Whether the guest Codex home holds the rollout of `sessionId`
 // (sessions/YYYY/MM/DD/*-<id>.jsonl), walked without following any link: a
@@ -1702,18 +1722,36 @@ const cleanMicrovmHome = async (home, replyName) => {
 // of the seat running.
 export const GUEST_ROLLOUT_ENTRY_CAP = 20000;
 
-export const guestRolloutExists = async (codexHome, sessionId, cap = GUEST_ROLLOUT_ENTRY_CAP) => {
+export const guestRolloutExists = async (codexHome, sessionId, cap = GUEST_ROLLOUT_ENTRY_CAP, {
+  openDir = opendir,
+} = {}) => {
   if (!sessionId) return false;
   const suffix = `-${sessionId}.jsonl`;
-  // sessions/ is guest-writable: a planted tree of many folders must not stall
-  // the host (which holds the seat lock meanwhile). Past the cap the thread
-  // counts as absent and starts fresh, which only costs this seat its thread.
+  // sessions/ is guest-writable: a planted tree of many folders, or one folder
+  // of a million entries, must not stall the host or run it out of memory
+  // (it holds the seat lock meanwhile). Each folder is read one entry at a
+  // time and at most the remaining budget plus one is read; past the cap the
+  // thread counts as absent and starts fresh, which only costs this seat its
+  // thread. Only a list that fits is sorted.
   let budget = cap;
   const dirsIn = async (dir) => {
     const info = await lstat(dir).catch(() => null);
     if (!info || info.isSymbolicLink() || !info.isDirectory()) return null;
-    return (await readdir(dir, { withFileTypes: true }).catch(() => []))
-      .sort((a, b) => b.name.localeCompare(a.name));
+    const handle = await openDir(dir).catch(() => null);
+    if (!handle) return [];
+    const entries = [];
+    try {
+      for (;;) {
+        // eslint-disable-next-line no-await-in-loop
+        const entry = await handle.read();
+        if (!entry) break;
+        entries.push(entry);
+        if (entries.length > budget) return null;
+      }
+    } finally {
+      await handle.close().catch(() => {});
+    }
+    return entries.sort((a, b) => b.name.localeCompare(a.name));
   };
   const walk = async (dir, depth) => {
     const entries = await dirsIn(dir);
@@ -1828,7 +1866,10 @@ const runMicrovmTurn = async ({
     const stopIfPastDeadline = (step) => {
       if (!pastDeadline()) return;
       killed = true;
-      throw new Error(`the codex turn passed its seat lock's deadline before ${step}; it leaves the HOME alone`);
+      throw Object.assign(
+        new Error(`the codex turn passed its seat lock's deadline before ${step}; it leaves the HOME alone`),
+        { code: MICROVM_PAST_DEADLINE },
+      );
     };
     try {
       providerProxy = await (ctx._startProviderProxy || startProviderProxy)({
@@ -1919,7 +1960,7 @@ const runMicrovmTurn = async ({
       // The check above can take minutes (msb's stop), so the deadline again.
       stopIfPastDeadline('reading the reply');
       vmGone = true;
-      const text = await readMicrovmReply(home, replyName);
+      const text = await readMicrovmReply(home, replyName, stopIfPastDeadline);
       if (!ran.turnCompleted && !text) throw adapterFailure('codex', 'the turn stopped before it finished');
       const newSessionId = ran.threadId || sessionId || null;
       const effort = ctx.environment?.effort;
@@ -1939,7 +1980,7 @@ const runMicrovmTurn = async ({
       if (!killed && !pastDeadline()) {
         try {
           if (!vmGone) confirmNoSeatVm();
-          await cleanMicrovmHome(home, replyName);
+          await cleanMicrovmHome(home, replyName, stopIfPastDeadline);
         } catch { /* left in place */ }
       }
       try { await turn?.close?.(); } catch { /* ignore */ }
