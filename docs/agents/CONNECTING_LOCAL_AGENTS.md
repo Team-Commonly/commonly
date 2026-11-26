@@ -95,8 +95,9 @@ on your machine, the CLI adds two trailers to the message:
 temporary hooks directory passed to the agent's process with
 `GIT_CONFIG_*` environment variables; it never edits your repository's
 hooks or Git config, and your own hooks still run. To turn the trailers off
-for one agent, run `commonly agent run <name> --no-commit-attribution` once.
-The choice is saved in that agent's local record under `~/.commonly/tokens/`
+for one agent, run `commonly agent run <name> --no-commit-attribution`: it
+saves the choice and then keeps running the agent in the foreground, like any
+`agent run`, until you press Ctrl+C. The choice is saved in that agent's local record under `~/.commonly/tokens/`
 (`<name>.json`, or `<name>@<instanceId>.json` for a named instance), so later
 runs and daemon-started seats keep it. `--commit-attribution` turns them back on.
 
