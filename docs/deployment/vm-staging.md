@@ -29,8 +29,29 @@ port. Prod's containers, volumes and network are never named.
 - **Hard caps on every service** (`mem_limit`, `cpus`): about 3.3 GB and 1.2 CPU
   at most in total (caps of 1.0 starved LiteLLM's boot on 2026-11-26; caps totalling 1.9 CPUs still let a staging deploy
   push prod's event-loop lag past 1.5 s on 2026-11-26), on an 8 GB, 2-CPU VM where prod uses about 2.3 GB.
-- **`cpu_shares: 256`**, a quarter of prod's default weight, so prod wins any CPU
-  contention 4:1.
+- **One low-weight slice for the whole stack.** Every staging container runs in
+  `staging.slice` (`cgroup_parent` in the shared caps), a top-level systemd slice at
+  `CPUWeight=10` beside `system.slice` at 100, which holds prod's containers. Under
+  contention the slice weight is what sets staging against prod: the whole stack
+  gets about a tenth of what prod's side gets, however many containers it starts.
+  Inside the slice, `cpu_shares: 256` (`cpu.weight` 10 on cgroup v2) only divides
+  the slice's share among staging's own containers. A 2-second sampler on
+  2026-11-26, before the slice, caught prod's backend waiting on CPU for 9.9 s in
+  a 20 s window during a staging boot, with eight or nine staging containers at
+  weight 10 each competing beside prod's.
+
+  **The weight trap.** Setting `CPUWeight` on `docker.service` or
+  `containerd.service` does not reach any container. With the systemd cgroup
+  driver each container is its own `docker-<id>.scope` under its slice
+  (`system.slice` by default), beside the daemons as a sibling, not under them as
+  a child. The daemon setting only slows the daemons' own work: image pulls, layer
+  extraction and container setup. Only per-container settings bound a container's
+  CPU: `cpu_shares` (weight under contention) and `cpus` (a hard ceiling), or a
+  `cgroup_parent` slice that you weight yourself. To check what actually applies,
+  read `/sys/fs/cgroup/<the container's cgroup>/cpu.weight` and `cpu.max`; the
+  container's cgroup path is in `/proc/<its pid>/cgroup`. On 2026-11-26 a
+  daemon-level `CPUWeight=20` was credited with ending prod's lag during staging
+  deploys. It never applied to the containers.
 - **`oom_score_adj: 500`**, so under memory pressure the kernel kills staging first.
 - **Stopped by default.** `down` removes the containers, and every service has
   `restart: "no"`, so nothing comes back after a VM or Docker restart.
@@ -94,12 +115,33 @@ and nothing more.
    `render-env-from-k8s.sh --namespace <staging namespace>` (staging has no
    commonly-bot, so leave that target out), into a private directory. Write
    `.env` with fresh passwords and copy everything in at mode 0600.
-3. Load the data: `pg_dump -Fc -n public` of the old staging Postgres, with the
+3. Install the staging slice, which every staging container joins through
+   `cgroup_parent` (added 2026-11-26):
+   ```bash
+   printf '[Unit]\nDescription=Commonly staging stack\nBefore=slices.target\n\n[Slice]\nCPUWeight=10\n' \
+     > /etc/systemd/system/staging.slice
+   systemctl daemon-reload && systemctl start staging.slice
+   ```
+   It sits at the top level, beside `system.slice` (weight 100), which holds prod's
+   containers. Two traps, both verified on the VM:
+   - **Install it before anything starts a staging container,** including the
+     data load below and the first `up`. With the unit missing, Docker's systemd
+     driver still places containers in a slice of that name, but systemd creates it
+     with the default weight of 100. That removes the protection without any error.
+   - **Keep the name free of dashes.** systemd reads `a-b.slice` as a child of
+     `a.slice`. A first try named `commonly-staging.slice` landed under an implicit
+     `commonly.slice` at weight 100, a top-level peer of all of `system.slice`. That
+     would have made staging stronger, not weaker.
+
+   To check, start staging and read `/sys/fs/cgroup/staging.slice/cpu.weight`, which
+   should be 10, and confirm the staging scopes are listed under that directory.
+   The `cpu.weight` file can be missing while the slice is empty.
+4. Load the data: `pg_dump -Fc -n public` of the old staging Postgres, with the
    LiteLLM excludes from single-vm.md's "Restore for real", then `pg_restore` into
    this project's Postgres as in that section; `mongodump --archive --gzip` of the
    old staging Mongo, then `mongorestore --drop`. The first load had 22 Postgres
    tables, plus 72 Mongo collections with 521 users and 24 pods.
-4. Install the CI entry and user:
+5. Install the CI entry and user:
    ```bash
    install -o root -g root -m 0755 staging/ci-entry.sh /usr/local/sbin/commonly-staging-ci
    useradd --system --create-home --shell /bin/sh staging-ci
@@ -111,26 +153,6 @@ and nothing more.
    ```
    Re-install `/usr/local/sbin/commonly-staging-ci` whenever `ci-entry.sh` changes.
    It runs from that copy, not the checkout.
-5. Install the staging slice, which every staging container joins through
-   `cgroup_parent` (added 2026-11-26):
-   ```bash
-   printf '[Unit]\nDescription=Commonly staging stack\nBefore=slices.target\n\n[Slice]\nCPUWeight=10\n' \
-     > /etc/systemd/system/staging.slice
-   systemctl daemon-reload && systemctl start staging.slice
-   ```
-   It sits at the top level, beside `system.slice` (weight 100), which holds prod's
-   containers. Two traps, both verified on the VM:
-   - **Install it before the first `up`.** With the unit missing, Docker's systemd
-     driver still places containers in a slice of that name, but systemd creates it
-     with the default weight of 100. That removes the protection without any error.
-   - **Keep the name free of dashes.** systemd reads `a-b.slice` as a child of
-     `a.slice`. A first try named `commonly-staging.slice` landed under an implicit
-     `commonly.slice` at weight 100, a top-level peer of all of `system.slice`. That
-     would have made staging stronger, not weaker.
-
-   To check, start staging and read `/sys/fs/cgroup/staging.slice/cpu.weight`, which
-   should be 10, and confirm the staging scopes are listed under that directory.
-   The `cpu.weight` file can be missing while the slice is empty.
 6. **Only one connector may serve a tunnel's hostnames.** Two connectors on one
    tunnel split the traffic between them, so a smoke may hit either. Stop any other
    staging connector before the first VM `up`.
