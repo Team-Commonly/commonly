@@ -13,7 +13,9 @@ const rateLimit = require('express-rate-limit');
 const auth = require('../../middleware/auth');
 const { cloudflareIpRateLimitKeyGenerator } = require('../../middleware/ipRateLimit');
 const { AgentRegistry, AgentInstallation } = require('../../models/AgentRegistry');
-const { resolveUnnamedInstanceId } = require('../../services/installInstanceId');
+const {
+  resolveUnnamedInstanceId, identityInUse, callerInstanceIds, newAgentIdentityWarning, uncheckedAgentIdentityWarning,
+} = require('../../services/installInstanceId');
 const AgentProfile = require('../../models/AgentProfile');
 const { isDefaultWorkspaceName } = require('../../config/defaultWorkspacePod');
 const AgentTemplate = require('../../models/AgentTemplate');
@@ -280,6 +282,20 @@ const installAgent = async (req: any, res: any, addition?: { alreadyInPod: Recor
       normalizedInstanceId = await resolveUnnamedInstanceId(displayName, agentName);
     }
     if (res.locals) res.locals.agentInstallInstanceId = normalizedInstanceId;
+
+    // F653: asked before any write. An install whose identity nobody holds mints
+    // a permanent agent (new User, empty memory), which a displayName-only call
+    // does without saying so. The pick stands; the answer says it. Best effort:
+    // a failed lookup never stops the install, and the answer then says it
+    // could not tell rather than saying nothing.
+    let identityCheck: 'new' | 'held' | 'unknown' | null = null;
+    if (!addition) {
+      try {
+        identityCheck = (await identityInUse(safeAgentName, normalizedInstanceId)) ? 'held' : 'new';
+      } catch {
+        identityCheck = 'unknown';
+      }
+    }
 
     // A personal pod holds the agent it was made with, and only while it's there.
     // ensureAgentInPod returns null for a DM and adds to an agent-admin pod, so
@@ -1302,6 +1318,18 @@ const installAgent = async (req: any, res: any, addition?: { alreadyInPod: Recor
       }).select('_id').lean()).map((pod: { _id: unknown }) => pod._id)
       : otherPodIds;
 
+    const warnings: Array<Record<string, unknown>> = [];
+    if (identityCheck === 'unknown') warnings.push(uncheckedAgentIdentityWarning(normalizedInstanceId));
+    if (identityCheck === 'new') {
+      let existing: string[] = [];
+      try {
+        existing = await callerInstanceIds(safeAgentName, userId, normalizedInstanceId);
+      } catch {
+        existing = [];
+      }
+      warnings.push(newAgentIdentityWarning(normalizedInstanceId, existing));
+    }
+
     res.json({
       success: true,
       installation: {
@@ -1318,6 +1346,7 @@ const installAgent = async (req: any, res: any, addition?: { alreadyInPod: Recor
       sharedIdentity: isReusingExistingAgent,
       otherPods: visibleOtherPodIds,
       hasExistingRuntimeToken: globalAgent.agentUser?.agentRuntimeTokens?.length > 0,
+      ...(warnings.length ? { warnings } : {}),
     });
   } catch (error) {
     if (addition && ((error as { code?: number }).code === 11000 || (error as Error).message === 'Agent already installed')) {
