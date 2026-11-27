@@ -66,13 +66,27 @@ const silentChild = () => {
   spawned.add(child);
   return child;
 };
-// A zombie (exited, not yet reaped by whoever adopted it) is not running.
-const isZombie = (pid) => {
-  try { return /^\d+ \(.*\) Z /.test(fs.readFileSync(`/proc/${pid}/stat`, 'utf8')); } catch { return false; }
-};
-const isRunning = (pid) => {
-  try { process.kill(pid, 0); } catch (e) { return e.code !== 'ESRCH'; }
-  return !isZombie(pid);
+// A zombie (exited, not yet reaped by whoever adopted it) is not running, and
+// neither is a pid whose /proc entry is gone after the signal check succeeded:
+// it was reaped between the two (F670). The read used to count that as "not a
+// zombie", so running, and a grandchild already seen gone came back as running
+// as init reaped it (ENOENT or ESRCH from the read). Any other read failure
+// (EMFILE, say) proves nothing, so it still counts as running: a check that
+// couldn't look must not pass a live process or skip its sweep. Where there is
+// no /proc (macOS), the signal check alone decides, as before.
+const HAS_PROC = fs.existsSync('/proc/self/stat');
+const isRunning = (pid, {
+  kill = process.kill.bind(process),
+  readStat = (p) => fs.readFileSync(`/proc/${p}/stat`, 'utf8'),
+  hasProc = HAS_PROC,
+} = {}) => {
+  try { kill(pid, 0); } catch (e) { return e.code !== 'ESRCH'; }
+  if (!hasProc) return true;
+  try {
+    return !/^\d+ \(.*\) [ZX] /.test(readStat(pid));
+  } catch (e) {
+    return e.code !== 'ENOENT' && e.code !== 'ESRCH';
+  }
 };
 const strayPids = new Set();
 // F340: the sweep once found a grandchild running that the test's own check had
@@ -110,6 +124,29 @@ afterEach(async () => {
     if (child.exitCode !== null || child.signalCode !== null) resolve(); else child.once('exit', resolve);
   })));
   expect(leaked.map((child) => `child ${child.pid} outlived its test`)).toEqual([]);
+});
+
+// The helper above decides whether the sweep waits on a process, so the order
+// it was fixed for gets its own check: the signal still reaches the pid, then
+// the process is reaped before /proc is read. Real processes can't force that
+// order, so both steps are stubbed.
+describe('the isRunning helper', () => {
+  const alive = () => {};
+  const failing = (code) => () => { throw Object.assign(new Error(code), { code }); };
+
+  test.each(['ENOENT', 'ESRCH'])('a process reaped before its /proc read (%s) is not running', (code) => {
+    expect(isRunning(4242, { kill: alive, readStat: failing(code), hasProc: true })).toBe(false);
+  });
+
+  test('a /proc read that fails for another reason (EMFILE) still counts as running', () => {
+    expect(isRunning(4242, { kill: alive, readStat: failing('EMFILE'), hasProc: true })).toBe(true);
+  });
+
+  test('a zombie or dead process is not running, and a sleeping process is', () => {
+    expect(isRunning(4242, { kill: alive, readStat: () => '4242 (node) Z 1 2 3', hasProc: true })).toBe(false);
+    expect(isRunning(4242, { kill: alive, readStat: () => '4242 (node) X 1 2 3', hasProc: true })).toBe(false);
+    expect(isRunning(4242, { kill: alive, readStat: () => '4242 (node) S 1 2 3', hasProc: true })).toBe(true);
+  });
 });
 
 describe('policy defaults', () => {

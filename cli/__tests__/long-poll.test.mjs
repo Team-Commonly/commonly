@@ -42,6 +42,14 @@ const stubAdapter = (await import('../src/lib/adapters/stub.js')).default;
 
 const EVENTS = '/api/agents/runtime/events';
 const sleep = (ms) => new Promise((resolve) => { setTimeout(resolve, ms); });
+// True if `promise` settles within `ms`, false if not; the timer is cleared either way.
+const within = (promise, ms) => {
+  let timer;
+  return Promise.race([
+    promise.then(() => true),
+    new Promise((resolve) => { timer = setTimeout(() => resolve(false), ms); }),
+  ]).finally(() => clearTimeout(timer));
+};
 const drainMicrotasks = async () => {
   for (let i = 0; i < 40; i += 1) {
     // eslint-disable-next-line no-await-in-loop
@@ -62,6 +70,12 @@ const fakeServer = ({ holdMs = 0, pages = [], failWith = null } = {}) => {
   const queue = [...pages];
   const polls = [];
   const signals = [];
+  const pollWaiters = [];
+  // Resolves once the server has seen `n` events polls, so a test waits on the
+  // poll itself, not on a wall-clock guess at when it lands (F670).
+  const untilPolls = (n) => new Promise((resolve) => {
+    if (polls.length >= n) resolve(); else pollWaiters.push({ n, resolve });
+  });
   const get = jest.fn((route, params, options) => {
     if (route !== EVENTS) {
       if (route.endsWith('/messages')) return Promise.resolve({ messages: [] });
@@ -69,6 +83,10 @@ const fakeServer = ({ holdMs = 0, pages = [], failWith = null } = {}) => {
       return Promise.resolve({});
     }
     polls.push(params);
+    for (const waiter of pollWaiters.filter((w) => polls.length >= w.n)) {
+      pollWaiters.splice(pollWaiters.indexOf(waiter), 1);
+      waiter.resolve();
+    }
     signals.push(options?.signal);
     if (failWith) return Promise.reject(failWith);
     const events = queue.length ? queue.shift() : [];
@@ -84,7 +102,7 @@ const fakeServer = ({ holdMs = 0, pages = [], failWith = null } = {}) => {
   });
   const post = jest.fn(async () => ({}));
   createClient.mockReturnValue({ get, post });
-  return { get, post, polls, signals };
+  return { get, post, polls, signals, untilPolls };
 };
 
 describe('long-poll helpers', () => {
@@ -296,9 +314,12 @@ describe('agent connect (startPoller)', () => {
       longPollWaitMs: 25_000, pollLivenessMs: 8_000, pollLivenessCheckMs: 50, onPollStalled: stalled,
     });
     try {
-      await sleep(3_400);
       expect(server.polls[0].waitMs).toBe(3_000);
-      // Held, so it polled again at once instead of sleeping its 100s interval.
+      // Held, so it polls again as the 3s hold answers, instead of sleeping its
+      // 100s interval. Wait for that second poll, bounded well short of 100s:
+      // a fixed 3.4s sleep lost the race whenever the runner stalled 400ms (F670).
+      const repolled = await within(server.untilPolls(2), 8_000);
+      expect(repolled).toBe(true);
       expect(server.polls.length).toBeGreaterThanOrEqual(2);
       expect(stalled).not.toHaveBeenCalled();
       expect(errors).toEqual([]);
