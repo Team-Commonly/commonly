@@ -231,7 +231,11 @@ const buildStamps = async (
   const agentBotId = asId(agentUser?._id);
   if (anyDmCheck) {
     let shared: Set<string> | null = new Set();
-    if (agentBotId && checkIds.size > 0) {
+    if (!agentBotId) {
+      // No bot id, so no lookup can run: the field stays null (not checked),
+      // never false (checked, shares nothing).
+      shared = null;
+    } else if (checkIds.size > 0) {
       try {
         // One aggregate answers which senders share any team pod with this
         // bot, with no limit: each pod is reduced to the senders it holds.

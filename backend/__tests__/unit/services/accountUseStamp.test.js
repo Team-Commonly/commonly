@@ -375,6 +375,16 @@ describe('requesterSharesTeamPod (DMs)', () => {
     expect(Pod.aggregate).not.toHaveBeenCalled();
   });
 
+  // Runtime auth leaves agentUser unset when no bot row matches the
+  // installation: no lookup can run, so nothing may be asserted either way.
+  it('with no bot user on the request, a DM row stays null, not false, and no query runs', async () => {
+    const [out] = await stampAccountUse([ev({ userId: HUMAN_A }, { podId: ROOM })], {
+      agentUser: undefined, credential: { ownerUserId: OWNER }, installations: byoInstallations,
+    });
+    expect(out.payload.accountUse.requesterSharesTeamPod).toBeNull();
+    expect(Pod.aggregate).not.toHaveBeenCalled();
+  });
+
   it('a page with no DM row makes no team-pod query', async () => {
     await stampAccountUse(
       [ev({ userId: STRANGER }), ev({ userId: LONER }, { podId: OPEN_POD })],
