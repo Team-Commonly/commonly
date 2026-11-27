@@ -11,6 +11,10 @@ jest.mock('../../../models/pg/Message');
 jest.mock('../../../models/Pod');
 jest.mock('../../../services/agentMentionService');
 jest.mock('../../../models/AgentRegistry');
+const mockActorForBotCaller = jest.fn().mockResolvedValue(null);
+jest.mock('../../../services/messageActorService', () => ({
+  actorForBotCaller: (...args) => mockActorForBotCaller(...args),
+}));
 jest.mock('../../../services/welcomeHostedStart', () => ({
   gateWelcomeHostedActions: jest.fn(async (messages) => messages),
 }));
@@ -485,5 +489,45 @@ describe('pgMessageController', () => {
       await controller.deleteMessage({ params: { id: '43' }, userId: 'owner-1', user: { id: 'owner-1' } }, res);
       expect(PGMessage.delete).toHaveBeenCalledWith('43');
     });
+  });
+});
+
+// F655: a bot row that posts through this person route with a user token is
+// an agent posting, so its message records the agent's owner. There is no
+// server-known trigger here, so it names no one it acted for.
+describe('pgMessageController agent author (F655)', () => {
+  afterEach(() => jest.clearAllMocks());
+
+  const post = async (extra) => {
+    PGPod.findById.mockResolvedValue({ type: 'chat' });
+    mongoPod(['u1']);
+    PGMessage.create.mockResolvedValue({ id: 'm1', content: 'done' });
+    PGMessage.findById.mockResolvedValue({ id: 'm1', content: 'done' });
+    AgentMentionService.isAutoRoutedDmPod.mockReturnValue(false);
+    AgentMentionService.enqueueMentions.mockResolvedValue({ enqueued: [], implicit: [], woken: [] });
+    AgentInstallation.countDocuments.mockResolvedValue(0);
+    await controller.createMessage({
+      params: { podId: 'p1' },
+      body: { content: 'done' },
+      userId: 'u1',
+      user: { id: 'u1', username: 'nova' },
+      ...extra,
+    }, jsonRes());
+  };
+
+  it('records the owner of a bot row posting with a user token', async () => {
+    const botCaller = { username: 'nova', botMetadata: { agentName: 'openclaw', instanceId: 'nova' } };
+    mockActorForBotCaller.mockResolvedValueOnce({ ownerUserId: '64b000000000000000000001' });
+    await post({ botCaller });
+    expect(mockActorForBotCaller).toHaveBeenCalledWith('p1', 'u1', botCaller);
+    expect(PGMessage.create).toHaveBeenCalledWith(
+      'p1', 'u1', 'done', 'text', null, null, null, null, null, null, false, null,
+      { ownerUserId: '64b000000000000000000001' },
+    );
+  });
+
+  it("a person's post records no actor and keeps the plain write", async () => {
+    await post({});
+    expect(PGMessage.create).toHaveBeenCalledWith('p1', 'u1', 'done');
   });
 });

@@ -12,6 +12,7 @@ const mongoose = require('mongoose');
 const request = require('supertest');
 const Pod = require('../../models/Pod');
 const User = require('../../models/User');
+const { AgentInstallation } = require('../../models/AgentRegistry');
 const podInvitesRoutes = require('../../routes/podInvites');
 const podRoutes = require('../../routes/pods');
 const { setupMongoDb, closeMongoDb, clearMongoDb } = require('../utils/testUtils');
@@ -108,5 +109,65 @@ describe('pod read: member names and agent owners', () => {
     await Pod.updateOne({ _id: pod._id }, { $pull: { members: owner._id } });
     const res = await get(`/api/pods/${pod._id}`, teammate);
     expect(memberById(res, agent).ownerName).toBeUndefined();
+  });
+  // F655: the chat byline reads the same owner, and an agent installed from
+  // the marketplace has no ownerUserId: its owner in this pod is its installer.
+  describe('owner by installation (F655)', () => {
+    let shared;
+    beforeEach(async () => {
+      shared = await makeUser('shared-nova', {
+        isBot: true,
+        botType: 'agent',
+        botMetadata: { agentName: 'openclaw', instanceId: 'nova', displayName: 'Nova' },
+      });
+      await Pod.updateOne({ _id: pod._id }, { $push: { members: shared._id } });
+      await AgentInstallation.create({
+        agentName: 'openclaw', instanceId: 'nova', podId: pod._id, installedBy: teammate._id, version: '1.0.0',
+      });
+    });
+
+    it('names the installer as owner when the agent has no ownerUserId', async () => {
+      await User.updateOne({ _id: teammate._id }, { $set: { displayName: 'Lily Shen' } });
+      const res = await get(`/api/pods/${pod._id}`, owner);
+      expect(memberById(res, shared)).toMatchObject({ isBot: true, ownerName: 'Lily Shen' });
+      expect(JSON.stringify(res.body)).not.toContain('installedBy');
+    });
+
+    it('prefers the installer over ownerUserId', async () => {
+      await User.updateOne({ _id: shared._id }, { $set: { 'botMetadata.ownerUserId': String(owner._id) } });
+      const res = await get(`/api/pods/${pod._id}`, owner);
+      expect(memberById(res, shared).ownerName).toBe(teammate.username);
+    });
+
+    it('tells the reader which agents are theirs, as a flag and never an id', async () => {
+      const asInstaller = await get(`/api/pods/${pod._id}`, teammate);
+      expect(memberById(asInstaller, shared).ownedByViewer).toBe(true);
+      expect(memberById(asInstaller, agent).ownedByViewer).toBeUndefined();
+      const asOwner = await get(`/api/pods/${pod._id}`, owner);
+      expect(memberById(asOwner, shared).ownedByViewer).toBeUndefined();
+      expect(memberById(asOwner, agent).ownedByViewer).toBe(true);
+    });
+
+    it('flags the agent as theirs for either owner: its own owner and the person who installed it', async () => {
+      // The owner's self-serve agent, installed here by the teammate: both own
+      // it, so neither is shown a label for it; a third member is told whose.
+      await User.updateOne({ _id: shared._id }, { $set: { 'botMetadata.ownerUserId': String(owner._id) } });
+      const third = await makeUser('third');
+      await Pod.updateOne({ _id: pod._id }, { $push: { members: third._id } });
+      const asOwner = await get(`/api/pods/${pod._id}`, owner);
+      expect(memberById(asOwner, shared)).toMatchObject({ ownerName: teammate.username, ownedByViewer: true });
+      const asInstaller = await get(`/api/pods/${pod._id}`, teammate);
+      expect(memberById(asInstaller, shared).ownedByViewer).toBe(true);
+      const asThird = await get(`/api/pods/${pod._id}`, third);
+      expect(memberById(asThird, shared).ownerName).toBe(teammate.username);
+      expect(memberById(asThird, shared).ownedByViewer).toBeUndefined();
+    });
+
+    it('names no owner for an official agent, and does not send the flag', async () => {
+      await User.updateOne({ _id: shared._id }, { $set: { 'botMetadata.officialAgent': true } });
+      const res = await get(`/api/pods/${pod._id}`, owner);
+      expect(memberById(res, shared).ownerName).toBeUndefined();
+      expect(JSON.stringify(res.body)).not.toContain('officialAgent');
+    });
   });
 });

@@ -65,7 +65,7 @@ real('message contract columns on real PostgreSQL', () => {
       '0020_needs_you_email_quotas.sql', '0021_agent_computer_takeovers.sql', '0022_billing_events.sql',
       '0023_discord_summary_histories.sql', '0024_needs_you_emails.sql', '0025_agent_task_row_wake_states.sql',
       '0026_agent_provider_keys.sql', '0027_hosted_mcp_dcr_registrations.sql',
-      '0028_waitlist_requests.sql', '0029_hand_backs.sql']);
+      '0028_waitlist_requests.sql', '0029_hand_backs.sql', '0030_message_actor.sql']);
     expect((await pool.query('SELECT content, summary, kind, receipt FROM messages')).rows)
       .toEqual([{
         content: 'kept', summary: null, kind: null, receipt: null,
@@ -77,6 +77,26 @@ real('message contract columns on real PostgreSQL', () => {
     beforeEach(async () => {
       await runPgMigrations(pool);
       await seed();
+    });
+
+    // F655: the actor columns, written by the server and never read back out.
+    it('stores the owner and the person answered, and no read or write returns them', async () => {
+      const owner = 'cccccccccccccccccccccc01';
+      const asker = 'cccccccccccccccccccccc02';
+      const row = await PGMessage.create(
+        POD, USER, 'Done.', 'text', null, null, null, null, null, { summary: 'Done', kind: 'result' },
+        false, null, { ownerUserId: owner, onBehalfOfUserId: asker },
+      );
+      const { rows: [kept] } = await pool.query(
+        'SELECT owner_user_id, on_behalf_of_user_id FROM messages WHERE id = $1', [row.id],
+      );
+      expect(kept).toEqual({ owner_user_id: owner, on_behalf_of_user_id: asker });
+      const reads = [row, await PGMessage.findById(String(row.id)), ...(await PGMessage.findByPodId(POD, 10)),
+        await PGMessage.update(String(row.id), 'Edited.')];
+      reads.forEach((read) => {
+        expect(read).not.toHaveProperty('owner_user_id');
+        expect(read).not.toHaveProperty('on_behalf_of_user_id');
+      });
     });
 
     it('stores both fields and returns them on findById and findByPodId', async () => {

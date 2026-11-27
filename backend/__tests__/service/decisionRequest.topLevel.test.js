@@ -58,6 +58,7 @@ const createPgMemPool = async () => {
     reply_to_message_id INTEGER,
     thread_root_id INTEGER,
     top_level_answer BOOLEAN,
+    owner_user_id VARCHAR(24), on_behalf_of_user_id VARCHAR(24),
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
   )`);

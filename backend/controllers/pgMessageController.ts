@@ -158,7 +158,15 @@ exports.createMessage = async (req: AuthRequest, res: Response): Promise<void> =
       return;
     }
 
-    const newMessage = await PGMessage.create(podId, userId, content);
+    // F655: a bot row posting with a user token is an agent posting; its
+    // message records the agent's owner. A person's post records nothing.
+    // eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
+    const actor = req.botCaller ? await require('../services/messageActorService').actorForBotCaller(
+      podId, userId, req.botCaller,
+    ) : null;
+    const newMessage = actor
+      ? await PGMessage.create(podId, userId, content, 'text', null, null, null, null, null, null, false, null, actor)
+      : await PGMessage.create(podId, userId, content);
     // Match the primary controller: the post-write JOIN supplies the author
     // for the response and wake frame, while the INSERT row remains a valid
     // persisted-message fallback if that re-read is unavailable.

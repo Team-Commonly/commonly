@@ -1897,6 +1897,33 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     expect(messageRow).toContain('<V2Lightbox');
   });
 
+  test('owner byline (F655): one muted line beside the name; only the owner name is cut', () => {
+    const chat = read('../chat/chat-message.css');
+    const owner = ruleBody(chat, '.v2-msg__owner');
+    expect(owner).toContain('display: inline-flex');
+    // A zero basis with a floor: on the phone it shrinks before it wraps, so
+    // an owner never pushes the head to a third line, and never grows past
+    // its own text.
+    expect(owner).toContain('flex: 1 1 0');
+    expect(owner).toContain('min-width: 8em');
+    expect(owner).toContain('max-width: max-content');
+    expect(owner).toContain('white-space: nowrap');
+    expect(owner).toContain('color: var(--v2-text-muted)');
+    // The name gives way with an ellipsis...
+    const name = ruleBody(chat, '.v2-msg__owner-name');
+    expect(name).toContain('min-width: 0');
+    expect(name).toContain('overflow: hidden');
+    expect(name).toContain('text-overflow: ellipsis');
+    // ...and "'s agent" / " 的智能体" never does, leading space kept.
+    const suffix = ruleBody(chat, '.v2-msg__owner-suffix');
+    expect(suffix).toContain('flex-shrink: 0');
+    expect(suffix).toContain('white-space: pre');
+    expect(owner).not.toContain('text-overflow');
+    expect(messageRow).toContain('className="v2-msg__owner"');
+    expect(messageRow).toContain('className="v2-msg__owner-name"');
+    expect(messageRow).toContain('className="v2-msg__owner-suffix"');
+  });
+
   test('threading restyle (PR 2b): runtime tag, 20px reaction chips, two-line quote, thread chip, band, strip, white jump pill', () => {
     // The runtime is plain mono joined to the time, "claude · 1:16 AM".
     expect(ruleBody(v2, '.v2-msg__tag')).toContain('font: 500 11.5px/16px var(--v2-font-mono)');

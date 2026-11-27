@@ -71,7 +71,30 @@ interface PodActivityEntry {
   lastAt: unknown;
 }
 
-function formatMessage(msg: MessageRow): FormattedMessage {
+// F655 (migration 0030): an agent's message stores whose agent it is and the
+// person whose message started its run. They are person ids, so no read or
+// write of this model hands them back: every returned row and the formatter
+// go through this, and a serializer built on the model cannot send them.
+const ACTOR_COLUMNS = ['owner_user_id', 'on_behalf_of_user_id'] as const;
+function withoutActor<T>(row: T): T {
+  if (!row || typeof row !== 'object') return row;
+  const copy = { ...(row as Record<string, unknown>) };
+  ACTOR_COLUMNS.forEach((column) => { delete copy[column]; });
+  return copy as T;
+}
+
+const USER_ID = /^[a-f\d]{24}$/i;
+const actorId = (value: unknown): string | null => (
+  typeof value === 'string' && USER_ID.test(value) ? value : null
+);
+
+export interface MessageActor {
+  ownerUserId?: string | null;
+  onBehalfOfUserId?: string | null;
+}
+
+function formatMessage(raw: MessageRow): FormattedMessage {
+  const msg = withoutActor(raw);
   const pgId = msg.id ? msg.id.toString() : '';
   // A reconciled row answers to the Mongo id its clients already hold.
   const messageId = msg.legacy_mongo_id || pgId;
@@ -138,6 +161,11 @@ class Message {
     // F578: the person a first-contact greeting is for, handed to the
     // attention writer like answeringMessageId and never stored.
     greetedUserId: string | null = null,
+    // F655: whose agent posted this and the person whose message woke it.
+    // Derived by services/messageActorService from server state (the
+    // installation, the claimed wake message), not from request fields;
+    // written only when a value is present, and never returned.
+    actor: MessageActor | null = null,
   ): Promise<MessageRow> {
     if (replyToMessageId != null && replyToMessageId !== '') {
       const resolvedReply = await Message.resolveId(replyToMessageId);
@@ -187,6 +215,10 @@ class Message {
     if (contract?.summary) { contractColumns.push('summary'); contractValues.push(contract.summary); }
     if (contract?.kind) { contractColumns.push('kind'); contractValues.push(contract.kind); }
     if (contract?.receipt) { contractColumns.push('receipt'); contractValues.push(JSON.stringify(contract.receipt)); }
+    const ownerUserId = actorId(actor?.ownerUserId);
+    const onBehalfOfUserId = actorId(actor?.onBehalfOfUserId);
+    if (ownerUserId) { contractColumns.push('owner_user_id'); contractValues.push(ownerUserId); }
+    if (onBehalfOfUserId) { contractColumns.push('on_behalf_of_user_id'); contractValues.push(onBehalfOfUserId); }
     const extraColumns = contractColumns.map((column) => `, ${column}`).join('')
       + (topLevelAnswer ? ', top_level_answer' : '');
     // JSONB needs its cast: in an INSERT … SELECT list an untyped parameter
@@ -259,7 +291,7 @@ class Message {
       } catch (attentionErr) {
         console.warn('[Message.create] attention bookkeeping failed after insert:', (attentionErr as Error).message);
       }
-      return row;
+      return withoutActor(row);
     } catch (error) {
       const e = error as { message?: string };
       console.error('SQL Error in Message.create:', e.message);
@@ -337,6 +369,21 @@ class Message {
    */
   static async resolveId(id: string | number): Promise<string | null> {
     return resolvePgMessageId(id);
+  }
+
+  /**
+   * F655: who wrote one message, and in which pod, for the actor lookup on an
+   * agent's reply. Numeric PG ids only; anything else is nobody.
+   */
+  static async findAuthor(id: string | number): Promise<{ userId: string; podId: string } | null> {
+    if (!/^\d{1,10}$/.test(String(id))) return null;
+    const result = await (pool as PgPool).query(
+      'SELECT user_id, pod_id FROM messages WHERE id = $1',
+      [Number(id)],
+    );
+    const row = result.rows[0] as { user_id?: unknown; pod_id?: unknown } | undefined;
+    if (!row?.user_id) return null;
+    return { userId: String(row.user_id), podId: String(row.pod_id || '') };
   }
 
   static async findById(id: string): Promise<FormattedMessage | null> {
@@ -479,7 +526,7 @@ class Message {
       RETURNING *
     `;
     const result = await (pool as PgPool).query(query, [content, pgId]);
-    return result.rows[0] as unknown as MessageRow | undefined;
+    return withoutActor(result.rows[0] as unknown as MessageRow | undefined);
   }
 
   // ADR-020 D3: card status transitions rewrite the message's payload so
@@ -496,7 +543,7 @@ class Message {
     const result = await (pool as PgPool).query(query, [
       payload == null ? null : JSON.stringify(payload), pgId,
     ]);
-    return result.rows[0] as unknown as MessageRow | undefined;
+    return withoutActor(result.rows[0] as unknown as MessageRow | undefined);
   }
 
   static async delete(id: string): Promise<MessageRow | undefined> {
@@ -504,7 +551,7 @@ class Message {
     if (!pgId) return undefined;
     const query = `DELETE FROM messages WHERE id = $1 RETURNING *`;
     const result = await (pool as PgPool).query(query, [pgId]);
-    const deleted = result.rows[0] as unknown as MessageRow | undefined;
+    const deleted = withoutActor(result.rows[0] as unknown as MessageRow | undefined);
     // eslint-disable-next-line global-require
     const { resolve } = require('../../services/attentionItemService');
     await resolve('message', pgId);
@@ -514,7 +561,7 @@ class Message {
   static async deleteByPodId(podId: string): Promise<MessageRow[]> {
     const query = `DELETE FROM messages WHERE pod_id = $1 RETURNING *`;
     const result = await (pool as PgPool).query(query, [podId]);
-    const rows = result.rows as unknown as MessageRow[];
+    const rows = (result.rows as unknown as MessageRow[]).map(withoutActor);
     // eslint-disable-next-line global-require
     const { resolveMany } = require('../../services/attentionItemService');
     await resolveMany('message', rows.map((row) => row.id));

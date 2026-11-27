@@ -51,6 +51,8 @@ interface V2ThreadMessagesProps {
   // F509: ids of join notes whose agent is listening now.
   connectedIntroIds?: Set<string>;
   agentTags?: Map<string, string>;
+  /** F655: agent user id -> its owner's name, and whether the viewer is that owner. */
+  agentOwners?: Map<string, { name: string; mine?: boolean }>;
   agentAuthorKeys: Set<string>;
   onAuthorClick?: (author: string) => void;
   onOpenFile?: (fileName: string) => void;
@@ -167,6 +169,7 @@ const V2ThreadMessages: React.FC<V2ThreadMessagesProps> = ({
   ownerConnectLinks,
   connectedIntroIds,
   agentTags,
+  agentOwners,
   agentAuthorKeys,
   onAuthorClick,
   onOpenFile,
@@ -537,6 +540,7 @@ const V2ThreadMessages: React.FC<V2ThreadMessagesProps> = ({
                 ownerConnectLinks={ownerConnectLinks}
                 introConnectedNow={Boolean(connectedIntroIds?.has(String(message.id)))}
                 agentTags={agentTags}
+                agentOwners={agentOwners}
                 agentAuthorKeys={agentAuthorKeys}
                 onAuthorClick={onAuthorClick}
                 onOpenFile={onOpenFile}
@@ -750,6 +754,7 @@ const V2ThreadMessages: React.FC<V2ThreadMessagesProps> = ({
                     ownerConnectLinks={ownerConnectLinks}
                     introConnectedNow={Boolean(connectedIntroIds?.has(String(reply.id)))}
                     agentTags={agentTags}
+                    agentOwners={agentOwners}
                     agentAuthorKeys={agentAuthorKeys}
                     onAuthorClick={onAuthorClick}
                     onOpenFile={onOpenFile}

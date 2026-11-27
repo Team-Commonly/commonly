@@ -14,6 +14,10 @@ export interface V2PodMember {
   // Bot members only: the server's resolved label (pod detail), the same one
   // the rest of the app shows for this agent.
   displayLabel?: string;
+  // Bot members only, for a member reader: the owner's name (F402, F655), and
+  // a flag when the reader is that owner. Never the owner's id.
+  ownerName?: string;
+  ownedByViewer?: boolean;
 }
 
 export interface V2PodLastMessage {

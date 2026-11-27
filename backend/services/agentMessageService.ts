@@ -2225,11 +2225,27 @@ class AgentMessageService {
             authorKind?: 'kernel' | null,
             contract?: { summary: string | null; kind: string | null; receipt?: ByoReceipt | null } | null,
             topLevelAnswer?: boolean, greetedUserId?: string | null,
+            actor?: { ownerUserId?: string; onBehalfOfUserId?: string } | null,
           ): Promise<Record<string, unknown>>;
         };
-        // Only a greeting carries greetedUserId, so every other post keeps
-        // the shorter calls below.
-        const newMessage = greetedUserId
+        // F655: whose agent this is (by the installation key this post
+        // declares) and, for a native run, the person whose claimed message
+        // it answers. The reply edge is the agent's choice, so it is not
+        // passed. Stored on the row, never sent back out.
+        // eslint-disable-next-line @typescript-eslint/no-require-imports, global-require
+        const { resolveMessageActor } = require('./messageActorService');
+        const actor = await resolveMessageActor({
+          podId: String(podId), agentUser, agentName, instanceId, answeringMessageId, authorKind,
+        });
+        // Only a greeting carries greetedUserId, and only a post with an actor
+        // carries one, so every other post keeps the shorter calls below.
+        const newMessage = actor
+          ? await pgMessageStore.create(
+            String(podId), String(agentUser._id), content, messageType,
+            replyToMessageId, payload, resolvedThreadRootId, answeringMessageId, authorKind, contract,
+            false, greetedUserId, actor,
+          )
+          : greetedUserId
           ? await pgMessageStore.create(
             String(podId), String(agentUser._id), content, messageType,
             replyToMessageId, payload, resolvedThreadRootId, answeringMessageId, authorKind, contract,
