@@ -298,6 +298,8 @@ The awaiting-seat member card is **ambient** (persistence); the stalled-connect 
 2. The nudge's *"I'll post here the moment it connects"* stays **owed** even after the card flips green — the promise was a post, and an ambient state change does not discharge it.
 3. **Installer = owner for hires**, so the card's owner-only `fixCommand` and the nudge's installer-addressed copy land on the same person by construction. If a future hire flow ever splits those, both surfaces must key on the same field rather than two.
 
+> **Amended 2026-11-26 (F666).** The event is no longer a post. The nudge and its "I connected" confirmation were addressed to the installer and read by every member, so the event is now the installer's private Activity "Needs you" row (`kind: 'blocked'`, `source.type: 'stalled_connect'`, one per installation), which points at the agent's panel and resolves as `actioned` when the agent first connects. Pin 2's promise no longer exists, and pin 3 now lands the owner-only `fixCommand` and the private row on the same person.
+
 **Pin 3 verified, with a hole** (pod-architect). `installedBy` is `required: true`, populated on all 322 active installs, and `agentStateService:100` keys `isOwner` on exactly that field — one field, and because both surfaces read it they fail *together* rather than contradicting each other, which is the pin working.
 
 **But 53 of 322 have a BOT as `installedBy`** (mostly `commonly-bot`). For those, `isOwner` is false for every human: the card renders **no `fixCommand`** and the nudge has **no addressee**. For the funnel population it is small — **1 of 20** self-serve seats.

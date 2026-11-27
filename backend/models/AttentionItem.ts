@@ -1,7 +1,8 @@
 import mongoose, { Document, Model, Schema, Types } from 'mongoose';
 
 type AttentionKind = 'mention' | 'approval' | 'decision' | 'handoff' | 'blocked';
-export type AttentionSourceType = 'message' | 'approval' | 'decision_request' | 'task' | 'initiative' | 'hosted_mcp';
+export type AttentionSourceType = 'message' | 'approval' | 'decision_request' | 'task' | 'initiative' | 'hosted_mcp'
+  | 'stalled_connect';
 
 interface IAttentionItem extends Document {
   recipientUserId: Types.ObjectId;
@@ -27,12 +28,14 @@ interface IAttentionItem extends Document {
   // only attention that predates that reply, instead of treating any message
   // in the pod as an acknowledgement.
   sourceCreatedAt?: Date;
+  /** A stalled-connect row: the episode that last wrote it, which alone may close it (F666). */
+  stalledConnectEpisodeId?: string;
   status: 'open' | 'resolved';
   resolvedAt?: Date;
   // Mention rows may resolve when their recipient replies; mention and handoff
   // rows also support an explicit recipient acknowledgement. `actioned` means the
   // recipient did what the row asked, outside the thread (today: started the
-  // agent a stalled-connect nudge asked them to start). An agent's mention
+  // agent a stalled-connect row asked them to start). An agent's mention
   // nobody answered in its thread for a week leaves the queue as `missed`:
   // resolved, never counted as acted on. An agent's [BLOCKED] post nobody
   // answered for a week leaves the same way (F648). Decision and approval actions have
@@ -56,7 +59,7 @@ const attentionItemSchema = new Schema<IAttentionItem>({
   podId: { type: Schema.Types.ObjectId, ref: 'Pod', required: true },
   kind: { type: String, enum: ['mention', 'approval', 'decision', 'handoff', 'blocked'], required: true },
   source: {
-    type: { type: String, enum: ['message', 'approval', 'approval_action', 'decision_request', 'task', 'initiative', 'hosted_mcp'], required: true },
+    type: { type: String, enum: ['message', 'approval', 'approval_action', 'decision_request', 'task', 'initiative', 'hosted_mcp', 'stalled_connect'], required: true },
     id: { type: String, required: true },
   },
   title: { type: String, required: true },
@@ -71,6 +74,7 @@ const attentionItemSchema = new Schema<IAttentionItem>({
   reviewOnCard: { type: Boolean },
   options: [optionSchema],
   sourceCreatedAt: { type: Date },
+  stalledConnectEpisodeId: { type: String },
   status: { type: String, enum: ['open', 'resolved'], default: 'open', required: true },
   resolvedAt: { type: Date },
   resolvedBy: { type: String, enum: ['replied', 'acknowledged', 'actioned', 'missed'] },

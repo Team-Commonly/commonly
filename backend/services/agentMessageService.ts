@@ -277,8 +277,9 @@ interface PostMessageOptions {
   // so a plain post may be filed in the thread its turn answers
   // (agentAnswerService.threadOfRunningTurn). The route clears it on mainChannel.
   inferAnswerThread?: boolean;
-  // Server-set, never model-set: only install intros and stalled-connect
-  // nudges speak beside an agent seat as Commonly. Ordinary agent posts stay
+  // Server-set, never model-set: install intros speak beside an agent seat as
+  // Commonly (stalled-connect nudges did until F666; that is now a private
+  // Needs-you row, never a post). Ordinary agent posts stay
   // unmarked even if their metadata happens to contain a similar label.
   authorKind?: 'kernel' | null;
   // Server-set, never model-set and never read from metadata: the fixed line a

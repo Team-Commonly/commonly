@@ -61,15 +61,18 @@ interface IStalledConnectEpisode extends Document {
   tokenSource?: 'installation' | 'user' | null;
   /** Which producer explained it. See the class comment. */
   producer: 'timer' | 'reactive';
-  /** When the episode opened. A nudge went out only if `nudgeMessageId` is set. */
+  /** When the episode opened. The installer was told only if `noticedAt` (or, before F666, `nudgeMessageId`) is set. */
   nudgedAt: Date;
+  /** Legacy: the pod post the nudge made before F666. New episodes never set it. */
   nudgeMessageId?: string;
-  /**
-   * The forward commitment the nudge makes ("I'll post here the moment it
-   * connects") has to be kept, or it is one more false promise — the exact
-   * defect #943 existed to remove. These two record that it was.
-   */
+  /** When the installer's private Needs-you row was written (F666). */
+  noticedAt?: Date;
+  /** When the episode closed: the agent connected, or there was nothing left to start. */
   resolvedAt?: Date;
+  /**
+   * Legacy: the "I connected" post a pre-F666 nudge promised and kept. Since
+   * F666 nothing is posted, so new episodes never set it.
+   */
   resolutionMessageId?: string;
   /**
    * Still unconnected goes to the installer's daily digest, never a second
@@ -97,6 +100,7 @@ const StalledConnectEpisodeSchema = new Schema<IStalledConnectEpisode>(
     producer: { type: String, enum: ['timer', 'reactive'], default: 'timer' },
     nudgedAt: { type: Date, required: true },
     nudgeMessageId: { type: String },
+    noticedAt: { type: Date },
     resolvedAt: { type: Date },
     resolutionMessageId: { type: String },
     digestedAt: { type: Date },

@@ -25,7 +25,7 @@ const { humansAnsweredBy } = require('./agentAnswerService');
 const { isListedPodMember } = require('../utils/isPodMember');
 
 type SourceType = 'message' | 'approval' | 'approval_action' | 'decision_request' | 'task' | 'initiative'
-  | 'hosted_mcp';
+  | 'hosted_mcp' | 'stalled_connect';
 type Kind = 'mention' | 'approval' | 'decision' | 'handoff' | 'blocked';
 type MentionOptions = {
   isAlreadyAcknowledged?: (recipientUserId: unknown, legacyMentionId: string) => boolean;
@@ -737,6 +737,93 @@ export const recordHostedMcpDrift = async (drift: {
   return { recorded: true };
 };
 
+// F666: an agent installed into a pod never connected. The ask ("start it") is
+// for the installer alone, so it is their private row, never a pod message
+// that every member reads. One row per installation: the source id is the
+// installation, and a later episode (a reissued token) reopens that same row
+// instead of adding a second. Callers write once per episode, so a pass that
+// runs again never reopens a row the person marked handled. `actorUserId` is
+// the agent, which is how its first listen finds the row to close. No email:
+// the daily digest already follows up on a stall (F502).
+//
+// Every write restamps `createdAt` (and `sourceCreatedAt`): the queue sorts and
+// `since`-filters on `createdAt`, so a row reopened for a reissue days later
+// must read as new, or it sorts under week-old work and a poller's window
+// never sees it come back. An uninstall does not close the row here: several
+// write paths uninstall, so the stalled-connect pass closes it on its next run.
+export const recordStalledConnect = async (notice: {
+  recipientUserId: unknown; podId: unknown; installationId: unknown; agentUserId?: unknown;
+  episodeId: unknown; title: string; detail: string;
+}): Promise<{ recorded: boolean; reason?: 'recipient_not_member' }> => {
+  const recipient = (await currentHumanMembers(notice.podId))
+    .find((member) => String(member._id) === String(notice.recipientUserId));
+  if (!recipient) return { recorded: false, reason: 'recipient_not_member' };
+  const pod = await Pod.findById(notice.podId).select('name').lean();
+  const sourceId = sourceKey('stalled_connect', notice.installationId);
+  const at = new Date();
+  await AttentionItem.updateOne(
+    { recipientUserId: recipient._id, 'source.type': 'stalled_connect', 'source.id': sourceId },
+    {
+      $set: {
+        status: 'open',
+        title: compact(notice.title, 200),
+        detail: compact(notice.detail, 600),
+        podName: pod?.name || 'Pod',
+        sourceCreatedAt: at,
+        stalledConnectEpisodeId: String(notice.episodeId),
+        ...(notice.agentUserId ? { actorUserId: notice.agentUserId } : {}),
+      },
+      $unset: { resolvedAt: 1, resolvedBy: 1 },
+      $setOnInsert: {
+        recipientUserId: recipient._id,
+        podId: notice.podId,
+        kind: 'blocked',
+        source: { type: 'stalled_connect', id: sourceId },
+      },
+    },
+    { upsert: true },
+  );
+  // `createdAt` is immutable under timestamps, and mongoose 7.8 strips a $set
+  // of it from a model update (overwriteImmutable included, measured), so the
+  // restamp goes through the driver. Same filter; the ids are already cast.
+  await AttentionItem.collection.updateOne(
+    { recipientUserId: recipient._id, 'source.type': 'stalled_connect', 'source.id': sourceId },
+    { $set: { createdAt: at } },
+  );
+  return { recorded: true };
+};
+
+/**
+ * The stalled-connect pass closes one episode's row: `actioned` when the agent
+ * connected, plain when there is nothing left to start. Matched on the episode
+ * that wrote the row, so a slow pass closing an old episode never closes the
+ * row a reissue reopened. Unlike `resolve`, a storage error throws, so the
+ * caller keeps the episode open and the next pass tries again.
+ */
+export const resolveStalledConnectEpisode = async (
+  installationId: unknown, episodeId: unknown, { actioned }: { actioned: boolean },
+): Promise<void> => {
+  const id = sourceKey('stalled_connect', installationId);
+  if (!id || !episodeId) return;
+  await AttentionItem.updateMany(
+    { 'source.type': 'stalled_connect', 'source.id': id, stalledConnectEpisodeId: String(episodeId), status: 'open' },
+    { $set: { status: 'resolved', resolvedAt: new Date(), ...(actioned ? { resolvedBy: 'actioned' } : {}) } },
+  );
+};
+
+/** The agent connected: every open stalled-connect row about it was acted on. */
+export const resolveStalledConnectForAgent = async (agentUserId: unknown): Promise<void> => {
+  if (!agentUserId) return;
+  try {
+    await AttentionItem.updateMany(
+      { 'source.type': 'stalled_connect', actorUserId: agentUserId, status: 'open' },
+      { $set: { status: 'resolved', resolvedAt: new Date(), resolvedBy: 'actioned' } },
+    );
+  } catch (error) {
+    console.warn('[attention] stalled-connect resolution failed; leaving item visible:', (error as Error).message);
+  }
+};
+
 export const resolveTaskAttention = async (task: any): Promise<void> => {
   const taskKey = String(task?._id || task?.taskId || '').trim();
   if (!taskKey) return;
@@ -799,10 +886,14 @@ export const sweepDoneTaskHandoffs = async ({ apply = false }: { apply?: boolean
 /**
  * Close a source's open rows as `actioned`: the recipient did what the row
  * asked, somewhere other than its thread. Used only where that action is
- * observable, today the stalled-connect nudge, whose ask ("start me") is met
+ * observable, today the stalled-connect row, whose ask ("start it") is met
  * when the agent first connects. Growth counts `actioned` as acted on.
  */
-export const resolveActioned = async (sourceType: SourceType, sourceId: unknown): Promise<void> => {
+// `strict` rethrows a storage error, for a caller that must not record the
+// source closed while its row stays open (the stalled-connect pass).
+export const resolveActioned = async (
+  sourceType: SourceType, sourceId: unknown, { strict = false }: { strict?: boolean } = {},
+): Promise<void> => {
   const id = sourceKey(sourceType, sourceId);
   if (!id) return;
   try {
@@ -811,16 +902,20 @@ export const resolveActioned = async (sourceType: SourceType, sourceId: unknown)
       { $set: { status: 'resolved', resolvedAt: new Date(), resolvedBy: 'actioned' } },
     );
   } catch (error) {
+    if (strict) throw error;
     console.warn('[attention] actioned resolution failed; leaving item visible:', (error as Error).message);
   }
 };
 
-export const resolve = async (sourceType: SourceType, sourceId: unknown): Promise<void> => {
+export const resolve = async (
+  sourceType: SourceType, sourceId: unknown, { strict = false }: { strict?: boolean } = {},
+): Promise<void> => {
   const id = sourceKey(sourceType, sourceId);
   if (!id) return;
   try {
     await AttentionItem.updateMany({ 'source.type': sourceType, 'source.id': id, status: 'open' }, { $set: { status: 'resolved', resolvedAt: new Date() } });
   } catch (error) {
+    if (strict) throw error;
     // The owning source already completed. Leave stale attention visible over
     // returning a false failure from a completed source action.
     console.warn('[attention] resolution storage failed; leaving item visible:', (error as Error).message);
@@ -924,8 +1019,10 @@ export const getOpenQueue = async (recipientUserId: unknown, options: OpenQueueO
   // has is the recoverable direction, and callers dedupe on `attentionItemId`.
   //
   // `createdAt` is stamped by mongoose at insert, from the model's own `now`, and
-  // no writer in this codebase sets it (the source's own time lives in
-  // `sourceCreatedAt`), so it orders rows by when they were STAMPED. That is what
+  // only one writer sets it after that: `recordStalledConnect` restamps it when
+  // a reissue reopens its row, so the reopened row reads as new to this window
+  // (the source's own time otherwise lives in `sourceCreatedAt`). So it orders
+  // rows by when they were STAMPED, or last reopened. That is what
   // makes the existing `find().sort({ createdAt: -1 })` cheap on the
   // `{recipientUserId, status, createdAt}` index. This bound never touches that
   // index: the whole-set counts above require the whole open set, so the window is
@@ -1104,6 +1201,6 @@ export const hasEverHadAttention = async (recipientUserId: unknown): Promise<boo
 // excluding true decisions and approvals.
 export const acknowledgeMention = acknowledgeAttention;
 
-export default { recordMentionedUsers, resolveMentionAttentionForReply, sweepResolvedMentionAttention, auditRepliedMentionAttention, sweepMissedAgentMentions, sweepStaleBlockedAttention, sweepDoneTaskHandoffs, recordApproval, recordActionApproval, recordDecision, recordTaskAttention, resolveTaskAttention, recordHostedMcpDrift, resolve, resolveActioned, resolveMany, getOpenQueue, hasEverHadAttention, acknowledgeAttention, acknowledgeMention };
+export default { recordMentionedUsers, resolveMentionAttentionForReply, sweepResolvedMentionAttention, auditRepliedMentionAttention, sweepMissedAgentMentions, sweepStaleBlockedAttention, sweepDoneTaskHandoffs, recordApproval, recordActionApproval, recordDecision, recordTaskAttention, resolveTaskAttention, recordHostedMcpDrift, recordStalledConnect, resolveStalledConnectEpisode, resolveStalledConnectForAgent, resolve, resolveActioned, resolveMany, getOpenQueue, hasEverHadAttention, acknowledgeAttention, acknowledgeMention };
 // eslint-disable-next-line @typescript-eslint/no-require-imports
-module.exports = { recordMentionedUsers, resolveMentionAttentionForReply, sweepResolvedMentionAttention, auditRepliedMentionAttention, sweepMissedAgentMentions, AGENT_MENTION_MISSED_DAYS, sweepStaleBlockedAttention, BLOCKED_STALE_DAYS, sweepDoneTaskHandoffs, recordApproval, recordActionApproval, recordDecision, recordTaskAttention, resolveTaskAttention, recordHostedMcpDrift, resolve, resolveActioned, resolveMany, getOpenQueue, hasEverHadAttention, acknowledgeAttention, acknowledgeMention, TASK_HANDOFF_CANDIDATE_RE, isHandoffRequest, handoffRecipients };
+module.exports = { recordMentionedUsers, resolveMentionAttentionForReply, sweepResolvedMentionAttention, auditRepliedMentionAttention, sweepMissedAgentMentions, AGENT_MENTION_MISSED_DAYS, sweepStaleBlockedAttention, BLOCKED_STALE_DAYS, sweepDoneTaskHandoffs, recordApproval, recordActionApproval, recordDecision, recordTaskAttention, resolveTaskAttention, recordHostedMcpDrift, recordStalledConnect, resolveStalledConnectEpisode, resolveStalledConnectForAgent, resolve, resolveActioned, resolveMany, getOpenQueue, hasEverHadAttention, acknowledgeAttention, acknowledgeMention, TASK_HANDOFF_CANDIDATE_RE, isHandoffRequest, handoffRecipients };
