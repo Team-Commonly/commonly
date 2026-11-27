@@ -26,6 +26,16 @@ await jest.unstable_mockModule('os', () => {
     homedir: () => homeTmpDir,
   };
 });
+// The run makes its hook proxy under node:os tmpdir(). A turn points that at
+// its own folder: setting TMPDIR can't, because jest gives this file a copy of
+// process.env while tmpdir() reads the real environment.
+let turnTmpdir = null;
+const runTmpdir = () => turnTmpdir || os.tmpdir();
+await jest.unstable_mockModule('node:os', () => ({
+  ...os,
+  default: { ...os, tmpdir: runTmpdir },
+  tmpdir: runTmpdir,
+}));
 await jest.unstable_mockModule('../src/lib/api.js', () => ({ createClient: createClientMock }));
 // As in run-loop.test.mjs: the turn path's pod-focus read is not the subject.
 await jest.unstable_mockModule('../src/lib/pod-focus.js', () => ({
@@ -225,7 +235,10 @@ describe('performRun with commitAttribution on and off', () => {
     encoding: 'utf8',
     env: { ...env, GIT_CONFIG_GLOBAL: '/dev/null', GIT_CONFIG_NOSYSTEM: '1' },
   });
-  const hooksDirs = () => fs.readdirSync(os.tmpdir()).filter((n) => n.startsWith('commonly-agent-hooks-'));
+  // Hook proxies are listed in this test's own temp folder: other test files
+  // make the same commonly-agent-hooks-* folders in the shared one, in
+  // parallel workers, so a diff of os.tmpdir() saw theirs.
+  const hooksDirs = (dir) => fs.readdirSync(dir).filter((n) => n.startsWith('commonly-agent-hooks-'));
 
   beforeEach(() => {
     savedGitEnv = Object.fromEntries(gitEnvKeys.map((k) => [k, process.env[k]]));
@@ -270,43 +283,53 @@ describe('performRun with commitAttribution on and off', () => {
       ? { installations: [{ podId: 'pod-abc', ...PRIVATE_POD_FLAGS }] }
       : { events }));
     createClientMock.mockReturnValue({ get, post: jest.fn().mockResolvedValue({}), del: jest.fn().mockResolvedValue({}) });
+    // The run's temp folder is this test's own for the turn.
+    const turnTmp = fs.mkdtempSync(path.join(root, 'tmp-'));
+    turnTmpdir = turnTmp;
     let seen = null;
     const spawn = jest.fn(async (_prompt, ctx) => {
       fixtureGit(['commit', '--allow-empty', '--quiet', '-m', 'agent work'], ctx.env);
-      seen = { env: ctx.env, commitAttributionEnv: ctx.commitAttributionEnv };
+      seen = { env: ctx.env, commitAttributionEnv: ctx.commitAttributionEnv, hooksDirsDuringTurn: hooksDirs(turnTmp) };
       return { text: 'done' };
     });
-    const before = new Set(hooksDirs());
-    const { stop } = performRun({
-      instanceUrl: 'http://localhost:5000',
-      token: 'cm_agent_test',
-      adapter: { name: 'codex', detect: async () => true, spawn },
-      agentName: 'my-seat',
-      instanceId: 'default',
-      setTimeoutImpl: () => 0,
-      ...runOptions,
-    });
-    await drain();
-    stop();
+    try {
+      const { stop } = performRun({
+        instanceUrl: 'http://localhost:5000',
+        token: 'cm_agent_test',
+        adapter: { name: 'codex', detect: async () => true, spawn },
+        agentName: 'my-seat',
+        instanceId: 'default',
+        setTimeoutImpl: () => 0,
+        ...runOptions,
+      });
+      await drain();
+      stop();
+    } finally {
+      turnTmpdir = null;
+    }
     expect(spawn).toHaveBeenCalledTimes(1);
     return {
       seen,
       message: fixtureGit(['log', '-1', '--format=%B']),
-      newHooksDirs: hooksDirs().filter((n) => !before.has(n)),
+      hooksDirsDuringTurn: seen.hooksDirsDuringTurn,
+      hooksDirsLeft: hooksDirs(turnTmp),
     };
   };
 
   test('by default the commit carries both trailers, and the person\'s hook still runs', async () => {
-    const { message, seen } = await oneTurn({});
+    const { message, seen, hooksDirsDuringTurn } = await oneTurn({});
     expect(message).toContain('Co-authored-by: my-seat <');
     expect(message).toContain('Agent-Model: codex/default/default');
     expect(seen.commitAttributionEnv).not.toBeNull();
+    // The proxy lands in the turn's own temp folder, so the off case below
+    // reads a folder the run really writes to.
+    expect(hooksDirsDuringTurn).toHaveLength(1);
     expect(fs.readFileSync(personHookMarker, 'utf8')).toBe('ran\n');
   });
 
   test('off: no trailers, no hook proxy, nothing installed, and the person\'s hook and config are left alone', async () => {
     const configBefore = fs.readFileSync(path.join(repo, '.git', 'config'), 'utf8');
-    const { message, seen, newHooksDirs } = await oneTurn({ commitAttribution: false });
+    const { message, seen, hooksDirsDuringTurn, hooksDirsLeft } = await oneTurn({ commitAttribution: false });
     expect(message).not.toContain('Co-authored-by');
     expect(message).not.toContain('Agent-Model');
     // Nothing attribution adds reaches the child: no core.hooksPath overlay,
@@ -314,7 +337,8 @@ describe('performRun with commitAttribution on and off', () => {
     expect(seen.commitAttributionEnv).toBeNull();
     expect(Object.keys(seen.env).filter((k) => k.startsWith('COMMONLY_AGENT_') && k !== 'COMMONLY_AGENT_TOKEN')).toEqual([]);
     expect(Object.values(seen.env)).not.toContain('core.hooksPath');
-    expect(newHooksDirs).toEqual([]);
+    expect(hooksDirsDuringTurn).toEqual([]);
+    expect(hooksDirsLeft).toEqual([]);
     // The person's own process-level git config reaches the child unchanged.
     expect(seen.env.GIT_CONFIG_COUNT).toBe('1');
     expect(seen.env.GIT_CONFIG_KEY_0).toBe('commit.verbose');
