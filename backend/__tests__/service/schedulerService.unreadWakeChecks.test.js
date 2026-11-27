@@ -141,6 +141,12 @@ const seedChecks = async () => {
 
 const isBatchWakeRead = (filter) => Boolean(filter && (filter.$or || filter.$and)
   && JSON.stringify(filter).includes('"deliveryMode":{"$ne":"digest"}'));
+// F668: the batched checks are AgentEvent.aggregate reads grouped by scope;
+// each one's filter is its first stage's $match.
+const matchOf = (pipeline) => pipeline?.[0]?.$match;
+const isBatchWakeAggregate = (pipeline) => isBatchWakeRead(matchOf(pipeline));
+const wakeCheckFilters = (aggregateSpy) => aggregateSpy.mock.calls
+  .map(([pipeline]) => matchOf(pipeline)).filter(isBatchWakeRead);
 
 describe('F635 — the unread-digest wake checks run in one batch', () => {
   beforeAll(async () => {
@@ -168,10 +174,10 @@ describe('F635 — the unread-digest wake checks run in one batch', () => {
       const expected = await seedChecks();
       const errorSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
       if (failBatch) {
-        const originalFind = AgentEvent.find;
-        jest.spyOn(AgentEvent, 'find').mockImplementation(function find(filter, ...rest) {
-          if (isBatchWakeRead(filter)) throw new Error('wake batch down');
-          return originalFind.call(this, filter, ...rest);
+        const originalAggregate = AgentEvent.aggregate;
+        jest.spyOn(AgentEvent, 'aggregate').mockImplementation(function aggregate(pipeline, ...rest) {
+          if (isBatchWakeAggregate(pipeline)) throw new Error('wake batch down');
+          return originalAggregate.call(this, pipeline, ...rest);
         });
       }
 
@@ -207,11 +213,13 @@ describe('F635 — the unread-digest wake checks run in one batch', () => {
     jest.spyOn(AgentEventService, 'enqueue').mockResolvedValue({});
     const existsSpy = jest.spyOn(AgentEvent, 'exists');
     const findSpy = jest.spyOn(AgentEvent, 'find');
+    const aggregateSpy = jest.spyOn(AgentEvent, 'aggregate');
 
     expect(await SchedulerService.dispatchUnreadDigestHeartbeats(NOW)).toBe(expected);
 
     expect(existsSpy).not.toHaveBeenCalled();
-    expect(findSpy.mock.calls.length).toBeLessThanOrEqual(2);
+    expect(findSpy.mock.calls.filter(([f]) => isBatchWakeRead(f))).toHaveLength(0);
+    expect(wakeCheckFilters(aggregateSpy).length).toBeLessThanOrEqual(2);
   });
 
   it('a failed batch read falls back to the per-group checks, still wakes, and logs once', async () => {
@@ -224,13 +232,10 @@ describe('F635 — the unread-digest wake checks run in one batch', () => {
     }
     await wakeEvent(scopes[1], { status: 'pending', attempts: 0 });
     const errorSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
-    const originalFind = AgentEvent.find;
-    jest.spyOn(AgentEvent, 'find').mockImplementation(function find(filter, ...rest) {
-      if (isBatchWakeRead(filter)) {
-        const q = { select: () => q, lean: () => Promise.reject(new Error('wake batch down')) };
-        return q;
-      }
-      return originalFind.call(this, filter, ...rest);
+    const originalAggregate = AgentEvent.aggregate;
+    jest.spyOn(AgentEvent, 'aggregate').mockImplementation(function aggregate(pipeline, ...rest) {
+      if (isBatchWakeAggregate(pipeline)) return Promise.reject(new Error('wake batch down'));
+      return originalAggregate.call(this, pipeline, ...rest);
     });
     const existsSpy = jest.spyOn(AgentEvent, 'exists');
 
@@ -251,12 +256,12 @@ describe('F635 — the unread-digest wake checks run in one batch', () => {
     // Delivered 2 hours ago: inside the long scope's day, outside the short
     // scope's hour, so it must not make the short group skip.
     await wakeEvent(short, { status: 'delivered', deliveredAt: minutesAgo(120) });
-    const findSpy = jest.spyOn(AgentEvent, 'find');
+    const aggregateSpy = jest.spyOn(AgentEvent, 'aggregate');
 
     expect(await SchedulerService.dispatchUnreadDigestHeartbeats(NOW)).toBe(2);
     expect(enqueuedKeys().sort()).toEqual([long, short].map(scopeKey).sort());
 
-    const recentFilters = findSpy.mock.calls.map(([f]) => f).filter((f) => f && f.status !== 'pending');
+    const recentFilters = wakeCheckFilters(aggregateSpy).filter((f) => f.status !== 'pending');
     expect(recentFilters).toHaveLength(1);
     const [filter] = recentFilters;
     expect(filter.$and).toBeUndefined();
@@ -290,10 +295,10 @@ describe('F635 — the unread-digest wake checks run in one batch', () => {
       status: 'pending', deliveryMode: 'digest', attempts: 0, createdAt: minutesAgo(150) });
     await digestEvent(scope, minutesAgo(150));
     await wakeEvent(scope, { status: 'delivered', deliveredAt: minutesAgo(90) });
-    const findSpy = jest.spyOn(AgentEvent, 'find');
+    const aggregateSpy = jest.spyOn(AgentEvent, 'aggregate');
 
     expect(await SchedulerService.dispatchUnreadDigestHeartbeats(NOW)).toBe(0);
-    const recent = findSpy.mock.calls.map(([f]) => f).find((f) => f && f.status !== 'pending');
+    const recent = wakeCheckFilters(aggregateSpy).find((f) => f.status !== 'pending');
     expect(recent.$or).toHaveLength(1);
   });
 
