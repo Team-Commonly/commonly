@@ -176,6 +176,11 @@ step 0 also counts, and each must be 0:**
 - documents whose `nudgeMessageId` or `resolutionMessageId` is set and is not a string
   (`{ nudgeMessageId: { $exists: true, $not: { $type: 'string' } } }`, and the same for the other): the
   explained-tokens read would count one, and the column would hold its text;
+- documents where any of those six fields is an array (`{ installationId: { $type: 'array' } }`, and the
+  same for `installedBy`, `tokenIssuedAt`, `nudgedAt`, `nudgeMessageId` and `resolutionMessageId`). A query
+  `$type` matches an array when one of its elements has the type, so an array holding a date passes the
+  `$not: { $type: 'date' }` count above, and the same goes for the ObjectId and string counts (and for the
+  value-set check below, so count `status`, `producer` and `tokenSource` as arrays too);
 - documents whose `status` is not `open` or `resolved`, whose `producer` is not `timer` or `reactive`, or
   whose `tokenSource` is set and is not `installation` or `user`.
 

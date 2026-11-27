@@ -160,7 +160,19 @@ describe('stalled-connect episode repository (ADR-034 step 2)', () => {
       const many = Array.from({ length: repo.MONGO_READ_PAGE + 3 }, () => insert({ nudgedAt: ago(30) }));
       await Episode.insertMany(many);
       process.env[ENV] = mode;
+      const paging = jest.spyOn(repo.stalledConnectEpisodeStore(), 'findPageMongo');
       expect(await repo.findDueStalledEpisodes(ago(24))).toHaveLength(repo.MONGO_READ_PAGE + 3);
+      // Bounded pages, each after the last _id of the one before.
+      expect(repo.MONGO_READ_PAGE).toBe(500);
+      expect(paging).toHaveBeenCalledTimes(2);
+      const [[firstFilter, firstOptions], [secondFilter, secondOptions]] = paging.mock.calls;
+      [firstOptions, secondOptions].forEach((options) => {
+        expect(options).toMatchObject({ sort: { _id: 1 }, limit: repo.MONGO_READ_PAGE });
+      });
+      expect(JSON.stringify(firstFilter)).not.toMatch(/\$gt/);
+      const firstPage = await paging.mock.results[0].value;
+      expect(secondFilter.$and[1]).toEqual({ _id: { $gt: firstPage[firstPage.length - 1]._id } });
+      expect((await paging.mock.results[1].value)).toHaveLength(3);
     });
 
     it('claims once under a race, copies the claim, and every change after it', async () => {
@@ -264,14 +276,26 @@ describe('stalled-connect episode repository (ADR-034 step 2)', () => {
   });
 
   it('pg: every write and every read refuses until step 4, before any write', async () => {
+    // A stored open episode, copied in dual, so it carries the store markers.
+    process.env[ENV] = 'dual';
+    const { _id: id } = await repo.claimStalledConnectEpisode(insert());
+    const before = await raw(id);
+    expect(before).toMatchObject({ status: 'open', pgVersion: 1 });
     process.env[ENV] = 'pg';
+    mockPg.current.calls.length = 0;
     const refused = /not supported in pg mode until step 4/;
+    const unchanged = async () => expect(await raw(id)).toEqual(before);
     await expect(repo.claimStalledConnectEpisode(insert())).rejects.toThrow(refused);
-    await expect(repo.recordNudgeMessage(new Types.ObjectId(), 'm')).rejects.toThrow(refused);
-    await expect(repo.resolveStalledConnectEpisode(new Types.ObjectId(), { status: 'resolved', resolvedAt: NOW }))
+    await unchanged();
+    await expect(repo.recordNudgeMessage(id, 'm')).rejects.toThrow(refused);
+    await unchanged();
+    await expect(repo.resolveStalledConnectEpisode(id, { status: 'resolved', resolvedAt: NOW }))
       .rejects.toThrow(refused);
-    await expect(repo.markStalledEpisodeDigested(new Types.ObjectId(), { digestedAt: NOW })).rejects.toThrow(refused);
-    await expect(repo.markStalledEpisodeDigested(new Types.ObjectId(), {})).rejects.toThrow(refused);
+    await unchanged();
+    await expect(repo.markStalledEpisodeDigested(id, { digestedAt: NOW })).rejects.toThrow(refused);
+    await unchanged();
+    await expect(repo.markStalledEpisodeDigested(id, {})).rejects.toThrow(refused);
+    await unchanged();
     await expect(repo.findExplainedEpisodes(['a'])).rejects.toThrow(refused);
     await expect(repo.findOpenEpisodesPage(null, 5)).rejects.toThrow(refused);
     await expect(repo.findDueStalledEpisodes(NOW)).rejects.toThrow(refused);
@@ -279,7 +303,8 @@ describe('stalled-connect episode repository (ADR-034 step 2)', () => {
     await expect(repo.findNewestOpenEpisodes(5)).rejects.toThrow(refused);
     await expect(repo.findEpisodeMessageFields(episodeReferenceQuery(), EPISODE_MESSAGE_FIELDS))
       .rejects.toThrow(refused);
-    expect(await Episode.countDocuments({})).toBe(0);
+    expect(await Episode.countDocuments({})).toBe(1);
+    await unchanged();
     expect(mockPg.current.calls).toEqual([]);
   });
 });

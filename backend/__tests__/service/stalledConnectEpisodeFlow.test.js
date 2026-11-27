@@ -19,6 +19,26 @@ const mockSendEmail = jest.fn();
 jest.mock('../../services/emailService', () => ({ sendEmail: mockSendEmail }));
 const mockPost = jest.fn();
 jest.mock('../../services/agentMessageService', () => ({ postMessage: (...args) => mockPost(...args) }));
+// The repository reads the services go through, as call-through spies: the real
+// read runs and its result flows back, and a service that queried the model
+// directly again would leave its spy uncalled. Wrapped here, before the
+// services load, because the digest services destructure them at require time.
+// Plain wrappers, not jest.fn(impl): restoreAllMocks would drop the impl.
+const mockReads = {};
+jest.mock('../../repositories/stalledConnectEpisodeRepository', () => {
+  const actual = jest.requireActual('../../repositories/stalledConnectEpisodeRepository');
+  const wrapped = {};
+  ['findExplainedEpisodes', 'findOpenEpisodesPage', 'findDueStalledEpisodes', 'findInstallerStalledEpisodes',
+    'findNewestOpenEpisodes'].forEach((name) => {
+    mockReads[name] = [];
+    wrapped[name] = (...args) => {
+      mockReads[name].push(args);
+      return actual[name](...args);
+    };
+  });
+  return { ...actual, ...wrapped };
+});
+const readCalls = (name) => mockReads[name];
 
 const { setupMongoDb, closeMongoDb } = require('../utils/testUtils');
 const User = require('../../models/User');
@@ -27,7 +47,7 @@ const AgentEvent = require('../../models/AgentEvent');
 const { AgentInstallation } = require('../../models/AgentRegistry');
 const Episode = require('../../models/StalledConnectEpisode');
 const { stalledConnectEpisodeStore } = require('../../repositories/stalledConnectEpisodeRepository');
-const { scan } = require('../../services/stalledConnectService');
+const { scan, RESOLVE_PAGE_SIZE } = require('../../services/stalledConnectService');
 const { DailyDigestService } = require('../../services/dailyDigestService');
 const ActivityService = require('../../services/activityService');
 const digestEmailService = require('../../services/digestEmailService');
@@ -84,6 +104,7 @@ describe(`stalled-connect episodes (${MODE})`, () => {
     mockPost.mockReset().mockResolvedValue({ success: true, message: { id: 'm1' } });
     jest.spyOn(emailReturns, 'noteSend').mockResolvedValue(undefined);
     jest.spyOn(console, 'warn').mockImplementation(() => {});
+    Object.values(mockReads).forEach((calls) => { calls.length = 0; });
   });
   afterEach(async () => {
     process.env = originalEnv;
@@ -107,6 +128,10 @@ describe(`stalled-connect episodes (${MODE})`, () => {
     const first = await scan({ now });
     expect(first.nudged).toHaveLength(1);
     expect(mockPost).toHaveBeenCalledTimes(1);
+    // The scan reads through the repository: the explained-tokens read for this
+    // agent, and the open-episode sweep from the start, one page at a time.
+    expect(readCalls('findExplainedEpisodes')).toEqual([[['flow-agent']]]);
+    expect(readCalls('findOpenEpisodesPage')[0]).toEqual([null, RESOLVE_PAGE_SIZE]);
     const [episode] = await Episode.find({}).lean();
     expect(episode).toMatchObject({ status: 'open', nudgeMessageId: 'm1', producer: 'timer' });
     if (MODE !== 'mongo') {
@@ -159,9 +184,16 @@ describe(`stalled-connect episodes (${MODE})`, () => {
 
   it('the digest says the line at +24h, marks it once the email is sent, then once more at +7d', async () => {
     const { me, episode } = await digestSetup(25);
-    expect((await DailyDigestService.stalledInstallerIds(new Date())).map(String)).toEqual([String(me._id)]);
+    const asked = new Date();
+    expect((await DailyDigestService.stalledInstallerIds(asked)).map(String)).toEqual([String(me._id)]);
+    // Who is due: the repository's read, with the cutoff 24h before the asked time.
+    expect(readCalls('findDueStalledEpisodes')).toEqual([[new Date(asked.getTime() - 24 * HOUR)]]);
 
     expect((await deliver(me)).content).toBe(LINE);
+    // The installer's lines: the repository's read, for this installer, cutoff about 24h ago.
+    const [[installer, cutoff]] = readCalls('findInstallerStalledEpisodes');
+    expect(String(installer)).toBe(String(me._id));
+    expect(Math.abs(cutoff.getTime() - (Date.now() - 24 * HOUR))).toBeLessThan(MINUTE);
     const marked = await Episode.findById(episode._id).lean();
     expect(marked.digestedAt).toBeInstanceOf(Date);
     expect(marked.digestedAgainAt).toBeUndefined();
@@ -203,6 +235,8 @@ describe(`stalled-connect episodes (${MODE})`, () => {
     });
     const first = await waiting.sweepWaitingOwnerEmails({ now: new Date() });
     expect(first).toMatchObject({ scanned: 1, sent: 1 });
+    // The newest open episodes, through the repository, at the sweep's 500 limit.
+    expect(readCalls('findNewestOpenEpisodes')).toEqual([[500]]);
     expect(mockSendEmail.mock.calls[0][0].to).toBe(me.email);
     expect((await waiting.sweepWaitingOwnerEmails({ now: new Date() })).sent).toBe(0);
   });
