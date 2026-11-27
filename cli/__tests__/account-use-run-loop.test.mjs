@@ -87,7 +87,8 @@ const mention = ({
 };
 
 // One run over one page. `installations` is the /installations answer, or an
-// Error to throw. `claimed: false` loses every message claim to a peer.
+// Error to throw. `claimed: false` loses every message claim to a peer; a
+// function of the message id decides each claim.
 // `environment` defaults to a confined seat, whose placement reads no pods.
 // `installations` may also be a list, one answer per read, the last repeating.
 // `podMessages: true` serves this agent's own posts back from the pod's message
@@ -95,7 +96,7 @@ const mention = ({
 const run = async ({
   events, adapterName = 'claude', installations = null, claimed = true,
   environment = { model: 'm', sandbox: { trust: 'public' } }, workspacePath, podMessages = false, failAcks = false,
-  detectBwrapImpl,
+  detectBwrapImpl, inboxBatchLimit,
 }) => {
   let polls = 0;
   let reads = 0;
@@ -122,7 +123,8 @@ const run = async ({
       });
     }
     if (!String(route).endsWith('/claim')) return {};
-    return claimed ? { claimed: true, expiresAt: 'later' } : { claimed: false, holder: { agentName: 'peer', instanceId: 'default' } };
+    const won = typeof claimed === 'function' ? claimed(decodeURIComponent(String(route).split('/').at(-2))) : claimed;
+    return won ? { claimed: true, expiresAt: 'later' } : { claimed: false, holder: { agentName: 'peer', instanceId: 'default' } };
   });
   const logs = [];
   createClient.mockReturnValue({ get, post, del: jest.fn().mockResolvedValue({}) });
@@ -137,6 +139,7 @@ const run = async ({
     log: (line) => logs.push(String(line)),
     retryJitterRatio: 0,
     ...(detectBwrapImpl ? { detectBwrapImpl } : {}),
+    ...(inboxBatchLimit ? { inboxBatchLimit } : {}),
     claimYieldDelayMs: 0,
     sleepImpl: async () => {},
     setTimeoutImpl: () => 0,
@@ -570,6 +573,32 @@ describe('the owner-only cue in an open pod', () => {
     expect(out.spawn).toHaveBeenCalledTimes(1);
     expect(promptOf(out)).toContain('[You run on your owner\'s own Claude Code account, so in this open pod you act only on '
       + 'your owner\'s requests.');
+  });
+
+  test('an item held past the cap does not decide it: the turn shows only a team-pod item', async () => {
+    // The older stamp says open, the shown item's stamp says team (the pod changed
+    // between them). The cue follows the items the turn presents.
+    const shown = mention({ from: OWNER, pod: TEAM });
+    const heldBack = mention({ from: OWNER });
+    const out = await run({ events: [shown, heldBack], inboxBatchLimit: 1 });
+    expect(out.spawn).toHaveBeenCalledTimes(1);
+    expect(promptOf(out)).toContain(shown.payload.content);
+    expect(promptOf(out)).not.toContain(heldBack.payload.content);
+    expect(promptOf(out)).not.toMatch(CUE);
+  });
+
+  test('settled context whose body the turn hides does not decide it either', async () => {
+    // A peer holds the older, open-stamped ambient post, so it is context and takes
+    // no slot; at a body limit of 1 its body is not shown. Only the shown team item decides.
+    const hidden = mention({ from: OWNER, type: 'message.posted' });
+    const shown = mention({ from: OWNER, pod: TEAM, type: 'message.posted' });
+    const out = await run({
+      events: [hidden, shown], inboxBatchLimit: 1, claimed: (messageId) => messageId !== hidden.payload.messageId,
+    });
+    expect(out.spawn).toHaveBeenCalledTimes(1);
+    expect(promptOf(out)).toContain(shown.payload.content);
+    expect(promptOf(out)).not.toContain(hidden.payload.content);
+    expect(promptOf(out)).not.toMatch(CUE);
   });
 
   test('the single-event path carries it too: the answer to the owner\'s own ask', async () => {
