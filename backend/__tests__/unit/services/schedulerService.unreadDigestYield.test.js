@@ -32,9 +32,12 @@ const SchedulerService = require('../../../services/schedulerService').construct
 
 const NOW = new Date('2026-11-26T12:06:00.000Z');
 const GROUPS = 1000;
+// A distinct pod id with the real shape (24 hex), so no case leans on an id
+// that a cast would refuse.
+const podIdAt = (i) => i.toString(16).padStart(24, '0');
 
 const groups = Array.from({ length: GROUPS }, (_, i) => ({
-  _id: { agentName: `seat${i}`, instanceId: 'default', podId: `pod${i}` },
+  _id: { agentName: `seat${i}`, instanceId: 'default', podId: podIdAt(i) },
   oldestAt: new Date(NOW.getTime() - 90 * 60000),
 }));
 
@@ -85,7 +88,7 @@ describe('F668 — the unread-digest pass yields between chunks', () => {
   describe('each traversal yields on its own', () => {
     let log;
     let immediateSpy;
-    const scopeAt = (i) => ({ agentName: `seat${i}`, instanceId: 'default', podId: `pod${i}` });
+    const scopeAt = (i) => ({ agentName: `seat${i}`, instanceId: 'default', podId: podIdAt(i) });
     const groupRow = (scope) => ({ _id: scope, oldestAt: new Date(NOW.getTime() - 90 * 60000) });
     const scopesOf = (filter) => (filter.$or || []).map(({ agentName, instanceId, podId }) => ({ agentName, instanceId, podId }));
 
