@@ -73,6 +73,8 @@ export const resolveUnnamedInstanceId = async (displayName: unknown, agentName: 
  * owns that identity: an owner-naming row of another user (hasForeignOwner) or
  * a bot User owned by someone else. Following the hint must never bind the
  * caller's pod to another person's agent and its memory.
+ * An id equal to the agent name is never named: the add-to-pod path can store
+ * one, but /install binds it as 'default'.
  * 'default' sorts first: it is the one a person most often meant.
  */
 export const callerInstanceIds = async (agentName: string, userId: unknown, exclude: string): Promise<string[]> => {
@@ -112,6 +114,9 @@ export const callerInstanceIds = async (agentName: string, userId: unknown, excl
     candidates.add(normalize(bot.botMetadata?.instanceId));
   }
   candidates.delete(exclude);
+  // /install rewrites an explicit instanceId equal to the agent name to
+  // 'default', so naming that id would send the caller to a different agent.
+  candidates.delete(name);
 
   const kept: string[] = [];
   for (const instanceId of candidates) {
@@ -140,6 +145,24 @@ export const newAgentIdentityWarning = (instanceId: string, existing: string[]) 
       : ''),
 });
 
+/**
+ * F653: the identity lookup failed, so whether this install made a new agent
+ * is unknown. Said anyway (a degraded check over-delivers), under its own code
+ * so nothing reads it as the certain notice, and with no reuse hint, since the
+ * caller's instances went unchecked too.
+ */
+export const uncheckedAgentIdentityWarning = (instanceId: string) => ({
+  code: 'agent_identity_unchecked',
+  instanceId,
+  message: `Could not confirm whether instance '${instanceId}' is an agent identity you already had. `
+    + 'If it is new, it has its own memory and no history; pass an explicit instanceId to choose the agent you mean.',
+});
+
 module.exports = {
-  deriveInstanceId, resolveUnnamedInstanceId, identityInUse, callerInstanceIds, newAgentIdentityWarning,
+  deriveInstanceId,
+  resolveUnnamedInstanceId,
+  identityInUse,
+  callerInstanceIds,
+  newAgentIdentityWarning,
+  uncheckedAgentIdentityWarning,
 };

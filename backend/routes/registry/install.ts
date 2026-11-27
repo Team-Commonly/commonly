@@ -14,7 +14,7 @@ const auth = require('../../middleware/auth');
 const { cloudflareIpRateLimitKeyGenerator } = require('../../middleware/ipRateLimit');
 const { AgentRegistry, AgentInstallation } = require('../../models/AgentRegistry');
 const {
-  resolveUnnamedInstanceId, identityInUse, callerInstanceIds, newAgentIdentityWarning,
+  resolveUnnamedInstanceId, identityInUse, callerInstanceIds, newAgentIdentityWarning, uncheckedAgentIdentityWarning,
 } = require('../../services/installInstanceId');
 const AgentProfile = require('../../models/AgentProfile');
 const { isDefaultWorkspaceName } = require('../../config/defaultWorkspacePod');
@@ -286,13 +286,14 @@ const installAgent = async (req: any, res: any, addition?: { alreadyInPod: Recor
     // F653: asked before any write. An install whose identity nobody holds mints
     // a permanent agent (new User, empty memory), which a displayName-only call
     // does without saying so. The pick stands; the answer says it. Best effort:
-    // a failed lookup leaves the warning out, never the install.
-    let mintsNewIdentity = false;
+    // a failed lookup never stops the install, and the answer then says it
+    // could not tell rather than saying nothing.
+    let identityCheck: 'new' | 'held' | 'unknown' | null = null;
     if (!addition) {
       try {
-        mintsNewIdentity = !(await identityInUse(safeAgentName, normalizedInstanceId));
+        identityCheck = (await identityInUse(safeAgentName, normalizedInstanceId)) ? 'held' : 'new';
       } catch {
-        mintsNewIdentity = false;
+        identityCheck = 'unknown';
       }
     }
 
@@ -1318,7 +1319,8 @@ const installAgent = async (req: any, res: any, addition?: { alreadyInPod: Recor
       : otherPodIds;
 
     const warnings: Array<Record<string, unknown>> = [];
-    if (mintsNewIdentity) {
+    if (identityCheck === 'unknown') warnings.push(uncheckedAgentIdentityWarning(normalizedInstanceId));
+    if (identityCheck === 'new') {
       let existing: string[] = [];
       try {
         existing = await callerInstanceIds(safeAgentName, userId, normalizedInstanceId);

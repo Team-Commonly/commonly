@@ -16,12 +16,19 @@ jest.mock('../../services/agentEventService', () => ({
   enqueue: jest.fn(async () => ({ _id: 'stub-event' })),
 }));
 
+// The real lookup, wrapped so one test can make it fail.
+jest.mock('../../services/installInstanceId', () => {
+  const actual = jest.requireActual('../../services/installInstanceId');
+  return { ...actual, identityInUse: jest.fn(actual.identityInUse) };
+});
+
 const { setupMongoDb, closeMongoDb } = require('../utils/testUtils');
 const User = require('../../models/User');
 const Pod = require('../../models/Pod');
 const { AgentRegistry, AgentInstallation } = require('../../models/AgentRegistry');
 const AgentIdentityService = require('../../services/agentIdentityService');
 const registryRoutes = require('../../routes/registry');
+const installInstanceId = require('../../services/installInstanceId');
 
 const JWT_SECRET = 'f653-new-agent-identity';
 const AGENT = 'f653-helper';
@@ -42,6 +49,22 @@ describe('install says when it mints a new agent identity (F653)', () => {
     .set('Authorization', bearer(user))
     .send({ agentName: AGENT, podId: String(podId), scopes: ['context:read'], ...body });
   const identityWarning = (res) => (res.body.warnings || []).find((w) => w.code === 'new_agent_identity');
+  // A row as another write path leaves it, bypassing the route.
+  const rawRow = (user, pod, instanceId, extra = {}) => AgentInstallation.collection.insertOne({
+    agentName: AGENT, instanceId, podId: pod._id, installedBy: user._id,
+    version: '1.0.0', status: 'active', createdAt: new Date(),
+    config: { heartbeat: { enabled: false } }, scopes: ['context:read'], displayName: AGENT,
+    ...extra,
+  });
+  const botUser = (instanceId, owner) => User.create({
+    username: AgentIdentityService.buildAgentUsername(AgentIdentityService.resolveAgentType(AGENT), instanceId),
+    email: `${instanceId}@agents.test.invalid`,
+    password: 'password123',
+    isBot: true,
+    botMetadata: {
+      agentName: AgentIdentityService.resolveAgentType(AGENT), instanceId, ownerUserId: String(owner._id),
+    },
+  });
 
   beforeAll(async () => {
     ['JWT_SECRET', 'PG_HOST'].forEach((key) => { saved[key] = process.env[key]; });
@@ -181,5 +204,71 @@ describe('install says when it mints a new agent identity (F653)', () => {
     expect(warning.existingInstanceIds).toEqual(['alice-own']);
     expect(warning.message).toContain("pass instanceId 'alice-own'");
     expect(JSON.stringify(res.body)).not.toContain('bob-own');
+  });
+
+  // Each fixture below is dropped by exactly one filter in callerInstanceIds,
+  // so removing that filter fails exactly that test. Alice's 'default' install
+  // keeps the hint non-empty, so the toEqual is never vacuous.
+
+  it('leaves out an instance the caller only reached by a mention, with no other owner', async () => {
+    expect((await install(alice, alicePod._id, { instanceId: 'default' })).status).toBe(200);
+    await rawRow(alice, alicePod, 'mention-only', {
+      config: { heartbeat: { enabled: false }, autoJoinSource: 'mention-resolution' },
+    });
+
+    const res = await install(alice, alicePod._id, { displayName: 'Fresh' });
+    expect(res.status).toBe(200);
+    expect(identityWarning(res).existingInstanceIds).toEqual(['default']);
+  });
+
+  it("leaves out an instance another person's install row owns, with no bot User", async () => {
+    expect((await install(alice, alicePod._id, { instanceId: 'default' })).status).toBe(200);
+    await rawRow(alice, alicePod, 'foreign-row');
+    await rawRow(bob, bobPod, 'foreign-row');
+
+    const res = await install(alice, alicePod._id, { displayName: 'Fresh' });
+    expect(res.status).toBe(200);
+    expect(identityWarning(res).existingInstanceIds).toEqual(['default']);
+  });
+
+  it('leaves out an instance whose bot User another person owns, with no foreign row', async () => {
+    expect((await install(alice, alicePod._id, { instanceId: 'default' })).status).toBe(200);
+    await rawRow(alice, alicePod, 'foreign-bot');
+    await botUser('foreign-bot', bob);
+
+    const res = await install(alice, alicePod._id, { displayName: 'Fresh' });
+    expect(res.status).toBe(200);
+    expect(identityWarning(res).existingInstanceIds).toEqual(['default']);
+  });
+
+  it('never names an instance id equal to the agent name, which /install would turn into default', async () => {
+    // The add-to-pod path can persist this id; an explicit one on /install is
+    // rewritten to 'default', so following the hint would bind another agent.
+    await rawRow(alice, alicePod, AGENT);
+
+    const res = await install(alice, alicePod._id, { displayName: 'Fresh' });
+    expect(res.status).toBe(200);
+    const warning = identityWarning(res);
+    expect(warning).toBeDefined();
+    expect(warning.existingInstanceIds).toBeUndefined();
+    expect(warning.message).not.toContain(`'${AGENT}'`);
+  });
+
+  it('a failed identity lookup still installs, and says only that it could not tell', async () => {
+    expect((await install(alice, alicePod._id, { instanceId: 'default' })).status).toBe(200);
+    installInstanceId.identityInUse.mockRejectedValueOnce(new Error('lookup down'));
+
+    const res = await install(alice, alicePod._id, { displayName: 'Fresh' });
+    expect(res.status).toBe(200);
+    expect(res.body.installation.instanceId).toBe('fresh');
+    // Never claims a new identity, and offers no unchecked reuse hint.
+    expect(identityWarning(res)).toBeUndefined();
+    const notice = (res.body.warnings || []).find((w) => w.code === 'agent_identity_unchecked');
+    expect(notice).toBeDefined();
+    expect(notice.instanceId).toBe('fresh');
+    expect(notice.existingInstanceIds).toBeUndefined();
+    expect(notice.message).toMatch(/could not confirm/i);
+    expect(notice.message).not.toMatch(/created a new agent identity/);
+    expect(notice.message).not.toMatch(/pass instanceId/);
   });
 });
