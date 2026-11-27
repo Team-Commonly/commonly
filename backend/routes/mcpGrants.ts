@@ -118,6 +118,12 @@ const CREDENTIAL_FAILURES: Record<HostedMcpCredentialErrorCode, { status: number
     status: 502,
     message: 'Another call is renewing this connection’s access. Try the call again shortly.',
   },
+  // F688: the instance's OAuth client config is missing, so the owner can't fix it.
+  client_unavailable: {
+    status: 502,
+    message: 'This connection can’t be used right now because of how Commonly is set up. '
+      + 'Ask whoever runs this Commonly instance to check its connector settings.',
+  },
 };
 
 const credentialFailureOf = (error: unknown): { status: number; message: string } | undefined => {
@@ -151,7 +157,8 @@ interface BrokerFailure {
  * nothing internal. Vendor text meant for the agent arrives typed.
  *
  * One untyped class is answered by code: a HostedMcpCredentialError is how an
- * agent learns the owner must reconnect, so it keeps its code with the fixed
+ * agent learns the owner must reconnect (or, for `client_unavailable`, that the
+ * instance admin must fix its connector settings), so it keeps its code with the fixed
  * text below, and its message is only logged. An unknown code falls through to
  * the fixed broker_error text.
  */

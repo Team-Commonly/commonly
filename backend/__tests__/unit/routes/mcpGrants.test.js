@@ -445,6 +445,10 @@ describe('a connection credential error on both grant routes', () => {
     ['reconnect_required', 403, 'This connection needs its owner to reconnect it in Commonly.'],
     ['refresh_unreachable', 502,
       'The provider could not renew this connection’s access just now. Try the call again later.'],
+    // F688: an instance configuration fault sends the agent to the instance admin, not the owner.
+    ['client_unavailable', 502,
+      'This connection can’t be used right now because of how Commonly is set up. '
+        + 'Ask whoever runs this Commonly instance to check its connector settings.'],
   ])('answers %s as its code and fixed text, never its message', async (code, status, text) => {
     mockCallTool.mockRejectedValue(new HostedMcpCredentialError(code, `${code}: ${INTERNAL}`));
 

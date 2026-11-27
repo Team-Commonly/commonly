@@ -450,6 +450,27 @@ describe('the gates before any refresh', () => {
     expect(h.refreshAtVendor).not.toHaveBeenCalled();
   });
 
+  test('an unavailable instance OAuth client is client_unavailable, not reconnect_required (F688)', async () => {
+    const h = harness({ row: live() });
+    h.deps.clientIdFor = jest.fn(() => {
+      throw Object.assign(new Error('LINEAR_CLIENT_ID is not set'), { code: 'client_not_configured' });
+    });
+
+    const error = await refusal(credentialFor(live(), h.deps));
+
+    expect(error.code).toBe('client_unavailable');
+    expect(error.retryable).toBeFalsy();
+    expect(error.message).not.toContain('LINEAR_CLIENT_ID');
+    // An instance fault never marks the row: restoring the value restores the row.
+    expect(h.deps.markClientMismatch).not.toHaveBeenCalled();
+    expect(h.markError).not.toHaveBeenCalled();
+    expect(h.bumpGeneration).not.toHaveBeenCalled();
+    expect(h.refreshAtVendor).not.toHaveBeenCalled();
+
+    const restored = harness({ row: live() });
+    await expect(credentialFor(live(), restored.deps)).resolves.toMatchObject({ token: expect.any(String) });
+  });
+
   test('a legacy connected row without a client snapshot remains usable until the backfill runs', async () => {
     const h = harness();
     const row = live({ clientId: undefined });

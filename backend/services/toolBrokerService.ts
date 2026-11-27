@@ -1588,6 +1588,8 @@ const stripVendorDiagnostics = (error: unknown): void => {
 export const executionErrorOutcome = (error: unknown): 'refused' | 'failed' | 'pending_approval' => {
   if (error instanceof SeatPushError) return error.statusCode < 500 ? 'refused' : 'failed';
   if (error instanceof HostedMcpCredentialError) {
+    // Only the owner-fixable refusals are refused; `client_unavailable` (an
+    // instance config fault, F688) and the vendor-side codes are failures.
     return error.code === 'reconnect_required' || error.code === 'connection_mismatch' ? 'refused' : 'failed';
   }
   if (!(error instanceof RoomGrantError)) return 'failed';

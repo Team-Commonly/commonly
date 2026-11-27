@@ -457,6 +457,7 @@ describe('a hosted-MCP grant through the broker', () => {
     'refresh_unreachable',
     'connection_error',
     'credential_refreshing',
+    'client_unavailable',
   ])('still offers pinned tools when credential lookup reports %s', async (code) => {
     mockRoomGrant.findOne.mockResolvedValue(hostedGrant());
     mockCredentialFor.mockRejectedValue(new HostedMcpCredentialError(code, code));
@@ -466,7 +467,7 @@ describe('a hosted-MCP grant through the broker', () => {
     expect(global.fetch).not.toHaveBeenCalled();
   });
 
-  it.each(['refresh_unreachable', 'credential_refreshing'])(
+  it.each(['refresh_unreachable', 'credential_refreshing', 'client_unavailable'])(
     'keeps %s as a failed call with its original credential reason', async (code) => {
       mockRoomGrant.findOne.mockResolvedValue(hostedGrant());
       mockCredentialFor.mockRejectedValue(new HostedMcpCredentialError(code, code));
