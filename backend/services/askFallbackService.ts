@@ -123,13 +123,17 @@ const firstHandoff = (key: string, nowMs: number): boolean => {
  * the person's words, ids and thread. `content` is the host's framed copy.
  */
 export async function handOffToHost({
-  podId, from, label, reason, payload, sender, excludeKeys, now = new Date(),
+  podId, from, label, reason, payload: givenPayload, storedPayload, sender, excludeKeys, now = new Date(),
 }: {
   podId: string;
   from: { agentName: string; instanceId?: string };
   label: string;
   reason: CannotRunReason;
   payload: Record<string, unknown>;
+  // The stored row a delivered `payload` was rendered from. A delivered payload
+  // already holds every joined message in its text (withCoalesced); the host's
+  // ask is rebuilt from this row so each reaches it once, under its author.
+  storedPayload?: Record<string, unknown> | null;
   // The person asking. The host is skipped when its owner asks first (F371):
   // an unrunnable agent is no way around that.
   sender: { isBot?: boolean; botMetadata?: unknown } | null;
@@ -137,6 +141,8 @@ export async function handOffToHost({
   excludeKeys?: Set<string>;
   now?: Date;
 }): Promise<string | null> {
+  const stored = storedPayload && typeof storedPayload === 'object' ? storedPayload : null;
+  const payload = stored || givenPayload;
   const messageId = payload.messageId ? String(payload.messageId) : '';
   const askerId = payload.userId ? String(payload.userId) : '';
   if (!messageId || !askerId || sender?.isBot !== false) return null;
@@ -151,13 +157,21 @@ export async function handOffToHost({
   if (!firstHandoff(`${podId}:${messageId}`, now.getTime())) return null;
   const first = typeof payload.rawContent === 'string' ? payload.rawContent : String(payload.content || '');
   // A joined row carries later messages, and joined messages can be other
-  // people's (mentionCoalesce.carriesOtherAuthors). The host gets every one
-  // that asked, as joined entries with their authors, so authority and the
-  // account-use stamp see each author, and delivery renders each message once
-  // under its own name (withCoalesced). How each reached the first agent
-  // (handoffCue, adjacency) says nothing about the host, so only the message
-  // and its author are kept.
-  const joined = (Array.isArray(payload.coalesced) ? payload.coalesced : []) as Array<Record<string, unknown>>;
+  // people's (mentionCoalesce.carriesOtherAuthors). From the stored row, the
+  // host gets every one that asked, as joined entries with their authors, so
+  // authority and the account-use stamp see each author, and delivery renders
+  // each message once under its own name (withCoalesced). How each reached the
+  // first agent (handoffCue, adjacency) says nothing about the host, so only
+  // the message and its author are kept.
+  //
+  // With no stored row, `payload` may be a delivered one whose text already
+  // holds every joined message, so its text is kept as is and no joined entry
+  // is carried: re-attaching them would deliver each twice. The trade-off is
+  // authorship: any joined message in that text (a notAnAsk one included)
+  // reads as the asker's, and carriesOtherAuthors and the account-use stamp
+  // see only the asker. Every caller that hands off a joined row passes the
+  // stored row (the native out-of-turns path), so this is the fallback only.
+  const joined = (stored && Array.isArray(stored.coalesced) ? stored.coalesced : []) as Array<Record<string, unknown>>;
   const carried = joined
     .filter((entry) => Boolean(entry) && !entry.notAnAsk && typeof entry.rawContent === 'string')
     .map((entry) => ({
