@@ -264,8 +264,11 @@ test('a runner that died holding the lease is replaced once it expires', async (
   const event = await web().enqueue(input);
   await waitFor(() => runAgent.mock.calls.length === 1, { timeout: 3000 });
   // The replacement ran it, and only after the lease it took over had expired.
-  expect(next.inProcessWork.size).toBe(1);
-  expect(dead.inProcessWork.size).toBe(0);
+  // inProcessRunning holds dispatched turns only (inProcessWork also counts
+  // queue passes, which tick every 20 ms here), and keeps the entry until the
+  // turn's runAgent returns.
+  expect([...next.inProcessRunning.values()].map((running) => String(running._id))).toEqual([String(event._id)]);
+  expect(dead.inProcessRunning.size).toBe(0);
   // Measured against the lease itself, not a fixed wait a slow runner outlasts.
   expect(startedAt[0]).toBeGreaterThanOrEqual(expiresAt.getTime());
   turns[0].resolve();
