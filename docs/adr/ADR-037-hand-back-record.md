@@ -194,9 +194,16 @@ plan_sent ──Accept──▶ plan_accepted ──hand-back──▶ handed_ba
   card `ruled`, it calls the subject's registered on-ruled hook, `handBackService.applyRuling(decision)`.
   The hook:
   - runs the compare-and-set above;
-  - on `accepted` with `next` set, enqueues `handback.received`.
+  - on `accepted` with `next` set, enqueues `handback.received`, then stamps the record's
+    `received_enqueued_at` (`WHERE received_enqueued_at IS NULL`).
 
-  Only the writer that wins the compare-and-set enqueues, so the event fires once.
+  Only the writer that wins the compare-and-set enqueues on the ruling path. The stamp is the durable
+  delivery obligation: the state commit and the enqueue are separate writes, so a failure or crash
+  after `accepted` commits leaves the record unstamped, and a `schedulerService` sweep delivers
+  `handback.received` for any `accepted` record still unstamped after a two-minute grace. The sweep
+  first looks for an event already queued, and stamps without enqueuing if it finds one. Delivery is
+  at least once: two overlapping sweeps can both queue it, which errs toward a second delivery, never
+  toward an event nobody sees.
 - **Reconciling a failed copy.** The Mongo ruling is the source of truth for the verdict. If the hook
   throws, the ruling stands on the card and the record is behind. Two paths catch it up, each running
   the same `applyRuling` compare-and-set:
@@ -205,11 +212,20 @@ plan_sent ──Accept──▶ plan_accepted ──hand-back──▶ handed_ba
   - a `schedulerService` sweep does the same for open records whose card is ruled. It also moves a
     still-`pending` card to `closed` when its record is `withdrawn`, which covers a failed second step
     of withdraw.
-- **Withdraw.** The route first moves the record to `withdrawn` by compare-and-set from any
-  non-terminal state, then moves the open card `pending → closed` with a conditional update, which
-  resolves its attention row through `attentionItemService.resolve`. If a ruling races in between,
-  the subject stage check refuses it. A ruling that has already finalized stays on the card, and
-  `applyRuling`'s compare-and-set doesn't copy it.
+- **Withdraw and a racing ruling share one lock.** A ruling and a withdraw both take the open card's
+  ruling lock (`claimRulingLock`), so they never both act:
+  - **A ruling** claims the lock, runs the subject stage check again under it, posts its reply, and
+    marks the card `ruled` only with a filter on its own lock token.
+  - **A withdraw** claims the same lock before it moves the record. If a ruling holds the lock, the
+    withdraw answers `409 ruling_in_progress` and can be retried. Holding the lock, it moves the record
+    to `withdrawn` by compare-and-set, matching the card it locked, then closes the card
+    `pending → closed` on the lock's token, which resolves its attention row through
+    `attentionItemService.resolve`.
+  - So a withdraw can't commit between a ruling's stage check and its card update. A ruling that
+    arrives during the withdraw hears that the card is being ruled, and on retry `409 decision_closed`.
+  - If the close fails, the lock expires and the sweep closes the card.
+  - **Known residual:** a ruling whose lock lease expires while its reply is still posting (issue
+    #4394).
 - **One message for the plan card.** The plan is posted once, as the decision card's own source
   message: `handBackService` calls `requestDecision`, which posts as the agent. `requestDecision` gains
   an internal metadata pass-through, so that message carries `metadata: { source: 'decision-request',
