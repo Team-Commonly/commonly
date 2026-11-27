@@ -317,13 +317,15 @@ describe('performRun with commitAttribution on and off', () => {
   };
 
   test('by default the commit carries both trailers, and the person\'s hook still runs', async () => {
-    const { message, seen, hooksDirsDuringTurn } = await oneTurn({});
+    const { message, seen, hooksDirsDuringTurn, hooksDirsLeft } = await oneTurn({});
     expect(message).toContain('Co-authored-by: my-seat <');
     expect(message).toContain('Agent-Model: codex/default/default');
     expect(seen.commitAttributionEnv).not.toBeNull();
     // The proxy lands in the turn's own temp folder, so the off case below
     // reads a folder the run really writes to.
     expect(hooksDirsDuringTurn).toHaveLength(1);
+    // And the run removes it once the turn ends.
+    expect(hooksDirsLeft).toEqual([]);
     expect(fs.readFileSync(personHookMarker, 'utf8')).toBe('ran\n');
   });
 
