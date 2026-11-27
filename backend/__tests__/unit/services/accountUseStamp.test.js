@@ -417,3 +417,85 @@ describe('requesterSharesTeamPod (DMs)', () => {
     warn.mockRestore();
   });
 });
+
+// Typed events that name who triggered them in their own field, not userId.
+describe('who triggered a typed event', () => {
+  const ruled = (ruledBy, extra = {}) => ev({
+    decisionId: 'd1', pick: 'Yes', ...(ruledBy ? { ruledBy } : {}),
+  }, { type: 'decision.ruled', ...extra });
+
+  it('the owner ruling on their own agent\'s decision is the owner, as a person', async () => {
+    const stamp = await stampOne(ruled({ userId: OWNER, username: 'sam' }));
+    expect(stamp.requesterUserIds).toEqual([OWNER]);
+    expect(stamp.requesterKind).toBe('human');
+  });
+
+  it('the owner ruling in a DM with their agent needs no team-pod check', async () => {
+    const stamp = await stampOne(ruled({ userId: OWNER, username: 'sam' }, { podId: ROOM }));
+    expect(stamp.requesterUserIds).toEqual([OWNER]);
+    expect(stamp.requesterKind).toBe('human');
+    expect(stamp.requesterSharesTeamPod).toBeNull();
+    expect(Pod.aggregate).not.toHaveBeenCalled();
+  });
+
+  it('a teammate ruling in an agent-room is that teammate, and the team-pod check runs', async () => {
+    const stamp = await stampOne(ruled({ userId: HUMAN_A, username: 'ana' }, { podId: ROOM }));
+    expect(stamp.requesterUserIds).toEqual([HUMAN_A]);
+    expect(stamp.requesterKind).toBe('human');
+    expect(Pod.aggregate).toHaveBeenCalledTimes(1);
+    expect(Pod.aggregate.mock.calls[0][0][1].$project.hit.$setIntersection[1].map(String)).toEqual([HUMAN_A]);
+    expect(stamp.requesterSharesTeamPod).toBe(true);
+  });
+
+  it('a stranger ruling in an agent-room shares no team pod', async () => {
+    const stamp = await stampOne(ruled({ userId: STRANGER, username: 'cy' }, { podId: ROOM }));
+    expect(stamp.requesterUserIds).toEqual([STRANGER]);
+    expect(stamp.requesterSharesTeamPod).toBe(false);
+  });
+
+  it('a ruler that resolves to a bot is that agent, never its owner', async () => {
+    const stamp = await stampOne(ruled({ userId: PEER_BOT, username: 'codex-pat' }));
+    expect(stamp.requesterUserIds).toEqual([PEER_BOT]);
+    expect(stamp.requesterKind).toBe('agent');
+  });
+
+  it('a ruling with no ruledBy stays unknown', async () => {
+    const stamp = await stampOne(ruled(null));
+    expect(stamp.requesterUserIds).toEqual([]);
+    expect(stamp.requesterKind).toBe('unknown');
+  });
+
+  it('approval.resolved names the person who approved', async () => {
+    const stamp = await stampOne(ev(
+      { approvalId: 'a1', decision: 'approved', approvedBy: { userId: OWNER, username: 'sam' } },
+      { type: 'approval.resolved' },
+    ));
+    expect(stamp.requesterUserIds).toEqual([OWNER]);
+    expect(stamp.requesterKind).toBe('human');
+  });
+
+  it('an approval.resolved with no approver (an expired parked call) stays unknown', async () => {
+    const stamp = await stampOne(ev(
+      { approvalId: 'a1', actionType: 'tool_call', ending: 'expired' },
+      { type: 'approval.resolved' },
+    ));
+    expect(stamp.requesterUserIds).toEqual([]);
+    expect(stamp.requesterKind).toBe('unknown');
+  });
+
+  it('handback.received names the handing agent by its bot id and the person who accepted', async () => {
+    const stamp = await stampOne(ev({
+      handBackId: 'h1',
+      from: { agentName: 'codex', instanceId: 'pat', agentUserId: PEER_BOT },
+      acceptedBy: { userId: HUMAN_A, reason: 'ok' },
+    }, { type: 'handback.received' }));
+    expect(stamp.requesterUserIds).toEqual([PEER_BOT, HUMAN_A]);
+    expect(stamp.requesterKind).toBe('human');
+  });
+
+  it('these fields are read only on their own event type', async () => {
+    const stamp = await stampOne(ev({ ruledBy: { userId: OWNER }, approvedBy: { userId: OWNER } }));
+    expect(stamp.requesterUserIds).toEqual([]);
+    expect(stamp.requesterKind).toBe('unknown');
+  });
+});

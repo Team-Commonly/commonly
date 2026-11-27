@@ -13,7 +13,9 @@
  *     ownerUserId, ownerName,      // the calling bot's botMetadata.ownerUserId, else its runtime
  *                                  // credential's ownerUserId; and that user's username
  *     requesterUserIds,            // the senders whose words are in the row: a person's id, or an
- *                                  // agent's own bot id (never its owner's)
+ *                                  // agent's own bot id (never its owner's); on a typed event,
+ *                                  // who started it (TRIGGER_FIELDS: the ruler of a decision,
+ *                                  // the approver, the hand-back's agent and acceptor)
  *     requesterKind,               // 'human' | 'agent' | 'kernel' | 'unknown'
  *     pod,                         // { type, publicRead, communityListed, joinPolicy }, or null when the pod is gone
  *     requesterSharesTeamPod,      // DMs only: true | false | null (see below)
@@ -104,15 +106,38 @@ const askerOf = (event: ServedEvent): { agentName: string; instanceId: string } 
   };
 };
 
-// The sender ids whose words are in the row: its own author and each joined
-// message's author (mentionCoalesce.coalescedEntry). An id that isn't one
-// counts as a sender that can't be resolved.
+const field = (value: unknown, key: string): unknown => (
+  value && typeof value === 'object' ? (value as Row)[key] : undefined
+);
+
+// Typed events that name who started them in their own field, not userId.
+// Each id resolves through the same User lookup as any sender, so a bot id is
+// that agent (never its owner) and a missing row is unknown.
+//   decision.ruled: the person who ruled (chooseDecision refuses bots).
+//   approval.resolved: the person who approved; an expired parked call has none.
+//   handback.received: the handing agent's bot id, then the person who accepted.
+const TRIGGER_FIELDS: Record<string, (payload: Row) => unknown[]> = {
+  'decision.ruled': (payload) => [field(payload.ruledBy, 'userId')],
+  'approval.resolved': (payload) => [field(payload.approvedBy, 'userId')],
+  'handback.received': (payload) => [field(payload.from, 'agentUserId'), field(payload.acceptedBy, 'userId')],
+};
+
+// The sender ids whose words are in the row: its own author, each joined
+// message's author (mentionCoalesce.coalescedEntry), and a typed event's
+// trigger (TRIGGER_FIELDS). An id that isn't one counts as a sender that
+// can't be resolved.
 const senderIdsOf = (event: ServedEvent): Array<string | null> => {
   const payload = event.payload || {};
   const ids: Array<string | null> = [];
   if (payload.userId !== undefined && payload.userId !== null) ids.push(asId(payload.userId));
   if (Array.isArray(payload.coalesced)) {
     payload.coalesced.forEach((entry: Row) => ids.push(asId(entry?.userId)));
+  }
+  const triggers = TRIGGER_FIELDS[String(event.type || '')];
+  if (triggers) {
+    triggers(payload).forEach((value) => {
+      if (value !== undefined && value !== null) ids.push(asId(value));
+    });
   }
   return ids;
 };

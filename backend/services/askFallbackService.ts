@@ -150,13 +150,25 @@ export async function handOffToHost({
   }
   if (!firstHandoff(`${podId}:${messageId}`, now.getTime())) return null;
   const first = typeof payload.rawContent === 'string' ? payload.rawContent : String(payload.content || '');
-  // A joined row carries the person's later messages; the host gets them all.
+  // A joined row carries later messages, and joined messages can be other
+  // people's (mentionCoalesce.carriesOtherAuthors). The host gets every one
+  // that asked, as joined entries with their authors, so authority and the
+  // account-use stamp see each author, and delivery renders each message once
+  // under its own name (withCoalesced). How each reached the first agent
+  // (handoffCue, adjacency) says nothing about the host, so only the message
+  // and its author are kept.
   const joined = (Array.isArray(payload.coalesced) ? payload.coalesced : []) as Array<Record<string, unknown>>;
-  const words = [first, ...joined
-    .filter((entry) => !entry.notAnAsk && typeof entry.rawContent === 'string')
-    .map((entry) => String(entry.rawContent))].join('\n\n');
+  const carried = joined
+    .filter((entry) => Boolean(entry) && !entry.notAnAsk && typeof entry.rawContent === 'string')
+    .map((entry) => ({
+      messageId: entry.messageId,
+      userId: entry.userId,
+      username: entry.username,
+      rawContent: entry.rawContent,
+      ...(entry.createdAt !== undefined ? { createdAt: entry.createdAt } : {}),
+    }));
   // How the ask reached the first agent says nothing about the host: drop the
-  // edges and joined rows so the host's row reads as a plain ask of its own.
+  // edges so the host's row reads as a plain ask of its own.
   const {
     implicitReply: _implicit, adjacentReply: _adjacent, coalesced: _coalesced, replyToMessageId: _replyTo,
     handoffCue: _cue, ...ask
@@ -168,8 +180,9 @@ export async function handOffToHost({
     type: 'chat.mention',
     payload: {
       ...ask,
-      content: `${handoffFrame(label, reason)}\n${words}`,
-      rawContent: words,
+      content: `${handoffFrame(label, reason)}\n${first}`,
+      rawContent: first,
+      ...(carried.length ? { coalesced: carried } : {}),
       // The person named another agent; this ask is the host's now.
       mentions: [],
       addressed: true,
