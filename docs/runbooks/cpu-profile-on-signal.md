@@ -5,6 +5,8 @@ core pinned for seconds), take a CPU profile of the live process. Nothing is
 run inside the serving container (see
 [ops-runner-and-no-exec-into-backend.md](ops-runner-and-no-exec-into-backend.md)):
 the backend profiles itself when it gets `SIGUSR2`, and only when a flag is on.
+For a stall you can't time, see
+[Catch a stall nobody can time](#catch-a-stall-nobody-can-time-loop_stall_profile1).
 
 Code: `backend/services/cpuProfileOnSignal.ts`, started next to the loop-lag
 monitor in `backend/server.ts`.
@@ -107,3 +109,59 @@ Run these from the compose directory on the host.
    every backend that runs: `docker compose up -d backend`, and under
    `two-workers` also `docker compose --profile two-workers up -d backend-2`.
    The recreate also starts a fresh container, with a fresh restart state.
+
+## Catch a stall nobody can time: `LOOP_STALL_PROFILE=1`
+
+A signal only helps when you know when the stall comes. For stalls at
+unpredictable times, the backend can profile itself all the time and keep only
+the windows around a stall. Code: `backend/services/loopStallProfiler.ts`,
+started next to the signal profiler in `backend/server.ts`.
+
+**How it behaves.**
+
+- **Off unless `LOOP_STALL_PROFILE=1`.** When off, it creates no inspector
+  session, histogram or timer. It needs no signal, so it is safe in local dev.
+- It profiles in rolling windows of `LOOP_STALL_PROFILE_WINDOW_S` seconds
+  (default 60, clamped to 10–60), sampling every 10 ms. Its own loop-delay
+  histogram is reset each window.
+- At each window end, if the window's worst loop delay is at least
+  `LOOP_STALL_PROFILE_THRESHOLD_MS` (default 1000, clamped to 100–60000), it
+  writes that window and the one before it, so a stall across the boundary is
+  still covered:
+  `stall-<ISO timestamp, colons as dashes>-prev.cpuprofile` and
+  `...-cur.cpuprofile` (only `-cur` if it was the first window). One log line:
+  `[loop-stall-profile] saved <prev file> <cur file> max=4100ms`. A quiet
+  window is discarded, except that it is held in memory as the next window's
+  "previous".
+- Files go to `LOOP_STALL_PROFILE_DIR` (default `<os.tmpdir()>/cpuprofiles`,
+  `/tmp/cpuprofiles` in the image, the same dir as the signal profiler). The
+  newest 6 `stall-*` files are kept; the `cpu-*` files are pruned separately.
+- **It stops by itself** after `LOOP_STALL_PROFILE_MAX_SAVES` stalls saved
+  (default 3, clamped to 1–20) or after `LOOP_STALL_PROFILE_HOURS` (default 24,
+  clamped to 1–168), whichever comes first, and logs
+  `[loop-stall-profile] stopped: ...` with the reason. Restart the container to
+  run it again.
+- Any inspector or write error logs `[loop-stall-profile] failed, profiler
+  stopped` once and stops it. A failed prune only logs
+  `[loop-stall-profile] pruning old profiles failed` and profiling goes on. It
+  never throws into the process.
+- **It runs alongside the signal profiler.** Each inspector session gets its
+  own V8 CPU profiler with its own sampling interval, so a `SIGUSR2` capture
+  during a stall window works and both files are complete (checked on Node 22
+  and 26). You can leave both flags on.
+
+**Overhead.** A 10 ms sampling interval is a tenth of the signal profiler's
+default rate. The larger cost is the `Profiler.start` at each window: about
+50–150 ms loop pause at the start of each window (V8 re-logs compiled code),
+so one such pause a minute at the default; a shorter window means more of
+them. The pause isn't counted as a stall: the histogram is reset in the same
+tick. `Profiler.stop` also builds the window's profile on the loop, and only
+a stall window pays for `JSON.stringify` and the file write. One extra profile
+is held in memory between windows.
+
+**Steps.** Add `LOOP_STALL_PROFILE=1` to `backend.env` and recreate the backend
+as in step 1 above. Wait for a `saved` line
+(`docker compose logs backend | grep loop-stall-profile`), then fetch and open
+the files as in steps 3 and 4: the same `docker compose cp
+backend:/tmp/cpuprofiles/. ./cpuprofiles/` copies both kinds. Fetch before any
+recreate. Then remove the flag and recreate, as in step 5.
