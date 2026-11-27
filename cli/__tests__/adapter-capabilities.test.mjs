@@ -18,6 +18,7 @@ const expected = {
   dsh: { sandbox: false, mcp: true, broker: false, provider: true },
   goose: { sandbox: false, mcp: true, broker: true, provider: true },
   hermes: { sandbox: false, mcp: false, broker: false, provider: false },
+  acp: { sandbox: false, mcp: true, broker: false, provider: false },
 };
 
 test('every adapter has an explicit capability matrix entry', () => {

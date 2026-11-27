@@ -14,7 +14,17 @@ afterEach(() => {
   else process.env.COMMONLY_REQUIRE_SEAT_MODEL = originalRequirement;
 });
 
-const adapters = listAdapterNames().filter((name) => name !== 'stub');
+// acp is the one deliberate exception: the protocol gives the adapter no
+// stable way to set the agent's model yet, so requiring one would refuse turns
+// over a setting the adapter then ignores. Its own suite pins that it warns.
+const MODEL_NOT_PASSED = new Set(['acp']);
+const adapters = listAdapterNames().filter((name) => name !== 'stub' && !MODEL_NOT_PASSED.has(name));
+
+test('only acp is exempt from the model requirement', () => {
+  expect(listAdapterNames()).toContain('acp');
+  expect(getAdapter('acp').requiresModel).toBe(false);
+  expect([...MODEL_NOT_PASSED]).toEqual(['acp']);
+});
 
 describe.each(adapters)('%s requires the seat model before any subprocess', (name) => {
   test('declares the pre-credential model requirement', () => {

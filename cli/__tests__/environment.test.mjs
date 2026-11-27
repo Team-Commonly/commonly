@@ -180,6 +180,17 @@ describe('validateEnvironmentSpec', () => {
     }).errors.join(' ')).toMatch(/model is required/);
   });
 
+  test('omits the host-local acp block, whose argv may hold a key, from registry environment payloads', () => {
+    const environment = {
+      model: 'gpt-5.4',
+      acp: { command: ['/opt/agent/bin/agent', '--acp', '--api-key', 'sk-local-secret'] },
+    };
+    expect(environmentForServer(environment)).toEqual({ model: 'gpt-5.4' });
+    const both = { ...environment, provider: { id: 'x', baseURL: 'https://llm.example.test/v1', keyFile: '/k' } };
+    expect(environmentForServer(both)).toEqual({ model: 'gpt-5.4' });
+    expect(environment.acp.command).toContain('sk-local-secret');
+  });
+
   test('omits the complete host-local provider block from registry environment payloads', () => {
     const environment = {
       model: 'gpt-5.4',
