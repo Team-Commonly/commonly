@@ -67,16 +67,22 @@ const silentChild = () => {
   return child;
 };
 // A zombie (exited, not yet reaped by whoever adopted it) is not running, and
-// neither is a pid whose /proc entry can't be read after the signal check
-// succeeded: it was reaped between the two (F670). The read used to count that
-// as "not a zombie", so running, and a grandchild already seen gone came back
-// as running as init reaped it (ENOENT or ESRCH from the read). Where there is
+// neither is a pid whose /proc entry is gone after the signal check succeeded:
+// it was reaped between the two (F670). The read used to count that as "not a
+// zombie", so running, and a grandchild already seen gone came back as running
+// as init reaped it (ENOENT or ESRCH from the read). Any other read failure
+// (EMFILE, say) proves nothing, so it still counts as running: a check that
+// couldn't look must not pass a live process or skip its sweep. Where there is
 // no /proc (macOS), the signal check alone decides, as before.
 const HAS_PROC = fs.existsSync('/proc/self/stat');
 const isRunning = (pid) => {
   try { process.kill(pid, 0); } catch (e) { return e.code !== 'ESRCH'; }
   if (!HAS_PROC) return true;
-  try { return !/^\d+ \(.*\) [ZX] /.test(fs.readFileSync(`/proc/${pid}/stat`, 'utf8')); } catch { return false; }
+  try {
+    return !/^\d+ \(.*\) [ZX] /.test(fs.readFileSync(`/proc/${pid}/stat`, 'utf8'));
+  } catch (e) {
+    return e.code !== 'ENOENT' && e.code !== 'ESRCH';
+  }
 };
 const strayPids = new Set();
 // F340: the sweep once found a grandchild running that the test's own check had
