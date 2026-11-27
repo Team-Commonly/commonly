@@ -1,3 +1,4 @@
+import { Option } from 'commander';
 import { createOwnKeyResolver, createMachineReportClient } from '../lib/own-key-launch.js';
 import { foregroundDaemonHint } from '../lib/daemon-hint.js';
 import { loadDaemonRecord } from '../lib/daemon-store.js';
@@ -116,7 +117,9 @@ import {
 import { formatPodConventionsFrame } from '../lib/pod-conventions.js';
 import { claimReleaseFor, ackResultFor, EMPTY_OUTPUT } from '../lib/claim-outcome.js';
 import { createClaimedWorkGate } from '../lib/claimed-work-gate.js';
-import { prepareCommitAttribution } from '../lib/commit-attribution.js';
+import {
+  commitAttributionEnabled, prepareCommitAttribution, withCommitAttributionChoice,
+} from '../lib/commit-attribution.js';
 import { detectBwrap } from '../lib/sandbox/bwrap.js';
 import { resolveCodexSandboxMode, resolvePublicSandboxMode } from '../lib/sandbox/mode.js';
 import {
@@ -2312,6 +2315,9 @@ export const performRun = ({
   // (lib/long-poll.js). Undefined derives it from the read timeout; 0 turns
   // the long-poll off. Tests pin a small value.
   longPollWaitMs: longPollWaitOverride,
+  // F656: false when the person turned commit attribution off for this agent
+  // (the record's `commitAttribution`). Unset is on, as it always was.
+  commitAttribution: commitAttributionOn = true,
 }) => {
   const stateKey = localKey || agentName;
   const supervising = superviseRuns ?? superviseRunsByDefault(adapter?.name);
@@ -3379,7 +3385,9 @@ export const performRun = ({
       // The local CLI is a wrapper for a Commonly seat, so its Git commits
       // carry the seat and the adapter's selected model/effort. `stub` exists
       // only for tests and has no commit-making child process.
-      if (adapter?.name !== 'stub') {
+      // F656: the person turned attribution off for this agent, so nothing is
+      // prepared and the child gets the plain environment.
+      if (adapter?.name !== 'stub' && commitAttributionOn !== false) {
         commitAttribution = prepareCommitAttribution({
           cwd: placement.cwd,
           env: process.env,
@@ -5997,6 +6005,10 @@ Docs:
     .option('--refusal-handoff <agent>', 'Agent to @mention when the model provider refuses a request\'s content; the request is acked as refused, never retried')
     .option('--allow <grants>', 'On first run of an agent that works in its folder, also let it edit files and run commands (write) and/or fetch web pages (web), comma-separated. Commands reach the network.')
     .option('--unsandboxed', 'Native Windows, or a private Codex agent on Linux: run this agent without a sandbox, with your own access to files and commands. It gets no connector grants. Codex can run commands in invite-only pods, where anyone in the pod, including people invited later, can direct it.')
+    // The positive form first, so no flag leaves opts.commitAttribution
+    // undefined (the saved choice) rather than commander's implied true.
+    .addOption(new Option('--commit-attribution').hideHelp())
+    .option('--no-commit-attribution', "Don't add Co-authored-by and Agent-Model trailers to this agent's commits; saved for its later runs, and --commit-attribution turns them back on")
     .option('--api-url <url>', 'The Commonly instance this agent joins (the Connect your own agent page fills it in; same as COMMONLY_API_URL)')
     .option('--connect <code>', "The connect code from the Connect your own agent page's line, traded once for this agent's key; it stops working once the agent has listened, or after 30 minutes")
     .action(async (typedName, opts) => {
@@ -6282,6 +6294,9 @@ Docs:
             ? 'this agent is set to workspace trust'
             : "a pod this agent answers in isn't confirmed private and invite-only"}, so it runs in Codex's own sandbox.`);
       }
+      // F656: --[no-]commit-attribution is saved on the record, so a later run
+      // and a daemon-started seat (which passes no flag) keep the choice.
+      record = withCommitAttributionChoice(record, opts.commitAttribution);
       if (saved && record !== saved) saveAgentToken(name, record);
       if (bootstrapped) {
         // A named instance is saved under its seat key; an unnamed run keeps
@@ -6357,6 +6372,10 @@ Docs:
       });
 
       console.log(`${stamp()} [${name}] polling ${record.instanceUrl} for events (ctrl+c to stop)`);
+      if (!commitAttributionEnabled(record)) {
+        console.log(`${stamp()} [${name}] commit attribution is off: this agent's commits get no Co-authored-by `
+          + `or Agent-Model trailers. To turn it back on: ${CLI} agent run ${name} --commit-attribution`);
+      }
       console.log(`${stamp()} [${name}] ${foregroundDaemonHint({ daemonRegistered: hasDaemonRecord(), instanceUrl: record.instanceUrl })}`);
       // TASK-660: one line when this CLI is stale. Fired, not awaited, so a
       // slow registry never delays the first poll.
@@ -6398,6 +6417,7 @@ Docs:
         readGrantBrokers: !record.machineId && process.env.COMMONLY_MANAGED_RUNNER !== '1',
         spawnCredentialTtlSeconds: resolveSpawnTtlSeconds(process.env),
         refusalHandoff: opts.refusalHandoff || null,
+        commitAttribution: commitAttributionEnabled(record),
         log: (line) => console.log(`${stamp()} [${name}] ${line}`),
         // Both sinks are stamped, and both must be — but not for the reason
         // this comment gave until now, which its own PR falsified.
