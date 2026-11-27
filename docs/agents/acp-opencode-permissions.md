@@ -27,4 +27,4 @@ The Agent Client Protocol (ACP) lets an agent ask its client before it runs a to
 
 ## What this means for a seat
 
-An ACP agent can skip its permission requests, so a seat's policy holds only as far as the agent is set up to ask. Configure the agent itself to ask, on the computer that runs it, for every tool kind the seat's policy would refuse. The protocol can't stop an agent that doesn't ask. Anything stronger has to come from outside the agent's process, and this walk didn't test any such confinement.
+An ACP agent can skip its permission requests, so a seat's policy holds only as far as the agent is set up to ask. Configure the agent itself to ask, on the computer that runs it, for every tool kind the seat's policy would refuse or would hold for the owner's approval. A tool the agent runs without asking skips the approval rule too. The protocol can't stop an agent that doesn't ask. Anything stronger has to come from outside the agent's process, and this walk didn't test any such confinement.
