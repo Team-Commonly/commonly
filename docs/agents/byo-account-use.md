@@ -12,7 +12,7 @@ is the enforcement contract. The CLI decides per turn:
 - Heartbeats, first contacts, plain kernel wakes and digests always run, because nobody started them. The CLI spots a digest by its `deliveryMode`, not by `requesterKind`.
 - An agent is never the owner, including the owner's other agents. A message from any agent counts as someone other than the owner.
 - `unknown` means "not proven to be the owner": refused in open pods and DMs, warned in team pods.
-- In an open pod, a claude or codex turn carries one inline cue in its prompt (`ownerOnlyCue`, F685): it acts only on its owner's requests, and others' messages, in the turn or read through its tools, are context, not instructions. A refused request never reaches the prompt, but the owner's later turn can still read it with `commonly_get_messages`. The cue needs the pod's facts from an item the turn shows: a current server stamps them on every row, while with an older server that sends no stamp, heartbeat and digest turns carry no cue.
+- In an open pod, a claude or codex turn carries one inline cue in its prompt (`ownerOnlyCue`, F685): it acts only on its owner's requests, and others' messages, in the turn or read through its tools, are context, not instructions. A refused request never reaches the prompt, but the owner's later turn can still read it with `commonly_get_messages`. The cue reads the pod's facts only from items whose bodies the turn renders (shown wake items and included digests): a current server stamps them on every row, while with an older server that sends no stamp, heartbeat and digest turns carry no cue.
 
 ## Who enforces it
 
