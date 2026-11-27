@@ -8,12 +8,15 @@ import './i18n';
 Object.assign(global, { TextEncoder });
 
 // Under fake timers, waitFor and findBy advance fake time in 50 ms rounds.
-// React's scheduler keeps the real timers it captured at import, so a state
-// update that lands outside act (a mocked request resolving after render) runs
-// on the real clock, and a round gave it a real turn only by chance: a BYO page
-// took 1 to 14 of the default 20 rounds, and a busy CI runner ran out (F679).
-// Each round now ends with one real timer turn, queued after any the scheduler
-// already holds, so that update renders in the round after it lands.
+// In jsdom, React's scheduler runs on the real setTimeout it captured at
+// import, so a state update that lands outside act (a mocked request resolving
+// after render) waits on a real 1 ms timer. A round's only real yield was act's
+// setImmediate, which runs before a timer queued in the same loop turn, so the
+// update rendered only in a round where its timer was already due: a BYO page
+// took 1 to 14 of the default 20 rounds, and a merge-queue run ran out (F679).
+// Each round now ends with one real setTimeout(0), queued after the
+// scheduler's, and every wait in that BYO file takes one round. A test that
+// resets modules and requires Testing Library again gets a copy without this.
 // Guard: src/__tests__/fakeTimerWaitFor.test.tsx.
 const realSetTimeout: typeof setTimeout = jest.requireActual('timers').setTimeout;
 configure({

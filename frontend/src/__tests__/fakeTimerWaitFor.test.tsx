@@ -5,8 +5,9 @@ import { waitFor } from '@testing-library/react';
 // mid-wait) goes to React's scheduler, which runs it on the real timer it
 // captured at import. setupTests ends each round with one real timer turn, so
 // a real timer already queued runs before the round's check. Without that, a
-// round gave it a turn only when a millisecond had passed, and a BYO page
-// took 1 to 14 of the default 20 rounds to enable its install button.
+// round's only real yield is act's setImmediate, which runs before a timer
+// queued in the same loop turn, so the timer queued at the first check below
+// misses the round; a BYO page took 1 to 14 of the default 20 rounds.
 const realSetTimeout: typeof setTimeout = jest.requireActual('timers').setTimeout;
 
 test('each fake-timer waitFor round runs a real timer queued before it', async () => {
