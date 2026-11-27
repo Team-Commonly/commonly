@@ -352,6 +352,151 @@ describe('the stalled-connect nudge is private to the installer (F666)', () => {
     expect(reopened.sourceCreatedAt.getTime()).toBeGreaterThan(cursor.getTime());
   });
 
+  it('reopens a row in one write: a failure cannot leave it open under its old createdAt', async () => {
+    const { installer, pod, install } = await world();
+    await scan({ now: NOW });
+    const first = await AttentionItem.findOne({}).lean();
+    const daysAgo = new Date(Date.now() - 3 * 24 * 60 * MINUTE);
+    await AttentionItem.collection.updateOne({ _id: first._id }, {
+      $set: { createdAt: daysAgo, sourceCreatedAt: daysAgo, status: 'resolved', resolvedBy: 'acknowledged' },
+    });
+    const cursor = new Date(Date.now() - 60 * MINUTE);
+    // Whichever write carries createdAt is the one that fails.
+    const realCollectionUpdate = AttentionItem.collection.updateOne.bind(AttentionItem.collection);
+    const collectionSpy = jest.spyOn(AttentionItem.collection, 'updateOne');
+    collectionSpy.mockImplementation((filter, update, ...rest) => {
+      if (update?.$set?.createdAt) return Promise.reject(new Error('storage down'));
+      return realCollectionUpdate(filter, update, ...rest);
+    });
+    const realModelUpdate = AttentionItem.updateOne.bind(AttentionItem);
+    const modelSpy = jest.spyOn(AttentionItem, 'updateOne').mockImplementation((filter, update, options) => {
+      if (update?.$set?.createdAt) throw new Error('storage down');
+      return realModelUpdate(filter, update, options);
+    });
+    try {
+      await AttentionItemService.recordStalledConnect({
+        recipientUserId: installer._id, podId: pod._id, installationId: install._id,
+        episodeId: '6560f0f0f0f0f0f0f0f0f0f0', title: "Ada Agent hasn't connected", detail: 'Open its panel.',
+      }).catch(() => {});
+    } finally {
+      collectionSpy.mockRestore();
+      modelSpy.mockRestore();
+    }
+
+    const row = await AttentionItem.findById(first._id).lean();
+    if (row.status === 'open') expect(row.createdAt.getTime()).toBeGreaterThan(cursor.getTime());
+    else expect(row.resolvedBy).toBe('acknowledged');
+  });
+
+  it('a retry of the same episode after the row was written keeps the acknowledgement', async () => {
+    const { installer } = await world();
+    const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
+    // The row is written, then recording that it was fails.
+    const spy = jest.spyOn(StalledConnectEpisode, 'updateOne').mockRejectedValueOnce(new Error('storage down'));
+    try {
+      await scan({ now: NOW });
+    } finally {
+      spy.mockRestore();
+      warn.mockRestore();
+    }
+    const first = await AttentionItem.findOne({}).lean();
+    expect(first.status).toBe('open');
+    expect((await StalledConnectEpisode.findOne({}).lean()).noticedAt).toBeFalsy();
+    expect(await AttentionItemService.acknowledgeAttention(String(installer._id), String(first._id)))
+      .toEqual({ success: true });
+
+    await scan({ now: new Date(NOW.getTime() + 5 * MINUTE) });
+
+    const row = await AttentionItem.findById(first._id).lean();
+    expect(row.status).toBe('resolved');
+    expect(row.resolvedBy).toBe('acknowledged');
+    // The retry finished recording the delivery.
+    expect((await StalledConnectEpisode.findOne({}).lean()).noticedAt).toBeTruthy();
+  });
+
+  it('an older episode never re-tags a row a newer episode already wrote', async () => {
+    const { installer, pod, install } = await world();
+    const older = '6560f0f0f0f0f0f0f0f0f0f0';
+    const newer = '6560f0f0f0f0f0f0f0f0f0f1';
+    const notice = {
+      recipientUserId: installer._id, podId: pod._id, installationId: install._id,
+      title: "Ada Agent hasn't connected", detail: 'Open its panel.',
+    };
+    await AttentionItemService.recordStalledConnect({ ...notice, episodeId: newer });
+    const first = await AttentionItem.findOne({}).lean();
+    await AttentionItemService.acknowledgeAttention(String(installer._id), String(first._id));
+
+    expect(await AttentionItemService.recordStalledConnect({ ...notice, episodeId: older }))
+      .toEqual({ recorded: true });
+
+    const row = await AttentionItem.findById(first._id).lean();
+    expect(row.stalledConnectEpisodeId).toBe(newer);
+    expect(row.resolvedBy).toBe('acknowledged');
+    expect(await AttentionItem.countDocuments({})).toBe(1);
+  });
+
+  it('closes a notice published before an uninstall closed its episode', async () => {
+    const { install } = await world();
+    await scan({ now: NOW });
+    expect((await AttentionItem.findOne({}).lean()).status).toBe('open');
+
+    await AgentInstallation.updateOne({ _id: install._id }, { $set: { status: 'uninstalled' } });
+    await scan({ now: new Date(NOW.getTime() + MINUTE) });
+
+    expect((await AttentionItem.findOne({}).lean()).status).toBe('resolved');
+    expect((await StalledConnectEpisode.findOne({}).lean()).status).toBe('resolved');
+  });
+
+  it('closes a notice published after its episode closed', async () => {
+    const { install } = await world();
+    const real = AttentionItemService.recordStalledConnect;
+    // The pass claimed the episode and paused; meanwhile the agent was
+    // uninstalled and another pass closed the episode.
+    const spy = jest.spyOn(AttentionItemService, 'recordStalledConnect').mockImplementation(async (notice) => {
+      await AgentInstallation.updateOne({ _id: install._id }, { $set: { status: 'uninstalled' } });
+      await StalledConnectEpisode.updateMany({}, { $set: { status: 'resolved', resolvedAt: new Date() } });
+      return real(notice);
+    });
+    try {
+      await scan({ now: NOW });
+    } finally {
+      spy.mockRestore();
+    }
+
+    const rows = await AttentionItem.find({}).lean();
+    expect(rows).toHaveLength(1);
+    expect(rows[0].status).toBe('resolved');
+  });
+
+  it('closes a notice written between the close pass resolving its row and closing its episode', async () => {
+    const { installer, pod, install } = await world();
+    await scan({ now: NOW });
+    const episode = await StalledConnectEpisode.findOne({}).lean();
+    await AttentionItem.deleteMany({});
+    await AgentInstallation.updateOne({ _id: install._id }, { $set: { status: 'uninstalled' } });
+    const real = AttentionItemService.resolveStalledConnectEpisode;
+    let wrote = false;
+    const spy = jest.spyOn(AttentionItemService, 'resolveStalledConnectEpisode').mockImplementation(async (...args) => {
+      await real(...args);
+      if (wrote) return;
+      wrote = true;
+      // A slower pass that claimed this episode writes its row now, after the
+      // close pass resolved the (absent) row and before it closes the episode.
+      await AttentionItemService.recordStalledConnect({
+        recipientUserId: installer._id, podId: pod._id, installationId: install._id,
+        episodeId: episode._id, title: "Ada Agent hasn't connected", detail: 'Open its panel.',
+      });
+    });
+    try {
+      await scan({ now: new Date(NOW.getTime() + MINUTE) });
+    } finally {
+      spy.mockRestore();
+    }
+
+    expect((await StalledConnectEpisode.findOne({}).lean()).status).toBe('resolved');
+    expect((await AttentionItem.findOne({}).lean()).status).toBe('resolved');
+  });
+
   it('a reissued token reopens the same row, never a second one', async () => {
     const { installer, bot } = await world();
     await scan({ now: NOW });

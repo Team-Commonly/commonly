@@ -22,6 +22,10 @@ const NEVER = "Hi all — I'm Rivet, just joined the pod. As I post this, nothin
   + "so mentioning me won't reach anyone. Whoever installed me can connect me from my Settings — "
   + `then @rivet will get through. ${snapshotPointer('rivet')}`;
 
+// Real-shaped ObjectId hex strings, as the bot user and pod ids are in production.
+const AGENT_ID = '6560a1b2c3d4e5f6a7b8c9d0';
+const POD_ID = '6560a1b2c3d4e5f6a7b8c9d1';
+
 const previousHost = process.env.PG_HOST;
 beforeAll(() => { process.env.PG_HOST = 'fake'; });
 afterAll(() => {
@@ -36,7 +40,7 @@ beforeEach(() => {
   mockPool.query.mockReset();
   mockPool.query.mockImplementation(async (sql) => {
     if (/^\s*SELECT/i.test(sql)) {
-      const row = { id: 7, pod_id: 'pod-1', content: NEVER, payload: { kind: 'install-intro' } };
+      const row = { id: 7, pod_id: POD_ID, content: NEVER, payload: { kind: 'install-intro' } };
       return { rows: [row] };
     }
     writes += 1;
@@ -47,22 +51,22 @@ beforeEach(() => {
 describe('first-listen rewrite beside the stalled-connect close (F666)', () => {
   it('a close that never settles still lets the rewrite answer its count', async () => {
     mockResolve.mockReturnValue(new Promise(() => {}));
-    expect(await settleInstallIntroOnFirstListen({ agentUserId: 'agent-1', podIds: ['pod-1'] })).toBe(1);
+    expect(await settleInstallIntroOnFirstListen({ agentUserId: AGENT_ID, podIds: [POD_ID] })).toBe(1);
     expect(writes).toBe(1);
-    expect(mockResolve).toHaveBeenCalledWith('agent-1');
+    expect(mockResolve).toHaveBeenCalledWith(AGENT_ID);
   });
 
   it('a close that rejects or throws still lets the rewrite answer its count', async () => {
     mockResolve.mockRejectedValueOnce(new Error('mongo down'));
-    expect(await settleInstallIntroOnFirstListen({ agentUserId: 'agent-1', podIds: ['pod-1'] })).toBe(1);
+    expect(await settleInstallIntroOnFirstListen({ agentUserId: AGENT_ID, podIds: [POD_ID] })).toBe(1);
     mockResolve.mockImplementationOnce(() => { throw new Error('sync throw'); });
-    expect(await settleInstallIntroOnFirstListen({ agentUserId: 'agent-1', podIds: ['pod-1'] })).toBe(1);
+    expect(await settleInstallIntroOnFirstListen({ agentUserId: AGENT_ID, podIds: [POD_ID] })).toBe(1);
   });
 
   it('a prompt close has finished by the time the settle returns', async () => {
     let closed = false;
     mockResolve.mockImplementation(async () => { await new Promise((r) => setTimeout(r, 20)); closed = true; });
-    expect(await settleInstallIntroOnFirstListen({ agentUserId: 'agent-1', podIds: ['pod-1'] })).toBe(1);
+    expect(await settleInstallIntroOnFirstListen({ agentUserId: AGENT_ID, podIds: [POD_ID] })).toBe(1);
     expect(closed).toBe(true);
   });
 });

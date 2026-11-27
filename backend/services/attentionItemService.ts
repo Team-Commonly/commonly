@@ -741,16 +741,26 @@ export const recordHostedMcpDrift = async (drift: {
 // for the installer alone, so it is their private row, never a pod message
 // that every member reads. One row per installation: the source id is the
 // installation, and a later episode (a reissued token) reopens that same row
-// instead of adding a second. Callers write once per episode, so a pass that
-// runs again never reopens a row the person marked handled. `actorUserId` is
-// the agent, which is how its first listen finds the row to close. No email:
-// the daily digest already follows up on a stall (F502).
+// instead of adding a second. `actorUserId` is the agent, which is how its
+// first listen finds the row to close. No email: the daily digest already
+// follows up on a stall (F502).
 //
-// Every write restamps `createdAt` (and `sourceCreatedAt`): the queue sorts and
-// `since`-filters on `createdAt`, so a row reopened for a reissue days later
-// must read as new, or it sorts under week-old work and a poller's window
-// never sees it come back. An uninstall does not close the row here: several
-// write paths uninstall, so the stalled-connect pass closes it on its next run.
+// ONE WRITE PER EPISODE. The write only matches a row that no episode, or an
+// older one, wrote. A retry of the same episode (its first try wrote the row,
+// then recording that failed) and a slow pass for an older episode both miss,
+// so neither reopens a row the person marked handled nor takes the row from
+// the episode that now owns it. They answer `recorded`: the row reached them.
+// Episode ids are ObjectIds, so their hex strings sort in claim order. That
+// covers a pass that claimed an older episode and then stalled; one that
+// claims an older episode after a newer one can still take the row, which
+// costs nothing, because that older episode's own close closes it.
+//
+// Every write restamps `createdAt` (and `sourceCreatedAt`) in the same update
+// that reopens the row: the queue sorts and `since`-filters on `createdAt`, so
+// a row reopened for a reissue days later must read as new, or it sorts under
+// week-old work and a poller's window never sees it come back. An uninstall
+// does not close the row here: several write paths uninstall, so the
+// stalled-connect pass closes it on its next run.
 export const recordStalledConnect = async (notice: {
   recipientUserId: unknown; podId: unknown; installationId: unknown; agentUserId?: unknown;
   episodeId: unknown; title: string; detail: string;
@@ -760,17 +770,25 @@ export const recordStalledConnect = async (notice: {
   if (!recipient) return { recorded: false, reason: 'recipient_not_member' };
   const pod = await Pod.findById(notice.podId).select('name').lean();
   const sourceId = sourceKey('stalled_connect', notice.installationId);
+  const episodeId = String(notice.episodeId);
   const at = new Date();
-  await AttentionItem.updateOne(
-    { recipientUserId: recipient._id, 'source.type': 'stalled_connect', 'source.id': sourceId },
+  const write = (upsert: boolean) => AttentionItem.updateOne(
+    {
+      recipientUserId: recipient._id,
+      'source.type': 'stalled_connect',
+      'source.id': sourceId,
+      $or: [{ stalledConnectEpisodeId: null }, { stalledConnectEpisodeId: { $lt: episodeId } }],
+    },
     {
       $set: {
         status: 'open',
         title: compact(notice.title, 200),
         detail: compact(notice.detail, 600),
         podName: pod?.name || 'Pod',
+        createdAt: at,
+        updatedAt: at,
         sourceCreatedAt: at,
-        stalledConnectEpisodeId: String(notice.episodeId),
+        stalledConnectEpisodeId: episodeId,
         ...(notice.agentUserId ? { actorUserId: notice.agentUserId } : {}),
       },
       $unset: { resolvedAt: 1, resolvedBy: 1 },
@@ -781,15 +799,27 @@ export const recordStalledConnect = async (notice: {
         source: { type: 'stalled_connect', id: sourceId },
       },
     },
-    { upsert: true },
+    // `createdAt` is immutable under timestamps. On a plain update, mongoose
+    // 7.8 drops a $set of it unless the cast is non-strict (it never hands
+    // overwriteImmutable to the cast), and its timestamp hook drops it again
+    // unless timestamps are off; so both are off, and the update stamps both
+    // times itself. Every path in it is a schema path, so nothing unknown
+    // rides in on the non-strict cast. On an upsert the cast moves it to
+    // $setOnInsert whatever the options (measured), which is right for an
+    // insert and is why a reopen never goes through the upsert.
+    { upsert, strict: false, timestamps: false },
   );
-  // `createdAt` is immutable under timestamps, and mongoose 7.8 strips a $set
-  // of it from a model update (overwriteImmutable included, measured), so the
-  // restamp goes through the driver. Same filter; the ids are already cast.
-  await AttentionItem.collection.updateOne(
-    { recipientUserId: recipient._id, 'source.type': 'stalled_connect', 'source.id': sourceId },
-    { $set: { createdAt: at } },
-  );
+  // A row this episode may take: reopened and restamped in this one write.
+  const reopened = await write(false);
+  if (reopened.matchedCount) return { recorded: true };
+  try {
+    // No row yet: insert it.
+    await write(true);
+  } catch (error: any) {
+    // The row exists and the filter missed it: this episode or a newer one
+    // already wrote it, and it reached them.
+    if (error?.code !== 11000) throw error;
+  }
   return { recorded: true };
 };
 

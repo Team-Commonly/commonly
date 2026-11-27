@@ -401,6 +401,19 @@ const connectedSince = async (
   }
 };
 
+/** Whether the episode has closed. A failed read answers false: the row stays,
+ * and the agent's first listen still closes it. */
+const episodeClosed = async (episodeId: unknown): Promise<boolean> => {
+  try {
+    const fresh = await StalledConnectEpisode.findById(episodeId).select('status').lean() as
+      { status?: string } | null;
+    return !fresh || fresh.status !== 'open';
+  } catch (error) {
+    console.warn('[stalled-connect] episode re-check after the write failed:', (error as Error).message);
+    return false;
+  }
+};
+
 const nudgeOnce = async ({
   install, derived, issuedAt, tokenSource, mcpConnected, connectable, agentUserId, now, result,
 }: {
@@ -494,6 +507,16 @@ const nudgeOnce = async ({
       await AttentionItemService.resolveStalledConnectEpisode(install._id, episode._id, { actioned: true });
       return true;
     }
+    // This pass read the episode open before it wrote, and another pass may
+    // have closed it since (an uninstall). Later passes only visit open
+    // episodes, so a row written after that close would stay open for good.
+    // Re-read AFTER the write: the closing pass resolves the episode's row
+    // again once the episode is closed, so either it sees this row or this
+    // read sees the close.
+    if (await episodeClosed(episode._id)) {
+      await AttentionItemService.resolveStalledConnectEpisode(install._id, episode._id, { actioned: false });
+      return true;
+    }
     result.nudged.push({
       episodeId: String(episode._id),
       agentName: derived.agentName,
@@ -527,7 +550,11 @@ const resolveConnected = async ({
   // eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
   const AttentionItemService = require('./attentionItemService');
 
-  const closeEpisode = async (ep: Record<string, any>): Promise<void> => {
+  // The row is resolved before the episode closes, so a failed resolve keeps
+  // the episode open for the next pass, and again after: a pass that claimed
+  // this episode may write its row between the two, having read the episode
+  // still open (it re-reads after writing, so it sees any close made later).
+  const closeEpisode = async (ep: Record<string, any>, actioned: boolean): Promise<void> => {
     await StalledConnectEpisode.updateOne(
       { _id: ep._id, status: 'open' },
       { $set: { status: 'resolved', resolvedAt: now } },
@@ -535,6 +562,7 @@ const resolveConnected = async ({
     result.resolved.push({
       episodeId: String(ep._id), agentName: String(ep.agentName), podId: String(ep.podId),
     });
+    await AttentionItemService.resolveStalledConnectEpisode(ep.installationId, ep._id, { actioned });
   };
 
   const resolveEpisode = async (
@@ -547,7 +575,7 @@ const resolveConnected = async ({
       // Storage errors throw, so the episode stays open and the next pass retries.
       if (ep.nudgeMessageId) await AttentionItemService.resolve('message', String(ep.nudgeMessageId), { strict: true });
       await AttentionItemService.resolveStalledConnectEpisode(ep.installationId, ep._id, { actioned: false });
-      await closeEpisode(ep);
+      await closeEpisode(ep, false);
     };
     // An uninstall keeps the install row; there is nothing left to start. No
     // uninstall path closes the Needs-you row itself (there are several), so
@@ -576,7 +604,7 @@ const resolveConnected = async ({
     }
     if (ep.nudgeMessageId) await AttentionItemService.resolveActioned('message', String(ep.nudgeMessageId), { strict: true });
     await AttentionItemService.resolveStalledConnectEpisode(ep.installationId, ep._id, { actioned: true });
-    await closeEpisode(ep);
+    await closeEpisode(ep, true);
   };
   // Every open episode, a page at a time in _id order (F505). A never-
   // connected episode stays open for good, so the open set only grows; one
