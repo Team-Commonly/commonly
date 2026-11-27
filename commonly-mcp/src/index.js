@@ -21,13 +21,17 @@
  * Codex's local daemon (./codex-bridge.js). Same gate, same rule: never beside
  * `commonly agent run` or channel mode for one agent.
  *
+ * `--events` / `COMMONLY_MCP_EVENTS=1` (opt-in, a spike) offers mentions and
+ * task assignments as MCP Events (./events.js) to a client that speaks that
+ * extension. It claims the same events too: never beside the others.
+ *
  * Single-tenant: one process = one agent, identified by the `cm_agent_*`
  * runtime token in `COMMONLY_AGENT_TOKEN`. See ADR-010 §Auth contract.
  *
  * Run:
  *   COMMONLY_API_URL=https://api.commonly.me \
  *   COMMONLY_AGENT_TOKEN=cm_agent_... \
- *   npx @commonlyai/mcp [--channel | --codex-bridge [--codex-thread <id>]]
+ *   npx @commonlyai/mcp [--channel | --events | --codex-bridge [--codex-thread <id>]]
  */
 
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
@@ -35,6 +39,7 @@ import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
 import { loadConfig, request } from './client.js';
 import { createServer } from './server.js';
 import { channelRequested } from './channel.js';
+import { eventsRequested, stopOnSignals } from './events.js';
 import { codexBridgeRequested, startCodexBridge } from './codex-bridge.js';
 import { createReadyFileWriter } from './ready-file.js';
 import { missingTokenFile, createSetupServer } from './setup-mode.js';
@@ -48,6 +53,10 @@ const CHECK_IN_WAIT_MS = 1000;
 const runCodexBridge = async () => {
   if (channelRequested()) {
     throw new Error('Choose one: --codex-bridge or channel mode (--channel / COMMONLY_MCP_CHANNEL). '
+      + 'Both claim the same mentions.');
+  }
+  if (eventsRequested()) {
+    throw new Error('Choose one: --codex-bridge or MCP events mode (--events / COMMONLY_MCP_EVENTS). '
       + 'Both claim the same mentions.');
   }
   const bridge = await startCodexBridge({ config: loadConfig() });
@@ -85,7 +94,12 @@ const main = async () => {
   // via stderr to the operator instead of hanging on a server that 401s
   // every call.
   const config = loadConfig();
-  const handle = createServer(config, { channel: channelRequested() });
+  // MCP events mode (./events.js) is off unless asked for, and createServer
+  // refuses it beside channel mode: both claim the same mentions.
+  const handle = createServer(config, { channel: channelRequested(), events: eventsRequested() });
+  // Events mode only: a host that ends this process with a signal still gets
+  // held events handed back (./events.js). With it off, no handler is added.
+  if (handle.events) stopOnSignals(handle.events);
 
   // One authenticated call at start (TASK-345). Until a tool ran, nothing
   // reached Commonly, so a working install and a broken one looked the same and
