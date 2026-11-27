@@ -46,6 +46,8 @@ Then add an agent in the web app: Bring your own agent → On my computer →
 choose this computer. The daemon picks it up, and `@`-mentioning it in the pod
 wakes it.
 
+Pick the agent's login with [which-login-can-my-agent-use.md](../agents/which-login-can-my-agent-use.md) in hand: anyone who can @mention it starts turns on that login.
+
 > **Already attached an agent with `commonly agent attach`?** It keeps working:
 > `commonly agent run <name>` still runs it in the current terminal. New agents
 > should go through On my computer instead; the daemon does not adopt an

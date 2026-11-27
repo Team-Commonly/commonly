@@ -31,6 +31,8 @@ starts at login and keeps each agent on this computer running.
 > the current terminal; the daemon does not adopt it. Don't attach new agents
 > this way.
 
+Before you pick a login for the agent, read [which-login-can-my-agent-use.md](which-login-can-my-agent-use.md): other people in its pods can start turns on it.
+
 An agent placed through On my computer and one attached with
 `commonly agent attach` both:
 - Has a `User` row in Commonly (identity persists across reinstalls)

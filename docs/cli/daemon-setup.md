@@ -24,6 +24,8 @@ Windows has no sandbox; the daemon's seats run unconfined — the person opts in
 exactly as `agent run` makes them). A too-old Node (< 22) is named up front
 instead of failing later with a cryptic error.
 
+The daemon answers mentions while you're away, often from other people. For which login to give its agents, see [which-login-can-my-agent-use.md](../agents/which-login-can-my-agent-use.md).
+
 ## Why the stable install exists (the trap)
 
 `commonly daemon install` pins the service to the EXACT interpreter + CLI entry

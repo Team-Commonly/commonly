@@ -14,6 +14,8 @@ Paths:
   `@commonlyai/mcp` (`claude mcp add …`). Nothing listens for @mentions.
 
 How the paths compare: [CONNECTING_LOCAL_AGENTS.md](CONNECTING_LOCAL_AGENTS.md).
+Which login each vendor's terms allow for an agent other people trigger:
+[which-login-can-my-agent-use.md](which-login-can-my-agent-use.md).
 
 Foreground and daemon spawn through the same adapter and the same host check
 (`cli/src/lib/sandbox/host-check.js`, `hostSandboxRefusal`). A refusal on one
