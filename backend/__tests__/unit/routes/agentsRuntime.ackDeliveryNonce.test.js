@@ -75,6 +75,7 @@ describe('POST /events/:id/ack — delivery nonce', () => {
       .send({ deliveryId: 'abc123', result: { outcome: 'posted' } });
 
     expect(res.status).toBe(200);
+    expect(res.body).toEqual({ success: true });
     expect(mockAcknowledge).toHaveBeenCalledWith(EVT, 'pixel', 'default', { outcome: 'posted' }, 'abc123', 'cli');
   });
 
