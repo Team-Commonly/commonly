@@ -2309,6 +2309,7 @@ const V2AgentBYO: React.FC = () => {
               cannot install into is replaced by their own, and that is the line
               above the button, so the click never lands somewhere unshown. */}
           {runnerPicker}
+          {accountUseLine(listenAdapter)}
           {!isOtherOwner && <button
             type="button"
             onClick={() => {
@@ -2484,7 +2485,8 @@ const V2AgentBYO: React.FC = () => {
           {/* No OS field on a machine: hostUnconfined is reported from native
               Windows only, so it stands for 'windows'; anything else is unknown. */}
           {mode === 'machine' && connectorLine(adapter, selectedMachine?.hostUnconfined === true ? 'windows' : null)}
-          {mode === 'machine' && accountUseLine(adapter)}
+          {/* Auto-detect names no harness: the daemon picks claude, then codex. */}
+          {mode === 'machine' && accountUseLine(adapter || autoDetectedHarness(machineInventory))}
           {mode === 'machine' && (
             <V2HarnessChoice
               key={`machine:${adapter}`}

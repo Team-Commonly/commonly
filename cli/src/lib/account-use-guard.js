@@ -45,6 +45,21 @@ const nobodyTriggered = (event) => KERNEL_EVENT_TYPES.has(event?.type)
 
 const idOf = (value) => (value === null || value === undefined || value === '' ? null : String(value));
 
+// Events whose person is named in a field of their own, not `payload.userId`.
+// Only a person can make either: the server refuses a bot caller for a ruling
+// (decisionRequestService.chooseDecision) and for an approval
+// (approvalActionService).
+const PERSON_FIELD_BY_TYPE = { 'decision.ruled': 'ruledBy', 'approval.resolved': 'approvedBy' };
+const namedPersonOf = (event) => {
+  const field = PERSON_FIELD_BY_TYPE[event?.type];
+  return field ? idOf(event?.payload?.[field]?.userId) : null;
+};
+// True when the payload says a person sent the event.
+const personSentFallback = (event) => {
+  const payload = event?.payload || {};
+  return payload.senderIsHuman === true || payload.dmKind === 'user-agent' || Boolean(namedPersonOf(event));
+};
+
 const podFrom = (pod) => (pod && typeof pod === 'object' ? {
   type: pod.type ?? null,
   publicRead: pod.publicRead,
@@ -83,8 +98,11 @@ export const factsFromFallback = ({ event, installation, ownerUserId = null }) =
   }
   // Only a person can be the owner: an agent sender, the owner's other agents
   // included, is someone else.
-  const personSent = payload.senderIsHuman === true || payload.dmKind === 'user-agent';
-  if (personSent && idOf(payload.userId)) {
+  const named = namedPersonOf(event);
+  if (named) {
+    ids.push(named);
+    identified = true;
+  } else if ((payload.senderIsHuman === true || payload.dmKind === 'user-agent') && idOf(payload.userId)) {
     ids.push(idOf(payload.userId));
     identified = true;
   }
@@ -154,8 +172,7 @@ export const otherRequesterOf = (facts) => (facts?.requesterUserIds || [])
 export const requesterMayBeAgent = (event, facts) => {
   if (facts?.requesterKind === 'agent') return true;
   if (facts?.source !== 'fallback') return false;
-  const payload = event?.payload || {};
-  return !(payload.senderIsHuman === true || payload.dmKind === 'user-agent');
+  return !personSentFallback(event);
 };
 
 const ownerLabel = (owner) => owner || 'the owner';

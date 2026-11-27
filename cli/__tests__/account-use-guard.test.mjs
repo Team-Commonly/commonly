@@ -263,6 +263,24 @@ describe('the verdict without the stamp (an older server)', () => {
     expect(fallbackVerdict(plain({ payload: { triggerAuthor: 'kernel' } }), { readable: false })).toBe('run');
   });
 
+  // The person who ruled or approved is named in a field of its own, and only a
+  // person can rule a decision or approve a proposal (decisionRequestService,
+  // approvalActionService both refuse a bot caller).
+  test('a ruling names its ruler, and an approval its approver', () => {
+    const ruled = (userId) => plain({ type: 'decision.ruled', payload: { ruledBy: { userId, username: 'x' } } });
+    expect(fallbackVerdict(ruled(OWNER), { pod: LISTED })).toBe('run');
+    expect(fallbackVerdict(ruled(OWNER), { pod: ROOM })).toBe('run');
+    expect(fallbackVerdict(ruled(STRANGER), { pod: LISTED })).toBe('refuse');
+    expect(fallbackVerdict(ruled(STRANGER), { pod: ROOM })).toBe('refuse');
+    expect(fallbackVerdict(ruled(STRANGER), { pod: TEAM })).toBe('warn');
+    const approved = (userId) => plain({ type: 'approval.resolved', payload: { approvedBy: { userId, username: 'x' } } });
+    expect(fallbackVerdict(approved(OWNER), { pod: LISTED })).toBe('run');
+    expect(fallbackVerdict(approved(STRANGER), { pod: LISTED })).toBe('refuse');
+    // Only on its own event type: a chat message's ruledBy names nobody.
+    const forged = plain({ payload: { ruledBy: { userId: OWNER } } });
+    expect(fallbackVerdict(forged, { pod: LISTED })).toBe('refuse');
+  });
+
   test('a board wake is unknown, as is any agent sender', () => {
     const board = plain({ payload: { triggerAuthor: 'kernel', boardWake: true } });
     expect(fallbackVerdict(board, { pod: LISTED })).toBe('refuse');

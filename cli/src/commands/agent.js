@@ -2658,17 +2658,8 @@ export const performRun = ({
       return { installations: null, ownerUserId: null, readError: err };
     }
   };
-  // F662: the account guard's /installations read, handed to this batch's
-  // placement so an older server is read once per batch, not twice. Cleared at
-  // the start of each batch and taken by the first placement after it.
-  let guardSeatPods = null;
   // Said once per process: the guard can't tell the owner from anyone else.
   let ownerMissingLogged = false;
-  const readSeatPodsForTurn = async () => {
-    const shared = guardSeatPods;
-    guardSeatPods = null;
-    return shared || readSeatPods();
-  };
   const placeTurn = async () => {
     await refreshSeatEnvironment();
     if (seatEnvironment?.sandbox?.trust !== 'workspace' && !codexUnconfined) {
@@ -2677,7 +2668,7 @@ export const performRun = ({
       // A seat with no sandbox runs as its owner, so each turn re-reads its
       // pods and runs only while all are confirmed private
       // (lib/unconfined-seat-guard.js). There is no confined fallback.
-      const { installations, readError } = await readSeatPodsForTurn();
+      const { installations, readError } = await readSeatPods();
       const reason = unconfinedPodRefusalReason(installations);
       if (reason !== lastPlacementReason) {
         log(reason
@@ -2687,7 +2678,7 @@ export const performRun = ({
       }
       return reason ? { ...unchecked, reason, readError, unconfinedRefused: true } : unchecked;
     }
-    const { installations, readError } = await readSeatPodsForTurn();
+    const { installations, readError } = await readSeatPods();
     const placement = codexUnconfined
       ? unconfinedTurnPlacement({ environment: seatEnvironment, installations, cwd: agentCwd })
       : workspaceTurnPlacement({
@@ -4049,8 +4040,12 @@ export const performRun = ({
   // only when an event needs it. A failed read defers by throwing, as the
   // placement read does, so the event stays unacked and comes back through the
   // spawn-retry backoff. Every other adapter returns 'run' with no read.
-  const judgeAccountUse = async (events, eventPodId) => {
-    guardSeatPods = null;
+  // The guard's read is its own: placement reads the pods fresh before the
+  // spawn, since the batch awaits other work in between and a pod can turn
+  // public meanwhile.
+  // `settled` holds events already handled here (a redelivery), which only
+  // ride along as context: one that can't be judged is kept out, not deferred.
+  const judgeAccountUse = async (events, eventPodId, { settled = new Set() } = {}) => {
     if (!ACCOUNT_BOUND_ADAPTERS.has(adapter.name)) return events.map(() => ({ verdict: 'run', facts: null }));
     let fallback = null;
     const judged = [];
@@ -4058,10 +4053,7 @@ export const performRun = ({
       let facts = factsFromStamp(event);
       if (!facts && accountUseNeedsFacts({ event, adapterName: adapter.name })) {
         // eslint-disable-next-line no-await-in-loop
-        if (!fallback) {
-          fallback = await readSeatPods();
-          if (!fallback.readError) guardSeatPods = fallback;
-        }
+        if (!fallback) fallback = await readSeatPods();
         const podOf = event.podId || eventPodId;
         const installation = fallback.installations
           ? fallback.installations.find((row) => String(row?.podId) === String(podOf)) || null
@@ -4073,7 +4065,8 @@ export const performRun = ({
         log('No owner is on record for this agent, so it treats every message as someone else\'s. '
           + `Run \`${CLI} agent attach\` again to fix it.`);
       }
-      const verdict = accountUseVerdict({ event, adapterName: adapter.name, facts });
+      let verdict = accountUseVerdict({ event, adapterName: adapter.name, facts });
+      if (verdict === 'defer' && settled.has(event)) verdict = 'refuse';
       if (verdict === 'defer') {
         const cause = fallback?.readError;
         throw Object.assign(
@@ -4115,10 +4108,11 @@ export const performRun = ({
     }
   };
   // Once per pod, ever (a session reset forgets it): whose account runs here.
+  // True when the line was posted this time.
   const noticeAccountUseWarn = async (facts, eventPodId) => {
     const key = `account-use-warned:${eventPodId}`;
     try {
-      if (!noticeDue(stateKey, key, Infinity)) return;
+      if (!noticeDue(stateKey, key, Infinity)) return false;
       const delivery = await deliverTurnNotice({
         client,
         podId: eventPodId,
@@ -4127,9 +4121,12 @@ export const performRun = ({
         maxChunks: maxChatChunks,
         log: (line) => log(`[inbox.batch] ${line}`),
       });
-      if (!delivery.skipped && !delivery.refused) recordNotice(stateKey, key);
+      if (delivery.skipped || delivery.refused) return false;
+      recordNotice(stateKey, key);
+      return true;
     } catch (err) {
       log(`[inbox.batch] account notice failed: ${err.message}`);
+      return false;
     }
   };
 
@@ -4510,12 +4507,20 @@ export const performRun = ({
     }
 
     // F662: before anything spawns or claims. A refused item is acked and never
-    // retried; a warned one runs after the pod hears whose account it is.
-    const unjudged = entries.filter((entry) => !entry.result);
-    const accountUse = await judgeAccountUse(unjudged.map((entry) => entry.event), eventPodId);
+    // retried; a warned one runs after the pod hears whose account it is. A
+    // redelivered item is judged too: one refused before, whose ack was lost,
+    // must stay out of this turn's prompt, ids and flags as well.
+    const isRedelivery = (entry) => entry.result?.reason === 'duplicate-delivery';
+    const unjudged = entries.filter((entry) => !entry.result || isRedelivery(entry));
+    const accountUse = await judgeAccountUse(unjudged.map((entry) => entry.event), eventPodId, {
+      settled: new Set(unjudged.filter(isRedelivery).map((entry) => entry.event)),
+    });
     for (const [index, entry] of unjudged.entries()) {
       const { verdict, facts } = accountUse[index];
-      if (verdict === 'refuse') {
+      if (isRedelivery(entry)) {
+        // Already acked or noticed once; only kept out of the turn.
+        if (verdict === 'refuse') entry.accountRefused = true;
+      } else if (verdict === 'refuse') {
         entry.result = accountUseRefusedResult();
         entry.accountRefused = true;
         // eslint-disable-next-line no-await-in-loop
@@ -4543,7 +4548,9 @@ export const performRun = ({
       }
     };
     const preSpawn = await snapshotMessages();
-    const preSpawnIds = preSpawn
+    // The reply-detection baseline. Retaken below if the account warning posts,
+    // or the warning would read as this turn's own post and drop its answer.
+    let preSpawnIds = preSpawn
       ? new Set(preSpawn.map((message) => String(message._id || message.id)))
       : null;
     const activeEntries = entries.filter((entry) => !entry.result);
@@ -4674,7 +4681,10 @@ export const performRun = ({
     const actionEntries = wakingEntries.filter((entry) => !entry.result && !entry.pastCap);
     if (actionEntries.length === 0) return { entries };
     const accountWarnFacts = actionEntries.find((entry) => entry.accountWarn)?.accountWarn;
-    if (accountWarnFacts) await noticeAccountUseWarn(accountWarnFacts, eventPodId);
+    if (accountWarnFacts && await noticeAccountUseWarn(accountWarnFacts, eventPodId)) {
+      const afterWarn = await snapshotMessages();
+      preSpawnIds = afterWarn ? new Set(afterWarn.map((message) => String(message._id || message.id))) : null;
+    }
     const personMentioned = actionEntries.some((entry) => isPersonMention(entry.event, entry.trigger));
 
     const claimKeepers = actionEntries

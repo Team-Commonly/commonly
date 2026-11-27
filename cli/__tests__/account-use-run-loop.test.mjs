@@ -89,24 +89,37 @@ const mention = ({
 // One run over one page. `installations` is the /installations answer, or an
 // Error to throw. `claimed: false` loses every message claim to a peer.
 // `environment` defaults to a confined seat, whose placement reads no pods.
+// `installations` may also be a list, one answer per read, the last repeating.
+// `podMessages: true` serves this agent's own posts back from the pod's message
+// read, marked `self`, as a current server does. `failAcks` makes every ack throw.
 const run = async ({
   events, adapterName = 'claude', installations = null, claimed = true,
-  environment = { model: 'm', sandbox: { trust: 'public' } },
+  environment = { model: 'm', sandbox: { trust: 'public' } }, workspacePath, podMessages = false, failAcks = false,
 }) => {
   let polls = 0;
+  let reads = 0;
+  const posted = [];
   const get = jest.fn(async (route) => {
     if (route === '/api/agents/runtime/events') {
       polls += 1;
       return { events: polls === 1 ? events : [] };
     }
     if (route === '/api/agents/runtime/installations') {
-      if (installations instanceof Error) throw installations;
-      return installations || { installations: [] };
+      const answer = Array.isArray(installations) ? installations[Math.min(reads, installations.length - 1)] : installations;
+      reads += 1;
+      if (answer instanceof Error) throw answer;
+      return answer || { installations: [] };
     }
-    if (route.endsWith('/messages')) return { messages: [] };
+    if (route.endsWith('/messages')) return { messages: podMessages ? [...posted] : [] };
     return {};
   });
-  const post = jest.fn(async (route) => {
+  const post = jest.fn(async (route, body) => {
+    if (failAcks && String(route).endsWith('/ack')) throw new Error('ack lost');
+    if (podMessages && route === `/api/agents/runtime/pods/${POD}/messages`) {
+      posted.push({
+        _id: `own-${posted.length + 1}`, content: body.content, isBot: true, self: true, username: 'seat',
+      });
+    }
     if (!String(route).endsWith('/claim')) return {};
     return claimed ? { claimed: true, expiresAt: 'later' } : { claimed: false, holder: { agentName: 'peer', instanceId: 'default' } };
   });
@@ -119,6 +132,7 @@ const run = async ({
     adapter: { name: adapterName, detect: stubAdapter.detect, spawn },
     agentName: 'seat',
     environment,
+    ...(workspacePath ? { workspacePath } : {}),
     log: (line) => logs.push(String(line)),
     retryJitterRatio: 0,
     claimYieldDelayMs: 0,
@@ -399,15 +413,93 @@ test('a lost claim does not spend the once-per-pod warn', async () => {
   expect(won.notices).toHaveLength(1);
 });
 
-test('a seat that reads its pods to place the turn shares the guard\'s read: one /installations read per batch', async () => {
-  const identity = {
+test('placement reads the pods fresh: a pod private at judgment and public at placement gets the scratch folder', async () => {
+  const workspaceDir = fs.mkdtempSync(path.join(sessionsTmpDir, 'workspace-'));
+  const row = (publicRead) => ({
     ownerUserId: OWNER,
-    installations: [{ podId: POD, podType: 'chat', publicRead: false, communityListed: false, joinPolicy: 'invite-only' }],
-  };
-  // No sandbox declared: placement re-reads the pods before the turn.
-  const out = await run({ events: [mention({ stamp: false, from: OWNER })], installations: identity, environment: { model: 'm' } });
+    installations: [{ podId: POD, podType: 'chat', publicRead, communityListed: false, joinPolicy: 'invite-only' }],
+  });
+  const out = await run({
+    events: [mention({ stamp: false, from: OWNER })],
+    installations: [row(false), row(true)],
+    environment: { model: 'm', sandbox: { trust: 'workspace' } },
+    workspacePath: workspaceDir,
+  });
   expect(out.spawn).toHaveBeenCalledTimes(1);
-  expect(out.installationReads).toBe(1);
+  const ctx = out.spawn.mock.calls[0][1];
+  expect(ctx.cwd).not.toBe(workspaceDir);
+  expect(ctx.environment.sandbox.trust).toBe('public');
+  // One read for the guard, one fresh read for the placement.
+  expect(out.installationReads).toBe(2);
+});
+
+test('a refusal whose ack was lost stays out of the turn when it is redelivered beside the owner\'s request', async () => {
+  const theirs = mention({ content: '@seat a stranger asks for the secret plan' });
+  const first = await run({ events: [theirs], failAcks: true });
+  expect(first.spawn).not.toHaveBeenCalled();
+  const mine = mention({ from: OWNER, content: '@seat the owner asks' });
+  const out = await run({ events: [mine, theirs] });
+  expect(out.spawn).toHaveBeenCalledTimes(1);
+  const prompt = JSON.stringify(out.spawn.mock.calls[0]);
+  expect(prompt).toContain('the owner asks');
+  expect(prompt).not.toContain('a stranger asks for the secret plan');
+  const { payload } = out.spawn.mock.calls[0][1].metadata.event;
+  expect(payload.batchEventIds).toEqual([mine._id]);
+  expect(String(out.spawn.mock.calls[0][0])).toContain('[Inbox batch: 1 new event in this pod.');
+});
+
+test('the one-time warning is not taken for the model\'s own post: its answer is still delivered', async () => {
+  const out = await run({ events: [mention({ pod: TEAM })], podMessages: true });
+  expect(out.spawn).toHaveBeenCalledTimes(1);
+  expect(out.notices).toHaveLength(1);
+  expect(out.replies).toEqual(['done']);
+});
+
+describe('a ruling, against a server with no stamp', () => {
+  const ruled = (ruler) => {
+    seq += 1;
+    return {
+      _id: `evt-${seq}`,
+      type: 'decision.ruled',
+      podId: POD,
+      agentName: 'seat',
+      instanceId: 'default',
+      payload: {
+        decisionId: `d-${seq}`,
+        pick: 'ship it',
+        ruledBy: { userId: ruler, username: ruler },
+        ruledAt: '2026-11-27T00:00:00.000Z',
+        rulingMessageId: `m-${seq}`,
+        podId: POD,
+      },
+    };
+  };
+  const identity = (pod) => ({
+    ownerUserId: OWNER,
+    installations: [{
+      podId: POD, podType: pod.type, publicRead: pod.publicRead, communityListed: pod.communityListed, joinPolicy: pod.joinPolicy,
+    }],
+  });
+
+  test.each([['an open pod', LISTED], ['a DM', ROOM]])('the owner\'s ruling runs in %s', async (_label, pod) => {
+    const event = ruled(OWNER);
+    const out = await run({ events: [event], installations: identity(pod) });
+    expect(out.spawn).toHaveBeenCalledTimes(1);
+    expect(out.acks.find((ack) => ack.id === event._id).result.reason).not.toBe('account-not-owner');
+  });
+
+  test.each([['an open pod', LISTED], ['a DM', ROOM]])('someone else\'s ruling is refused in %s', async (_label, pod) => {
+    const event = ruled(STRANGER);
+    const out = await run({ events: [event], installations: identity(pod) });
+    expect(out.spawn).not.toHaveBeenCalled();
+    expect(out.acks).toEqual([{ id: event._id, result: REFUSED_ACK }]);
+  });
+
+  test('someone else\'s ruling in a team pod runs, with the warning', async () => {
+    const out = await run({ events: [ruled(STRANGER)], installations: identity(TEAM) });
+    expect(out.spawn).toHaveBeenCalledTimes(1);
+    expect(out.notices).toEqual([expect.stringMatching(/^Heads up: I run on the owner's own Claude Code account/)]);
+  });
 });
 
 test('no owner on record is said once in the log, never in the pod', async () => {

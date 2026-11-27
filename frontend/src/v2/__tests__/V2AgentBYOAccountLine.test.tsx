@@ -3,7 +3,7 @@
 // login or key. The page says so before it connects: anyone in a team pod can
 // start a turn on it, and in a public or listed pod it answers only its owner.
 import React from 'react';
-import { act, fireEvent, render, screen } from '@testing-library/react';
+import { act, fireEvent, render, screen, within } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import V2AgentBYO from '../components/V2AgentBYO';
 import { AuthContext } from '../../context/AuthContext';
@@ -89,6 +89,7 @@ beforeEach(() => {
 });
 afterEach(async () => {
   jest.clearAllMocks();
+  window.history.pushState({}, '', '/');
   setUserAgent(realUserAgent);
   await act(async () => { await i18n.changeLanguage('en'); });
 });
@@ -126,6 +127,33 @@ describe('the account line', () => {
     expect(await screen.findByTestId('byo-account-use')).toHaveTextContent(TEAM_LINE('Codex'));
     fireEvent.change(screen.getByTestId('byo-adapter-select'), { target: { value: 'opencode' } });
     expect(screen.queryByTestId('byo-account-use')).toBeNull();
+  });
+
+  test('shows on the compact card path, before its connect button', async () => {
+    const url = '/v2/agents/byo?pod=p1&name=sam-claude&from=card';
+    window.history.pushState({}, '', url);
+    render(
+      <AuthContext.Provider value={authValue}>
+        <MemoryRouter initialEntries={[url]}><V2AgentBYO /></MemoryRouter>
+      </AuthContext.Provider>,
+    );
+    const compact = await screen.findByTestId('byo-card-compact');
+    const line = await within(compact).findByTestId('byo-account-use');
+    expect(line).toHaveTextContent(TEAM_LINE('Claude Code'));
+    const install = within(compact).getByRole('button', { name: /get my connect command/i });
+    // eslint-disable-next-line no-bitwise
+    expect(line.compareDocumentPosition(install) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
+  test('on a computer, with no harness picked, names the one the daemon will pick', async () => {
+    machines = [{
+      id: 'm1', machineId: 'mach-a', name: 'Sam’s MacBook', status: 'online', agentStates: [],
+      runtimeInventory: [{ harness: 'codex', installed: false }, { harness: 'claude', installed: true }],
+    }];
+    await open('machine');
+    await screen.findByTestId('byo-adapter-select');
+    expect(screen.getByTestId('byo-adapter-select')).toHaveValue('');
+    expect(await screen.findByTestId('byo-account-use')).toHaveTextContent(TEAM_LINE('Claude Code'));
   });
 
   test('is hidden on the hosted path', async () => {
