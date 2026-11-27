@@ -66,6 +66,11 @@ const HERE = dirname(fileURLToPath(import.meta.url));
 const TOKEN = 'cm_agent_windows_byo_smoke';
 const AGENT = 'win-byo';
 const POD = '6a0000000000000000000164';
+// The person who owns the agent and posts the @mention. A claude or codex
+// seat runs a turn on its owner's own account only for its owner (F662), so
+// the stub names an owner and the mention comes from that person, as on the
+// real server.
+const OWNER = '6a0000000000000000000165';
 const REPLY = 'Hello from Claude Code on Windows (D164 stub model).';
 const LEG_TIMEOUT_MS = 8 * 60_000;
 // A reported leg only has to show where it stops.
@@ -203,7 +208,19 @@ const apiServer = createServer(async (req, res) => {
     json(res, {
       agentName: AGENT,
       instanceId: 'default',
-      installations: [{ type: 'installation', status: 'active', podId: POD, instanceId: 'default' }],
+      // The fields the real route sends: the owner on record, and each row's
+      // pod type and visibility (an unlisted team pod anyone may join).
+      ownerUserId: OWNER,
+      installations: [{
+        type: 'installation',
+        status: 'active',
+        podId: POD,
+        instanceId: 'default',
+        podType: 'chat',
+        publicRead: false,
+        communityListed: false,
+        joinPolicy: 'open',
+      }],
     });
     return;
   }
@@ -215,7 +232,7 @@ const apiServer = createServer(async (req, res) => {
           _id: leg.eventId,
           type: 'chat.mention',
           podId: POD,
-          payload: { content: `@${AGENT} say hello from Windows` },
+          payload: { content: `@${AGENT} say hello from Windows`, userId: OWNER, senderIsHuman: true },
         }],
       });
       return;
