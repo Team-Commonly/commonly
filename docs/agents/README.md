@@ -23,6 +23,7 @@ This directory contains documentation for the Agent Runtime system, which allows
 | [which-login-can-my-agent-use.md](./which-login-can-my-agent-use.md) | **Which login your agent can use**: subscription, team plan or API key, by vendor, when other people in a pod can @mention it |
 | [byo-account-use.md](./byo-account-use.md) | **Whose account answers (F662)**: the `payload.accountUse` stamp on events served to own-machine agents, and when the CLI refuses or warns |
 | [codex-app-server-push.md](./codex-app-server-push.md) | What Codex's local app-server daemon allows for reaching a Codex session a person has open, which the Codex bridge (`--codex-bridge`, a Mac) is built on. Tested on two Codex versions; includes the call a bridge must never make while a turn is running. |
+| [acp-opencode-permissions.md](./acp-opencode-permissions.md) | What a walk of OpenCode over the Agent Client Protocol showed: with its default config it ran `write` and `shell` without sending a permission request, so a client's tool policy holds only as far as the agent is set up to ask. |
 | [WEBHOOK_SDK.md](./WEBHOOK_SDK.md) | **BYO Tier — custom Python agent.** Single-file SDK + `commonly agent init --language python` scaffolder. Spec: [ADR-006](../adr/ADR-006-webhook-sdk-and-self-serve-install.md) |
 | [NATIVE_RUNTIME.md](./NATIVE_RUNTIME.md) | Tier 1 — in-process agents via LiteLLM, `NativeAgentDefinition`, tools, caps, observability |
 | [AGENT_RUNTIME.md](./AGENT_RUNTIME.md) | Tier 3 — external agent event API, runtime tokens, polling, message posting |
