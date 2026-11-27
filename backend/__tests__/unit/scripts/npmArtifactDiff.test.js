@@ -34,7 +34,14 @@ const npmStub = [
   'else [ -n "${STUB_FETCH_FAIL:-}" ] && exit 1',
   // STUB_FETCH_FAIL_TIMES=N: the first N fetches fail (a version npm does not serve yet).
   '  if [ -n "${STUB_FETCH_FAIL_TIMES:-}" ]; then n=$(( $(cat "$STUB_REGISTRY_DIR.count" 2>/dev/null || echo 0) + 1 ))',
-  '    echo "$n" > "$STUB_REGISTRY_DIR.count"; [ "$n" -le "$STUB_FETCH_FAIL_TIMES" ] && exit 1; fi',
+  // STUB_FETCH_PARTIAL: a failed fetch leaves a broken partial-<n>.tgz behind, as an
+  // interrupted download can.
+  '    echo "$n" > "$STUB_REGISTRY_DIR.count"',
+  '    if [ "$n" -le "$STUB_FETCH_FAIL_TIMES" ]; then',
+  '      [ -n "${STUB_FETCH_PARTIAL:-}" ] && echo partial > "$dest/partial-$n.tgz"',
+  '      exit 1',
+  '    fi',
+  '  fi',
   '  src="$STUB_REGISTRY_DIR"; fi',
   't=$(mktemp -d); mkdir "$t/package"; cp -R "$src"/. "$t/package/"',
   'tar -czf "$dest/pkg.tgz" -C "$t" package',
@@ -113,6 +120,14 @@ describe('npm-artifact-diff.sh', () => {
   // is retried; only a version still missing after every attempt is a 2.
   test('a version npm serves only after a few tries is fetched, not a 2', () => {
     const r = run(setup(), { STUB_FETCH_FAIL_TIMES: '2' });
+    expect(r.status).toBe(0);
+    expect(r.fetches).toBe(3);
+  });
+
+  // A failed attempt's leftover file would sit beside the good tarball, and
+  // extracting `tgz-registry/*.tgz` would then read the broken one.
+  test('a failed fetch that leaves a partial tarball is cleared before the retry', () => {
+    const r = run(setup(), { STUB_FETCH_FAIL_TIMES: '2', STUB_FETCH_PARTIAL: '1' });
     expect(r.status).toBe(0);
     expect(r.fetches).toBe(3);
   });
