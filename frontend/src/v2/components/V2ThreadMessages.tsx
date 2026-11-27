@@ -236,9 +236,11 @@ const V2ThreadMessages: React.FC<V2ThreadMessagesProps> = ({
   // reveals the rest for that root (walk-3 §3).
   const [expandedAll, setExpandedAll] = useState<Set<string>>(() => new Set());
   // The resting state of a thread is the chip (ux-lead 64476 (4)). Which
-  // roots are open is a session gesture held here; the server `collapsed`
-  // row is written to match on each open/close (it still drives the wake
-  // path), but a fresh mount shows chips. The one exception: a thread
+  // roots are open is a session gesture held here and nowhere else: opening
+  // or closing a thread writes nothing to the server (F649). The stored
+  // `collapsed` row has no reader — not the wake path, not this render, which
+  // mounts chips — so a PUT per peek bought nothing and spent the caller's
+  // shared reaction rate-limit bucket. The one exception to chips: a thread
   // whose root I wrote opens for me while it holds an agent reply I haven't
   // read — see the asker auto-open below.
   const [openRoots, setOpenRoots] = useState<Set<string>>(() => new Set());
@@ -274,14 +276,13 @@ const V2ThreadMessages: React.FC<V2ThreadMessagesProps> = ({
         if (settled === undefined || newest > settled) settledAgentAtRef.current.set(rootId, newest);
       }
     }
-    threadState.setCollapsed?.(rootId, !open);
-  }, [threadState, threadView]);
+  }, [threadView]);
 
   // The asker's view: a thread whose root I wrote and that holds an
   // agent reply I haven't read opens for me, on mount and as replies land.
   // Waits for the state fetch, or a thread I already read would open on its
   // own-message fallback before the server's read point arrives. The open is
-  // local: the server's `collapsed` row is written only by a gesture.
+  // local, like every open (F649).
   const stateReady = threadState.ready !== false;
   useEffect(() => {
     if (!stateReady || !viewerId) return;

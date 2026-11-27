@@ -202,7 +202,7 @@ describe('direction C threading restyle (PR 2b)', () => {
     return { ...utils, setCollapsed, toggleFollowing };
   };
 
-  test('a thread rests as a chip under its root even when the server row says open; the chip opens it and the server is told', () => {
+  test('a thread rests as a chip under its root even when the server row says open; the chip opens it locally and writes nothing (F649)', () => {
     const { container, setCollapsed } = renderThread();
     const block = container.querySelector('.v2-thread-block');
     expect(block).not.toHaveClass('v2-thread-block--open');
@@ -213,7 +213,8 @@ describe('direction C threading restyle (PR 2b)', () => {
     expect(block.querySelector('.v2-thread-replies')).toBeNull();
     fireEvent.click(within(block).getByRole('button', { name: 'Expand thread, 11 replies' }));
     expect(block).toHaveClass('v2-thread-block--open');
-    expect(setCollapsed).toHaveBeenCalledWith('20', false);
+    // A peek is the viewer's own session state: no PUT /collapsed (F649).
+    expect(setCollapsed).not.toHaveBeenCalled();
     expect(within(block).queryByRole('button', { name: /Expand thread/ })).not.toBeInTheDocument();
   });
 
@@ -233,8 +234,9 @@ describe('direction C threading restyle (PR 2b)', () => {
     fireEvent.click(follow);
     expect(toggleFollowing).toHaveBeenCalledWith('20');
     fireEvent.click(within(foot).getByRole('button', { name: 'Collapse' }));
-    expect(setCollapsed).toHaveBeenLastCalledWith('20', true);
     expect(container.querySelector('.v2-thread-block--open')).toBeNull();
+    // Closing is local too: nothing reads a stored collapse back (F649).
+    expect(setCollapsed).not.toHaveBeenCalled();
   });
 
   test('the first-reply invite survives collapse and the hidden expanded prefix exactly once', () => {
