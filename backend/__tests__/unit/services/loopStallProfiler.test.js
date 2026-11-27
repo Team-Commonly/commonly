@@ -14,7 +14,12 @@ const {
   parseWindowSeconds,
   parseThresholdMs,
   SAMPLING_INTERVAL_US,
+  HISTOGRAM_RESOLUTION_MS,
+  waitForHistogramSample,
 } = require('../../../services/loopStallProfiler');
+
+// Each window end first waits one histogram period (waitForHistogramSample).
+const YIELD_MS = HISTOGRAM_RESOLUTION_MS + 1;
 
 const DIR = '/profiles';
 const T0 = Date.parse('2026-11-25T10:04:00.000Z');
@@ -78,12 +83,11 @@ const setup = ({ env = {}, session = fakeSession(), fs = fakeFs() } = {}) => {
 };
 
 // Runs one window of `seconds` with the loop delay seen during it. The extra
-// millisecond is the window end's one-yield step: a fake setImmediate queued
-// from inside a fake timer runs 1 ms later. So each window ends 1 ms after
-// the previous one plus its length (window N ends at N * (length + 1 ms)).
+// YIELD_MS is the window end's wait for one histogram sample, so window N
+// ends at N * (length + YIELD_MS).
 const runWindow = async (histogram, maxMs, seconds = 60) => {
   histogram.max = maxMs * MS;
-  await jest.advanceTimersByTimeAsync(seconds * 1000 + 1);
+  await jest.advanceTimersByTimeAsync(seconds * 1000 + YIELD_MS);
 };
 
 const written = (fs) => fs.writeFile.mock.calls.map(([file, data]) => [path.basename(file), JSON.parse(data).window]);
@@ -148,7 +152,7 @@ describe('startLoopStallProfiler', () => {
     await runWindow(histogram, 10); // window 1, quiet: becomes "previous"
     await runWindow(histogram, 4100); // window 2, stall
 
-    const stamp = '2026-11-25T10-06-00-002Z';
+    const stamp = '2026-11-25T10-06-00-042Z';
     expect(written(fs)).toEqual([
       [`stall-${stamp}-prev.cpuprofile`, 1],
       [`stall-${stamp}-cur.cpuprofile`, 2],
@@ -177,7 +181,7 @@ describe('startLoopStallProfiler', () => {
     const { histogram, fs, logger, handle } = setup();
     await jest.advanceTimersByTimeAsync(0);
     await runWindow(histogram, 2000);
-    const stamp = '2026-11-25T10-05-00-001Z';
+    const stamp = '2026-11-25T10-05-00-021Z';
     expect(written(fs)).toEqual([[`stall-${stamp}-cur.cpuprofile`, 1]]);
     expect(logger.log).toHaveBeenCalledWith(
       '[loop-stall-profile] saved %s max=%dms', path.join(DIR, `stall-${stamp}-cur.cpuprofile`), 2000,
@@ -292,13 +296,13 @@ describe('startLoopStallProfiler', () => {
     handle.stop();
   });
 
-  it('reads the histogram after one yield, so a delay recorded by a timer due at the boundary counts', async () => {
+  it('reads the histogram after one histogram period, so a delay recorded by a timer due by then counts', async () => {
     const { histogram, fs, handle } = setup();
     await jest.advanceTimersByTimeAsync(0);
-    // Created after the window timer and due at the same moment, so it runs
-    // just after it, as the histogram's own timer can.
-    setTimeout(() => { histogram.max = 2000 * MS; }, 60_000);
-    await jest.advanceTimersByTimeAsync(60_001);
+    // Due a full period after the window timer, the latest the histogram's
+    // own timer can be: it still runs before the read.
+    setTimeout(() => { histogram.max = 2000 * MS; }, 60_000 + HISTOGRAM_RESOLUTION_MS);
+    await jest.advanceTimersByTimeAsync(60_000 + YIELD_MS);
     expect(fs.writeFile).toHaveBeenCalledTimes(1);
     handle.stop();
   });
@@ -359,7 +363,7 @@ describe('startLoopStallProfiler', () => {
     await jest.advanceTimersByTimeAsync(9999);
     expect(session.calls).not.toContain('Profiler.stop');
     histogram.max = 0;
-    await jest.advanceTimersByTimeAsync(2);
+    await jest.advanceTimersByTimeAsync(1 + YIELD_MS);
     expect(session.calls).toContain('Profiler.stop');
     handle.stop();
   });
@@ -414,6 +418,41 @@ describe('a real monitorEventLoopDelay histogram', () => {
       block(300);
       await wait(50);
       expect(h.max / MS).toBeGreaterThanOrEqual(290);
+    } finally {
+      h.disable();
+    }
+  });
+
+  // The window-end order a single setImmediate loses: inside the window
+  // timer, a block lands before the check phase (here an earlier immediate;
+  // in prod, a poll-phase callback), so an immediate-only yield reads the
+  // histogram before its next sample.
+  const maxAfterBlockThen = (h, yieldFn) => new Promise((resolve) => {
+    setTimeout(() => {
+      setImmediate(() => block(300));
+      yieldFn().then(() => resolve(h.max / MS));
+    }, 10);
+  });
+
+  it('a block between the window timer and the check phase is read before a lone setImmediate sees it', async () => {
+    const h = monitorEventLoopDelay({ resolution: HISTOGRAM_RESOLUTION_MS });
+    h.enable();
+    try {
+      await wait(100);
+      const maxMs = await maxAfterBlockThen(h, () => new Promise((r) => { setImmediate(r); }));
+      expect(maxMs).toBeLessThan(200);
+    } finally {
+      h.disable();
+    }
+  });
+
+  it('waitForHistogramSample reads that block, because the histogram timer runs first', async () => {
+    const h = monitorEventLoopDelay({ resolution: HISTOGRAM_RESOLUTION_MS });
+    h.enable();
+    try {
+      await wait(100);
+      const maxMs = await maxAfterBlockThen(h, waitForHistogramSample);
+      expect(maxMs).toBeGreaterThanOrEqual(290);
     } finally {
       h.disable();
     }

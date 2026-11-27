@@ -30,6 +30,21 @@ import { describeError } from '../utils/safeErrorLog';
  */
 
 export const SAMPLING_INTERVAL_US = 10_000;
+// The loop-delay histogram's own sampling timer period.
+export const HISTOGRAM_RESOLUTION_MS = 20;
+
+/**
+ * Waits one full histogram period on a timer. A delay is recorded only when
+ * the histogram's own timer next runs, and that timer is due no later than
+ * one period from now, so it runs before this one, in due order, however the
+ * loop was blocked meanwhile. A single setImmediate is not enough: a block in
+ * the poll phase (or an earlier immediate) runs before the check phase, and
+ * the read would come before the histogram's next sample, losing the stall.
+ */
+export const waitForHistogramSample = (): Promise<void> => new Promise<void>((resolve) => {
+  const t = setTimeout(resolve, HISTOGRAM_RESOLUTION_MS + 1);
+  t.unref?.();
+});
 // Each Profiler.start pauses the loop for roughly 50–150 ms while V8 re-logs
 // compiled code, so the longest window means the fewest pauses.
 export const DEFAULT_WINDOW_S = 60;
@@ -93,7 +108,7 @@ const post = (session: ProfilerSession, method: string, params?: object): Promis
 export const startLoopStallProfiler = ({
   env = process.env,
   createSession = () => new inspector.Session() as unknown as ProfilerSession,
-  createHistogram = () => monitorEventLoopDelay({ resolution: 20 }) as LoopDelayHistogram,
+  createHistogram = () => monitorEventLoopDelay({ resolution: HISTOGRAM_RESOLUTION_MS }) as LoopDelayHistogram,
   fs = fsPromises as unknown as ProfileFs,
   logger = console as Logger,
 }: {
@@ -191,10 +206,11 @@ export const startLoopStallProfiler = ({
   };
 
   const rotate = async () => {
-    // Our window timer can fire before the histogram's own timer in the same
-    // timers phase, and a stall ending right at the boundary is recorded only
-    // when that one runs. One setImmediate lets it run first.
-    await new Promise<void>((resolve) => { setImmediate(resolve); });
+    // A stall ending at the boundary is recorded only when the histogram's
+    // own timer next runs, which can be after our window timer, after a block
+    // in the poll phase, or after an earlier immediate. Waiting one histogram
+    // period on a timer lets it run first in every one of those orders.
+    await waitForHistogramSample();
     const s = session;
     const h = histogram;
     if (stopped || !s || !h) return;
