@@ -227,4 +227,29 @@ describe('F668 — the unread-digest wake checks are answered per scope by Mongo
     // Eleven due groups: one summary row per scope at most, not every ack.
     expect(seen.rows).toBeLessThanOrEqual(11);
   });
+
+  it('a scope whose podId arrives as a 24-hex string still finds its stored ObjectId wakes', async () => {
+    // aggregate() casts nothing: without the cast, a string podId matches no
+    // stored ObjectId and both answers would silently come back empty.
+    const ackedPod = oid();
+    const pendingPod = oid();
+    await AgentEvent.collection.insertMany([
+      wakeRow({ agentName: 'acked', podId: ackedPod }, { status: 'acked', deliveredAt: minutesAgo(5) }),
+      wakeRow({ agentName: 'pending', podId: pendingPod }, { status: 'pending', attempts: 0, createdAt: minutesAgo(4) }),
+    ]);
+    const windowStart = minutesAgo(60);
+    const ackedScope = { agentName: 'Acked', instanceId: 'default', podId: String(ackedPod) };
+    const pendingScope = { agentName: 'pending', instanceId: 'default', podId: String(pendingPod) };
+
+    const { pending, recent } = await SchedulerService.findDigestWakeBlockers([
+      { scope: ackedScope, windowStart },
+      { scope: pendingScope, windowStart },
+    ]);
+
+    expect([...pending]).toEqual([scopeKey(pendingScope)]);
+    const rows = recent.get(scopeKey(ackedScope));
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({ status: 'delivered' });
+    expect(new Date(rows[0].deliveredAt).getTime()).toBe(minutesAgo(5).getTime());
+  });
 });
