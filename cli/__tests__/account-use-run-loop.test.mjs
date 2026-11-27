@@ -95,6 +95,7 @@ const mention = ({
 const run = async ({
   events, adapterName = 'claude', installations = null, claimed = true,
   environment = { model: 'm', sandbox: { trust: 'public' } }, workspacePath, podMessages = false, failAcks = false,
+  detectBwrapImpl,
 }) => {
   let polls = 0;
   let reads = 0;
@@ -135,6 +136,7 @@ const run = async ({
     ...(workspacePath ? { workspacePath } : {}),
     log: (line) => logs.push(String(line)),
     retryJitterRatio: 0,
+    ...(detectBwrapImpl ? { detectBwrapImpl } : {}),
     claimYieldDelayMs: 0,
     sleepImpl: async () => {},
     setTimeoutImpl: () => 0,
@@ -419,12 +421,23 @@ test('placement reads the pods fresh: a pod private at judgment and public at pl
     ownerUserId: OWNER,
     installations: [{ podId: POD, podType: 'chat', publicRead, communityListed: false, joinPolicy: 'invite-only' }],
   });
-  const out = await run({
-    events: [mention({ stamp: false, from: OWNER })],
-    installations: [row(false), row(true)],
-    environment: { model: 'm', sandbox: { trust: 'workspace' } },
-    workspacePath: workspaceDir,
-  });
+  // A workspace turn placed public runs as a public seat, which on Linux needs
+  // bubblewrap. Pin Linux with bubblewrap present, so the run is the same on
+  // every host (CI has no bubblewrap).
+  const originalPlatform = process.platform;
+  Object.defineProperty(process, 'platform', { value: 'linux' });
+  let out;
+  try {
+    out = await run({
+      events: [mention({ stamp: false, from: OWNER })],
+      installations: [row(false), row(true)],
+      environment: { model: 'm', sandbox: { trust: 'workspace' } },
+      workspacePath: workspaceDir,
+      detectBwrapImpl: () => ({ available: true, path: 'bwrap' }),
+    });
+  } finally {
+    Object.defineProperty(process, 'platform', { value: originalPlatform });
+  }
   expect(out.spawn).toHaveBeenCalledTimes(1);
   const ctx = out.spawn.mock.calls[0][1];
   expect(ctx.cwd).not.toBe(workspaceDir);
