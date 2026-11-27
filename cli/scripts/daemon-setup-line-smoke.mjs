@@ -30,6 +30,8 @@ import { dirname, join, resolve } from 'path';
 import { fileURLToPath, pathToFileURL } from 'url';
 import { promisify } from 'util';
 
+import { npmBinFor, runNpm, waitForNpmServed } from './npm-served-wait.mjs';
+
 const run = promisify(execFile);
 const HERE = dirname(fileURLToPath(import.meta.url));
 const UTIL = resolve(HERE, '..', '..', 'frontend', 'src', 'v2', 'utils', 'daemonSetupCommand.ts');
@@ -129,6 +131,8 @@ try {
     }
     log('control: a bare npx is refused under the Restricted policy, as on a stock Windows 11 account');
   }
+  // npm names a new @latest minutes before it serves the tarball (F674); wait for it, then walk the line as written.
+  await waitForNpmServed({ pkg: '@commonlyai/cli', run: runNpm, npmBin: npmBinFor(), sleep, log });
   const pastedAt = Date.now();
   const { code } = await paste(line);
   if (code !== 0) fail(`the line exited ${code}`);

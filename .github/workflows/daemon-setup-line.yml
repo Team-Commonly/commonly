@@ -10,6 +10,7 @@ on:
     paths:
       - 'frontend/src/v2/utils/daemonSetupCommand.ts'
       - 'cli/scripts/daemon-setup-line-smoke.mjs'
+      - 'cli/scripts/npm-served-wait.mjs'
       - '.github/workflows/daemon-setup-line.yml'
   schedule:
     - cron: '17 6 * * *'
@@ -34,4 +35,6 @@ jobs:
         with:
           node-version: '22'
       - name: Paste the page's line; the service-started daemon checks in
+        # The npm wait is capped at 4 min; this keeps a hang that outlives the cap inside the 20-minute job.
+        timeout-minutes: 17
         run: node --experimental-strip-types cli/scripts/daemon-setup-line-smoke.mjs

@@ -28,6 +28,7 @@ on:
       - 'cli/package-lock.json'
       - 'packages/seats/**'
       - 'cli/scripts/windows-byo-smoke.mjs'
+      - 'cli/scripts/npm-served-wait.mjs'
       - 'cli/scripts/windows-byo-verdict.mjs'
       - 'cli/scripts/windows-byo-prod.mjs'
       - 'cli/scripts/linux-byo-prod.mjs'
@@ -108,6 +109,8 @@ jobs:
           tgz=$(npm pack --silent --pack-destination "$RUNNER_TEMP" | tail -n 1)
           echo "tarball=$RUNNER_TEMP\\$tgz" >> "$GITHUB_OUTPUT"
       - name: Walk the page's Windows lines
+        # The npm wait is capped at 4 min; this keeps a hang that outlives the cap inside the 40-minute job.
+        timeout-minutes: 34
         env:
           COMMONLY_BYO_TREE_TARBALL: ${{ steps.pack.outputs.tarball }}
           # A CLI fix reaches npm only after merge, so on a PR the published
