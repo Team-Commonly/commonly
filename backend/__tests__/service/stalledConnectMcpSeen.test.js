@@ -2,7 +2,6 @@
 // the auth stamp, through each token store's own schema, and read back through
 // the scan's own projection. A mock of `updateOne` can't tell whether the field
 // persists, or whether the projection still carries it.
-const mongoose = require('mongoose');
 const { setupMongoDb, closeMongoDb, clearMongoDb } = require('../utils/testUtils');
 
 process.env.PG_HOST = '';
@@ -13,6 +12,7 @@ jest.mock('../../services/agentMessageService', () => ({ postMessage: (...args) 
 
 const { AgentInstallation } = require('../../models/AgentRegistry');
 const StalledConnectEpisode = require('../../models/StalledConnectEpisode');
+const AttentionItem = require('../../models/AttentionItem');
 const User = require('../../models/User');
 const Pod = require('../../models/Pod');
 const { usageStamp } = require('../../middleware/agentRuntimeAuth');
@@ -25,18 +25,24 @@ const ISSUED = new Date(NOW.getTime() - 20 * MINUTE);
 const mcpClient = { headers: { 'user-agent': 'commonly-mcp/1.0.0' } };
 const otherClient = { headers: { 'user-agent': 'node' } };
 
-const seat = async (agentName, runtimeTokens) => AgentInstallation.create({
-  agentName,
-  instanceId: 'default',
-  podId: new mongoose.Types.ObjectId(),
-  version: '1.0.0',
-  installedBy: (await User.create({
+// The installer is in the pod: Activity only shows a row for a pod they can open.
+const seat = async (agentName, runtimeTokens) => {
+  const installer = await User.create({
     username: `${agentName}-person`, email: `${agentName}@people.test`, password: 'not-a-login',
-  }))._id,
-  status: 'active',
-  config: { runtime: { host: 'byo', runtimeType: 'local-cli' } },
-  runtimeTokens,
-});
+  });
+  const pod = await Pod.create({ name: `${agentName} pod`, type: 'chat', createdBy: installer._id, members: [installer._id] });
+  return AgentInstallation.create({
+    agentName,
+    instanceId: 'default',
+    podId: pod._id,
+    version: '1.0.0',
+    installedBy: installer._id,
+    status: 'active',
+    config: { runtime: { host: 'byo', runtimeType: 'local-cli' } },
+    runtimeTokens,
+  });
+};
+const rows = () => AttentionItem.find({ 'source.type': 'stalled_connect' }).sort({ _id: 1 }).lean();
 
 const botRow = (agentName, tokens) => User.create({
   username: `${agentName}-bot`,
@@ -47,7 +53,8 @@ const botRow = (agentName, tokens) => User.create({
   agentRuntimeTokens: tokens,
 });
 
-describe('a seat that an MCP client has used hears the MCP close, not the nudge', () => {
+// F666: the notice is the installer's private Needs-you row; nothing is posted.
+describe('a seat that an MCP client has used gets no stalled-connect row', () => {
   beforeAll(setupMongoDb);
   afterAll(closeMongoDb);
   beforeEach(async () => {
@@ -55,6 +62,7 @@ describe('a seat that an MCP client has used hears the MCP close, not the nudge'
     mockPost.mockReset();
     mockPost.mockResolvedValue({ success: true, message: { id: 'm1' } });
   });
+  afterEach(() => expect(mockPost).not.toHaveBeenCalled());
 
   describe('an agent made on the page', () => {
     const made = { runtime: { host: 'byo', runtimeType: 'webhook', adapter: 'claude' } };
@@ -70,7 +78,9 @@ describe('a seat that an MCP client has used hears the MCP close, not the nudge'
       await row((await team(owner, bot))._id, owner._id);
 
       await scan({ now: NOW });
-      expect(mockPost.mock.calls[0][0].content).toContain('press Connect');
+      const [notice] = await rows();
+      expect(String(notice.recipientUserId)).toBe(String(owner._id));
+      expect(notice.detail).toContain('press Connect');
     });
 
     it('keeps two installers on the command: a replacement would be refused', async () => {
@@ -80,8 +90,9 @@ describe('a seat that an MCP client has used hears the MCP close, not the nudge'
       await row((await team(river, bot))._id, river._id);
 
       await scan({ now: NOW });
-      expect(mockPost).toHaveBeenCalledTimes(2);
-      mockPost.mock.calls.forEach(([post]) => expect(post.content).toContain('npx -y @commonlyai/cli@latest agent run shared-agent'));
+      const got = await rows();
+      expect(got.map((row) => String(row.recipientUserId)).sort()).toEqual([String(dana._id), String(river._id)].sort());
+      got.forEach((row) => expect(row.detail).toContain('its panel has the command that starts it'));
     });
   });
 
@@ -99,7 +110,9 @@ describe('a seat that an MCP client has used hears the MCP close, not the nudge'
     await row(team._id, owner._id);
 
     const result = await scan({ now: NOW });
-    expect(mockPost.mock.calls.map(([post]) => post.podId)).toEqual([String(team._id)]);
+    const got = await rows();
+    expect(got.map((row) => String(row.podId))).toEqual([String(team._id)]);
+    expect(String(got[0].recipientUserId)).toBe(String(owner._id));
     expect(result.skippedGuest).toBe(1);
   });
 
@@ -110,8 +123,9 @@ describe('a seat that an MCP client has used hears the MCP close, not the nudge'
 
     const result = await scan({ now: NOW });
     expect(result.skippedNoListener).toBe(1);
-    expect(mockPost).toHaveBeenCalledTimes(1);
-    expect(mockPost.mock.calls[0][0].content).not.toContain('quiet-agent');
+    const got = await rows();
+    expect(got).toHaveLength(1);
+    expect(got[0].title).toContain('loud-agent');
     expect(await StalledConnectEpisode.countDocuments({ agentName: 'quiet-agent' })).toBe(0);
   });
 
@@ -125,23 +139,22 @@ describe('a seat that an MCP client has used hears the MCP close, not the nudge'
 
       const result = await scan({ now: NOW });
       expect(result.resolved).toHaveLength(1);
-      const { content } = mockPost.mock.calls[0][0];
-      expect(content).toContain('connected from your MCP client');
-      expect(content).toContain("I won't answer @");
-      expect(content).not.toContain('listener');
-      expect(content).not.toContain('agent run');
+      expect(await rows()).toHaveLength(0);
     });
 
     it('closes quietly when it was never used, since nothing will ever start', async () => {
       const row = await seat('never-quiet', [{ tokenHash: 'nq', createdAt: ISSUED }]);
       await scan({ now: NOW });
-      expect(mockPost).toHaveBeenCalledTimes(1);
+      expect(await rows()).toHaveLength(1);
       await AgentInstallation.updateOne({ _id: row._id }, { $set: { 'config.runtime.listens': false } });
 
       const result = await scan({ now: NOW });
       expect(result.resolved).toHaveLength(1);
-      expect(mockPost).toHaveBeenCalledTimes(1);
       expect(await StalledConnectEpisode.countDocuments({ status: 'open' })).toBe(0);
+      // Closed, and not as acted on: nobody started it.
+      const [closed] = await rows();
+      expect(closed.status).toBe('resolved');
+      expect(closed.resolvedBy).toBeUndefined();
     });
   });
 
@@ -158,15 +171,15 @@ describe('a seat that an MCP client has used hears the MCP close, not the nudge'
     await row(room._id);
 
     const first = await scan({ now: NOW });
-    expect(mockPost.mock.calls.map(([post]) => post.podId)).toEqual([String(team._id)]);
+    expect((await rows()).map((r) => String(r.podId))).toEqual([String(team._id)]);
     expect(first.skippedSameToken).toBe(1);
 
     await scan({ now: NOW });
-    expect(mockPost).toHaveBeenCalledTimes(1);
+    expect(await rows()).toHaveLength(1);
     expect(await StalledConnectEpisode.countDocuments({})).toBe(1);
   });
 
-  describe('a sibling row still speaks when the line did not reach them', () => {
+  describe('a sibling install still gets a row when the first did not reach them', () => {
     let owner;
     let team;
     let room;
@@ -174,7 +187,7 @@ describe('a seat that an MCP client has used hears the MCP close, not the nudge'
       agentName: 'sol-agent', instanceId: 'default', podId, version: '1.0.0', installedBy: owner._id, status: 'active',
       config: { runtime: { host: 'byo', runtimeType: 'local-cli' } },
     });
-    const postedTo = () => mockPost.mock.calls.map(([post]) => post.podId);
+    const postedTo = async () => (await rows()).map((r) => String(r.podId));
 
     beforeEach(async () => {
       owner = await User.create({ username: 'sol', email: 'sol@people.test', password: 'not-a-login' });
@@ -185,20 +198,12 @@ describe('a seat that an MCP client has used hears the MCP close, not the nudge'
       await row(room._id);
     });
 
-    it('the first post failed', async () => {
-      mockPost.mockRejectedValueOnce(new Error('pod_not_found'));
+    it('they were not in the first pod', async () => {
+      await Pod.updateOne({ _id: team._id }, { $pull: { members: owner._id } });
       const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
       await scan({ now: NOW });
       warn.mockRestore();
-      expect(postedTo()).toEqual([String(team._id), String(room._id)]);
-    });
-
-    it('the post was declined', async () => {
-      mockPost.mockResolvedValueOnce({ success: true, skipped: true });
-      const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
-      await scan({ now: NOW });
-      warn.mockRestore();
-      expect(postedTo()).toEqual([String(team._id), String(room._id)]);
+      expect(await postedTo()).toEqual([String(room._id)]);
     });
 
     it('the row that heard it was uninstalled', async () => {
@@ -209,50 +214,49 @@ describe('a seat that an MCP client has used hears the MCP close, not the nudge'
       await scan({ now: NOW });
       await AgentInstallation.updateOne({ podId: team._id }, { $set: { status: 'uninstalled' } });
       await scan({ now: NOW });
-      expect(postedTo()).toEqual([String(team._id), String(other._id)]);
+      expect(await postedTo()).toEqual([String(team._id), String(other._id)]);
     });
 
     it('they have left the pod that heard it', async () => {
       await scan({ now: NOW });
       await Pod.updateOne({ _id: team._id }, { $pull: { members: owner._id } });
       await scan({ now: NOW });
-      expect(postedTo()).toEqual([String(team._id), String(room._id)]);
+      expect(await postedTo()).toEqual([String(team._id), String(room._id)]);
     });
   });
 
-  it('a reissued token earns one more line', async () => {
+  it('a reissued token opens a second episode on the same row', async () => {
     const owner = await User.create({ username: 'ivy', email: 'ivy@people.test', password: 'not-a-login' });
     const bot = await botRow('ivy-agent', [{ tokenHash: 'h1', createdAt: ISSUED }]);
+    const pod = await Pod.create({ name: 'Ivy', type: 'chat', createdBy: owner._id, members: [owner._id, bot._id] });
     await AgentInstallation.create({
-      agentName: 'ivy-agent', instanceId: 'default', podId: new mongoose.Types.ObjectId(), version: '1.0.0', installedBy: owner._id, status: 'active',
+      agentName: 'ivy-agent', instanceId: 'default', podId: pod._id, version: '1.0.0', installedBy: owner._id, status: 'active',
       config: { runtime: { host: 'byo', runtimeType: 'local-cli' } },
     });
-    await scan({ now: NOW });
+    const first = await scan({ now: NOW });
     await User.updateOne({ _id: bot._id }, {
       $set: { agentRuntimeTokens: [{ tokenHash: 'h2', createdAt: new Date(ISSUED.getTime() + MINUTE) }] },
     });
-    await scan({ now: NOW });
-    expect(mockPost).toHaveBeenCalledTimes(2);
+    const second = await scan({ now: NOW });
+    expect(first.nudged).toHaveLength(1);
+    expect(second.nudged).toHaveLength(1);
+    expect(await StalledConnectEpisode.countDocuments({})).toBe(2);
+    expect(await rows()).toHaveLength(1);
   });
 
   const expectMcpClose = async () => {
     const first = await scan({ now: NOW });
     expect(first.nudged).toEqual([]);
-    expect(mockPost).not.toHaveBeenCalled();
+    expect(await rows()).toHaveLength(0);
     expect(await StalledConnectEpisode.countDocuments({ status: 'open' })).toBe(1);
 
     const second = await scan({ now: NOW });
     expect(second.resolved).toHaveLength(1);
-    expect(mockPost).toHaveBeenCalledTimes(1);
-    const { content, metadata, authorKind } = mockPost.mock.calls[0][0];
-    expect(metadata.kind).toBe('stalled-connect-resolved');
-    // F442: Commonly's line, like the nudge it resolves; not the agent's.
-    expect(authorKind).toBe('kernel');
-    expect(content).toContain('connected from your MCP client');
-    expect(content).toContain('that takes the listener');
+    expect(await StalledConnectEpisode.countDocuments({ status: 'open' })).toBe(0);
 
-    await scan({ now: NOW });
-    expect(mockPost).toHaveBeenCalledTimes(1);
+    const third = await scan({ now: NOW });
+    expect(third.resolved).toHaveLength(0);
+    expect(await rows()).toHaveLength(0);
   };
 
   it('a stamp on the installation token, read through the scan', async () => {
@@ -276,25 +280,7 @@ describe('a seat that an MCP client has used hears the MCP close, not the nudge'
     await expectMcpClose();
   });
 
-  it('a close that fails to post is tried again on the next pass', async () => {
-    await seat('retry-close', [{ tokenHash: 'r', createdAt: ISSUED }]);
-    await AgentInstallation.updateOne(
-      { 'runtimeTokens.tokenHash': 'r' },
-      { $set: usageStamp('runtimeTokens.$', mcpClient) },
-    );
-    await scan({ now: NOW });
-    mockPost.mockRejectedValueOnce(new Error('store down'));
-
-    const failed = await scan({ now: NOW });
-    expect(failed.resolved).toEqual([]);
-    expect(await StalledConnectEpisode.countDocuments({ status: 'open' })).toBe(1);
-
-    const retried = await scan({ now: NOW });
-    expect(retried.resolved).toHaveLength(1);
-    expect(mockPost).toHaveBeenCalledTimes(2);
-  });
-
-  it('another client using the token still gets the nudge', async () => {
+  it('another client using the token still gets the row', async () => {
     await seat('not-mcp', [{ tokenHash: 'c', createdAt: ISSUED }]);
     await AgentInstallation.updateOne(
       { 'runtimeTokens.tokenHash': 'c' },
@@ -304,10 +290,10 @@ describe('a seat that an MCP client has used hears the MCP close, not the nudge'
     const r = await scan({ now: NOW });
 
     expect(r.nudged).toHaveLength(1);
-    expect(mockPost).toHaveBeenCalledTimes(1);
+    expect(await rows()).toHaveLength(1);
   });
 
-  it('an MCP call on a superseded token does not stop the new token\'s nudge', async () => {
+  it('an MCP call on a superseded token does not stop the new token\'s row', async () => {
     const older = new Date(ISSUED.getTime() - 60 * MINUTE);
     await seat('reissued', [
       { tokenHash: 'old', createdAt: older },

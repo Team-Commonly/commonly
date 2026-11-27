@@ -123,9 +123,27 @@ const rewriteMongo = async (agentUserId: string, podIds: string[]): Promise<numb
   return done;
 };
 
+// F666: the installer's private "hasn't connected" row asked them to start
+// this agent, and it just did. The close runs beside the rewrite, never in
+// front of it: it is started here and awaited by the caller only after the
+// rewrite has its count, so a Mongo write that buffers (no connection yet)
+// or fails can cost the close, never the rewrite.
+const resolveStalledConnect = (userId: string): Promise<void> => {
+  try {
+    // eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
+    return Promise.resolve(require('./attentionItemService').resolveStalledConnectForAgent(userId))
+      .catch((err: Error) => {
+        console.warn('[install-intro] stalled-connect resolve failed:', err?.message);
+      });
+  } catch (err) {
+    console.warn('[install-intro] stalled-connect resolve failed:', (err as Error).message);
+    return Promise.resolve();
+  }
+};
+
 const settle = async ({
   agentUserId, agentName, instanceId, podIds, morePodIds,
-}: SettleOptions): Promise<number> => {
+}: SettleOptions, after: Promise<void>[]): Promise<number> => {
   let extra: unknown[] = [];
   if (morePodIds) {
     // Inside the bound and the failure boundary: a lookup error degrades to
@@ -146,6 +164,7 @@ const settle = async ({
     userId = bot?._id ? String(bot._id) : '';
   }
   if (!userId) return 0;
+  after.push(resolveStalledConnect(userId));
   // eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
   const { pool } = require('../config/db-pg');
   return pool && process.env.PG_HOST
@@ -185,16 +204,25 @@ export async function settleIntroOnRequestCheckIn(req: any): Promise<void> {
 /** Rewrite the seat's state-scoped intros; never throws, never waits past the bound. */
 export async function settleInstallIntroOnFirstListen(options: SettleOptions): Promise<number> {
   let timer: NodeJS.Timeout | undefined;
+  let timedOut = false;
+  const bound = new Promise<number>((resolve) => {
+    timer = setTimeout(() => {
+      timedOut = true;
+      resolve(0);
+    }, INTRO_SETTLE_TIMEOUT_MS);
+  });
+  const after: Promise<void>[] = [];
   try {
-    return await Promise.race([
-      settle(options),
-      new Promise<number>((resolve) => {
-        timer = setTimeout(() => {
-          console.warn('[install-intro] first-listen rewrite timed out; the check-in continues');
-          resolve(0);
-        }, INTRO_SETTLE_TIMEOUT_MS);
-      }),
-    ]);
+    const done = await Promise.race([settle(options, after), bound]);
+    if (timedOut) {
+      console.warn('[install-intro] first-listen rewrite timed out; the check-in continues');
+      return done;
+    }
+    // The stalled-connect close shares the bound but never the count: still
+    // pending when the bound fires, the check-in goes on with the rewrite's.
+    if (after.length) await Promise.race([Promise.all(after), bound]);
+    if (timedOut) console.warn('[install-intro] stalled-connect resolve timed out; the check-in continues');
+    return done;
   } catch (err) {
     console.warn('[install-intro] first-listen rewrite failed:', (err as Error).message);
     return 0;

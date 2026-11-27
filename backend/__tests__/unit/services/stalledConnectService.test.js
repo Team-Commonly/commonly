@@ -5,9 +5,9 @@
 //   - one nudge per TOKEN-episode, and a reissue earns another
 //   - the episode key is max(createdAt) across BOTH token stores
 //   - 15 min is a patience window on top of deriveAgentState, not a 2nd rule
-//   - the episode is claimed BEFORE posting, so a race loses silently
-//   - the forward promise is kept: connecting posts a confirmation
-//   - the confirmation states the past flat and the present derived
+//   - the episode is claimed BEFORE the row is written, so a race loses silently
+//   - nothing is posted into the pod (F666): the installer gets a private
+//     Needs-you row, and connecting resolves it
 
 const MINUTE = 60 * 1000;
 const NOW = new Date('2026-08-15T12:00:00Z');
@@ -44,14 +44,19 @@ jest.mock('../../../services/agentIdentityService', () => ({
 
 const mockAttentionResolve = jest.fn();
 const mockAttentionDismiss = jest.fn();
+const mockRecord = jest.fn();
+const mockRowClose = jest.fn();
 jest.mock('../../../services/attentionItemService', () => ({
   resolveActioned: (...a) => mockAttentionResolve(...a),
   resolve: (...a) => mockAttentionDismiss(...a),
+  recordStalledConnect: (...a) => mockRecord(...a),
+  resolveStalledConnectEpisode: (...a) => mockRowClose(...a),
 }));
 
 const mockEpCreate = jest.fn();
 const mockEpFind = jest.fn();
 const mockEpUpdate = jest.fn();
+const mockEpFindOne = jest.fn();
 jest.mock('../../../models/Pod', () => ({ exists: () => Promise.resolve(true) }));
 jest.mock('../../../services/runtimeIdentityOwnership', () => ({
   ...jest.requireActual('../../../services/runtimeIdentityOwnership'),
@@ -61,6 +66,7 @@ jest.mock('../../../models/StalledConnectEpisode', () => ({
   create: (...a) => mockEpCreate(...a),
   find: (...a) => mockEpFind(...a),
   updateOne: (...a) => mockEpUpdate(...a),
+  findOne: (...a) => mockEpFindOne(...a),
 }));
 
 const { scan, resolveTokenEpisode, RESOLVE_PAGE_SIZE } = require('../../../services/stalledConnectService');
@@ -129,10 +135,17 @@ const setup = ({ installs = [install()], userTokens = [], open = [], machineId }
   });
   mockEpCreate.mockImplementation((d) => Promise.resolve({ _id: 'ep1', ...d }));
   mockEpUpdate.mockResolvedValue({});
+  mockEpFindOne.mockReturnValue({ lean: () => Promise.resolve(null) });
+  mockRowClose.mockResolvedValue(undefined);
   mockPost.mockResolvedValue({ success: true, message: { id: 'msg1' } });
+  mockRecord.mockResolvedValue({ recorded: true });
 };
 
 beforeEach(() => jest.clearAllMocks());
+// Nothing in this service may post into a pod (F666).
+afterEach(() => expect(mockPost).not.toHaveBeenCalled());
+
+const notice = () => mockRecord.mock.calls[0][0];
 
 describe('resolveTokenEpisode', () => {
   // pod-architect 53308: key off one store while triggering off the union and a
@@ -163,36 +176,36 @@ describe('stalledConnectService.scan', () => {
     setup({ installs: [install(madeOnPage)] });
     await scan({ now: NOW });
 
-    const { content } = mockPost.mock.calls[0][0];
-    expect(content).toContain('Open my Settings, press Connect, and run the command it gives you on the machine where I should live');
-    expect(content).not.toContain('agent run');
+    expect(notice().detail).toContain('press Connect in its panel');
+    expect(notice().detail).not.toContain('agent run');
   });
 
   it('sends a second instance made on the page to Connect too: the link carries its instance (F306)', async () => {
     setup({ installs: [install({ ...madeOnPage, instanceId: 'other' })] });
     await scan({ now: NOW });
 
-    expect(mockPost.mock.calls[0][0].content).toContain('press Connect');
-    expect(mockPost.mock.calls[0][0].content).not.toContain('agent run');
+    expect(notice().detail).toContain('press Connect');
   });
 
   it.each([
     ['an attached agent, whose key is saved', { config: { runtime: { runtimeType: 'claude-code', host: 'byo' } } }, undefined],
     ['an agent init bot, whose key is saved', { config: { runtime: { runtimeType: 'webhook', host: 'byo' } } }, undefined],
     ['a seat on a machine', madeOnPage, 'machine-1'],
-  ])('keeps the command for %s', async (_label, over, machineId) => {
+  ])('points at the start command for %s', async (_label, over, machineId) => {
     setup({ installs: [install(over)], machineId });
     await scan({ now: NOW });
 
-    expect(mockPost.mock.calls[0][0].content).toContain('npx -y @commonlyai/cli@latest agent run ai1-agent');
+    expect(notice().detail).toContain('its panel has the command that starts it');
+    expect(notice().detail).not.toContain('Connect');
   });
 
-  it('keeps the command when the owner can\'t be read: Connect could be refused', async () => {
+  it('points at the start command when the owner can\'t be read: Connect could be refused', async () => {
     setup({ installs: [install(madeOnPage)] });
     mockOwns.mockRejectedValue(new Error('read failed'));
     await scan({ now: NOW });
 
-    expect(mockPost.mock.calls[0][0].content).toContain('npx -y @commonlyai/cli@latest agent run ai1-agent');
+    expect(notice().detail).toContain('its panel has the command that starts it');
+    expect(notice().detail).not.toContain('Connect');
   });
 
   it.each([
@@ -200,284 +213,45 @@ describe('stalledConnectService.scan', () => {
     ['an older token', { userTokens: [{ createdAt: new Date(OLD_TOKEN.getTime() - 60 * 1000), lastUsedAt: OLD_TOKEN }] }],
     ['a token with no issue time', { userTokens: [{ lastUsedAt: OLD_TOKEN }] }],
     ['the installation', { runtimeTokens: [{ createdAt: OLD_TOKEN, lastUsedAt: OLD_TOKEN }] }],
-  ])('keeps the command once %s shows a call, because Settings stops offering Connect', async (_label, { userTokens, runtimeTokens }) => {
+  ])('points at the start command once %s shows a call, because Settings stops offering Connect', async (_label, { userTokens, runtimeTokens }) => {
     setup({ installs: [install({ ...madeOnPage, ...(runtimeTokens ? { runtimeTokens } : {}) })], userTokens });
     await scan({ now: NOW });
 
-    expect(mockPost.mock.calls[0][0].content).toContain('npx -y @commonlyai/cli@latest agent run ai1-agent');
+    expect(notice().detail).toContain('its panel has the command that starts it');
+    expect(notice().detail).not.toContain('Connect');
   });
 
-  it('nudges a seat whose token was issued long ago and never used', async () => {
+  it('gives the installer a private row for a seat whose token was issued long ago and never used', async () => {
     setup();
     const r = await scan({ now: NOW });
 
     expect(r.nudged).toHaveLength(1);
-    expect(mockPost).toHaveBeenCalledTimes(1);
-    const posted = mockPost.mock.calls[0][0];
-    expect(posted.podId).toBe('pod1');
-    expect(posted.authorKind).toBe('kernel');
-    expect(posted.content).toContain('@alice');
-    expect(posted.content).toContain('npx -y @commonlyai/cli@latest agent run ai1-agent');
-    expect(posted.content).toContain("I'll post here the moment I connect");
+    expect(mockRecord).toHaveBeenCalledTimes(1);
+    expect(notice()).toEqual(expect.objectContaining({
+      recipientUserId: 'user1', podId: 'pod1', installationId: 'inst1',
+    }));
+    expect(notice().title).toBe("AI1 Agent hasn't connected yet");
+    // The command lives in the owner's panel, never in the row.
+    expect(notice().detail).not.toMatch(/npx|agent run/);
+    expect(mockEpUpdate).toHaveBeenCalledWith({ _id: 'ep1' }, { $set: { noticedAt: NOW } });
   });
 
-  it('uses the copied-command mark to tell the installer what happened', async () => {
+  it('passes the bot id, which the first listen closes the row by', async () => {
     setup();
-    mockUserFindById.mockReturnValue({
+    mockUserFind.mockImplementation((filter) => ({
       select: () => ({
-        lean: () => Promise.resolve({
-          username: 'alice',
-          onboarding: {
-            byoCommandCopiedAt: new Date(OLD_TOKEN.getTime() + 8 * MINUTE),
-            byoCommandType: 'cli',
-          },
-        }),
+        lean: () => Promise.resolve((filter.$or || []).map((pair) => ({
+          _id: 'bot1',
+          botMetadata: { agentName: pair['botMetadata.agentName'], instanceId: pair['botMetadata.instanceId'] },
+          agentRuntimeTokens: [],
+        }))),
       }),
-    });
-
+    }));
     await scan({ now: NOW });
 
-    const posted = mockPost.mock.calls[0][0];
-    expect(posted.content).toContain(
-      'copied the listener command a few minutes after you created the seat',
-    );
-    expect(posted.content).toContain('no connection arrived');
-    // Nothing here knows the OS, so the copy doesn't claim to.
-    expect(posted.content).toContain('here is the one thing to check: run `npx -y @commonlyai/cli@latest agent run ai1-agent`');
-    expect(posted.content).not.toContain('for your OS');
+    expect(notice().agentUserId).toBe('bot1');
   });
 
-  const copiedListenerOn = (byoOpenedOs, byoCommandType = 'cli') => mockUserFindById.mockReturnValue({
-    select: () => ({
-      lean: () => Promise.resolve({
-        username: 'alice',
-        onboarding: {
-          byoCommandCopiedAt: new Date(OLD_TOKEN.getTime() + 8 * MINUTE),
-          byoCommandType,
-          ...(byoOpenedOs ? { byoOpenedOs } : {}),
-        },
-      }),
-    }),
-  });
-
-  it.each([['linux', 'Linux']])(
-    'from a %s browser, says the listener is tested on a Mac and may not answer there yet',
-    async (os, label) => {
-      setup();
-      copiedListenerOn(os);
-      await scan({ now: NOW });
-      const { content } = mockPost.mock.calls[0][0];
-      // Conditional: the page shows this command only on its Mac tab, so the
-      // browser's OS is not proof of where it ran.
-      expect(content).toContain(`If you ran it on ${label}, that may be why: the listener is tested on a Mac. On Linux it may not answer @mentions yet, and we're working on that.`);
-      // The server cannot tell Claude Code from Codex, so no adapter-specific cause.
-      expect(content).not.toContain('sandbox');
-      expect(content).toContain('Run `npx -y @commonlyai/cli@latest agent run ai1-agent` on a Mac');
-      expect(content).toContain('or choose “Run it here” on the Bring your own page for a hosted agent');
-      expect(content).toContain("I'll post here the moment I connect");
-      expect(content).not.toContain('one thing to check');
-    },
-  );
-
-  // The published CLI (0.1.243) answered an @mention from the page's
-  // Windows lines with Claude Code. Codex isn't walked there, and the server
-  // can't tell which adapter was copied, so the copy says both.
-  it('from a Windows browser, says Claude Code answers there with CLI 0.1.243 or newer and Codex in an invite-only pod', async () => {
-    setup();
-    copiedListenerOn('windows');
-    await scan({ now: NOW });
-    const { content } = mockPost.mock.calls[0][0];
-    expect(content).toContain('If you ran it on Windows: Claude Code answers @mentions there with CLI 0.1.243 or newer, '
-      + 'from the PowerShell lines on the Bring your own page. Codex does too in an invite-only pod, with CLI 0.1.273 or newer.');
-    expect(content).toContain('Check yours with `npx.cmd -y @commonlyai/cli@latest --version`, and run all of the page’s lines again in one PowerShell window');
-    expect(content).not.toContain('commonly.cmd');
-    expect(content).toContain('Or choose “Run it here” on the Bring your own page for a hosted agent');
-    expect(content).not.toContain('may not answer @mentions yet');
-    expect(content).not.toMatch(/on a Mac/);
-    expect(content).toContain("I'll post here the moment I connect");
-  });
-
-  it.each(['mac', 'other', undefined])('with os=%p keeps the neutral check', async (os) => {
-    setup();
-    copiedListenerOn(os);
-    await scan({ now: NOW });
-    const { content } = mockPost.mock.calls[0][0];
-    expect(content).toContain('here is the one thing to check: run');
-    expect(content).not.toContain("can't answer @mentions");
-  });
-
-  it('an MCP copy on Linux is not told about the listener', async () => {
-    setup();
-    copiedListenerOn('linux', 'mcp');
-    await scan({ now: NOW });
-    const { content } = mockPost.mock.calls[0][0];
-    expect(content).not.toContain("listener can't answer");
-    expect(content).toContain('MCP-only clients can call Commonly');
-  });
-
-  it('explains that an MCP-only client cannot answer mentions', async () => {
-    setup();
-    mockUserFindById.mockReturnValue({
-      select: () => ({
-        lean: () => Promise.resolve({
-          username: 'alice',
-          onboarding: {
-            byoCommandCopiedAt: new Date(OLD_TOKEN.getTime() + 8 * MINUTE),
-            byoCommandType: 'mcp',
-          },
-        }),
-      }),
-    });
-
-    await scan({ now: NOW });
-
-    expect(mockPost.mock.calls[0][0].content).toContain(
-      'MCP-only clients can call Commonly, but they do not answer @mentions',
-    );
-  });
-
-  const copiedKinds = (onboarding) => mockUserFindById.mockReturnValue({
-    select: () => ({ lean: () => Promise.resolve({ username: 'alice', onboarding }) }),
-  });
-
-  it('names the Terminal command when only the MCP snippet was copied (TASK-721)', async () => {
-    setup();
-    copiedKinds({
-      byoCommandCopiedAt: new Date(OLD_TOKEN.getTime() + 8 * MINUTE),
-      byoCommandType: 'mcp',
-      byoMcpCopiedAt: new Date(OLD_TOKEN.getTime() + 8 * MINUTE),
-    });
-    await scan({ now: NOW });
-    const { content } = mockPost.mock.calls[0][0];
-    expect(content).toContain('you copied the MCP command');
-    expect(content).toContain('but not the listener command that starts me');
-    expect(content).toContain('MCP-only clients can call Commonly, but they do not answer @mentions');
-    expect(content).toContain('Run `npx -y @commonlyai/cli@latest agent run ai1-agent` in a Terminal on the machine where I should live');
-    expect(content).toContain("I'll post here the moment I connect");
-  });
-
-  it('does not say the Terminal command was missed when the listener command was copied too', async () => {
-    setup();
-    copiedKinds({
-      byoCommandCopiedAt: new Date(OLD_TOKEN.getTime() + 8 * MINUTE),
-      byoCommandType: 'mcp',
-      byoMcpCopiedAt: new Date(OLD_TOKEN.getTime() + 8 * MINUTE),
-      byoCliCopiedAt: new Date(OLD_TOKEN.getTime() + 9 * MINUTE),
-    });
-    await scan({ now: NOW });
-    const { content } = mockPost.mock.calls[0][0];
-    expect(content).toContain('you copied the listener command');
-    expect(content).not.toContain('but not the listener command');
-    expect(content).not.toContain('MCP-only clients');
-  });
-
-  it('keeps the older wording for a signup that only has the first-copy pair', async () => {
-    setup();
-    copiedKinds({
-      byoCommandCopiedAt: new Date(OLD_TOKEN.getTime() + 8 * MINUTE),
-      byoCommandType: 'mcp',
-    });
-    await scan({ now: NOW });
-    const { content } = mockPost.mock.calls[0][0];
-    expect(content).toContain('here is the one thing to check');
-    expect(content).not.toContain('but not the listener command');
-  });
-
-  it('does not call a pre-deploy listener copy "never copied" when an MCP copy follows', async () => {
-    setup();
-    copiedKinds({
-      byoCommandCopiedAt: new Date(OLD_TOKEN.getTime() + 1 * MINUTE),
-      byoCommandType: 'cli',
-      byoMcpCopiedAt: new Date(OLD_TOKEN.getTime() + 5 * MINUTE),
-    });
-    await scan({ now: NOW });
-    const { content } = mockPost.mock.calls[0][0];
-    expect(content).toContain('you copied the listener command');
-    expect(content).not.toContain('but not the listener command');
-  });
-
-  it('makes no "missed it" claim when the listener copy is from an earlier agent and the MCP copy is inside this episode', async () => {
-    setup();
-    copiedKinds({
-      byoCommandCopiedAt: new Date(OLD_TOKEN.getTime() - 7 * 24 * 60 * MINUTE),
-      byoCommandType: 'cli',
-      byoCliCopiedAt: new Date(OLD_TOKEN.getTime() - 7 * 24 * 60 * MINUTE),
-      byoMcpCopiedAt: new Date(OLD_TOKEN.getTime() + 3 * MINUTE),
-    });
-    await scan({ now: NOW });
-    const { content } = mockPost.mock.calls[0][0];
-    // The first-copy mark cannot show whether this seat's listener was copied.
-    expect(content).toContain('you copied the MCP command');
-    expect(content).toContain('here is the one thing to check');
-    expect(content).toContain('MCP-only clients can call Commonly');
-    expect(content).not.toContain('but not the listener command');
-  });
-
-  it('an unparseable per-kind time falls back to the first-copy pair', async () => {
-    setup();
-    copiedKinds({
-      byoCommandCopiedAt: new Date(OLD_TOKEN.getTime() + 1 * MINUTE),
-      byoCommandType: 'cli',
-      byoCliCopiedAt: 'garbage',
-      byoMcpCopiedAt: new Date(OLD_TOKEN.getTime() + 5 * MINUTE),
-    });
-    await scan({ now: NOW });
-    expect(mockPost.mock.calls[0][0].content).not.toContain('but not the listener command');
-  });
-
-  it('falls back to the generic nudge when every copy predates the token', async () => {
-    setup();
-    copiedKinds({
-      byoCommandCopiedAt: new Date(OLD_TOKEN.getTime() - 60 * MINUTE),
-      byoCommandType: 'mcp',
-      byoMcpCopiedAt: new Date(OLD_TOKEN.getTime() - 60 * MINUTE),
-    });
-    await scan({ now: NOW });
-    expect(mockPost.mock.calls[0][0].content).toContain('nothing has ever started me');
-  });
-
-  it.each([['linux', 'Linux'], ['windows', 'Windows']])(
-    'MCP-only from a %s browser does not say the listener command was missed',
-    async (os, label) => {
-      setup();
-      copiedKinds({
-        byoCommandCopiedAt: new Date(OLD_TOKEN.getTime() + 8 * MINUTE),
-        byoCommandType: 'mcp',
-        byoMcpCopiedAt: new Date(OLD_TOKEN.getTime() + 8 * MINUTE),
-        byoOpenedOs: os,
-      });
-      await scan({ now: NOW });
-      const { content } = mockPost.mock.calls[0][0];
-      expect(content).toContain(`You first opened this page on ${label}.`);
-      // On Windows the listener is the page's PowerShell lines, not a Mac.
-      expect(content).toContain(os === 'windows'
-        ? 'You first opened this page on Windows. On Windows, Claude Code answers @mentions with CLI 0.1.243 or newer, from the PowerShell lines on the Bring your own page.'
-        : 'in a Terminal on a Mac');
-      expect(content).not.toContain('but not the listener command');
-    },
-  );
-
-  // The BYO support matrix (#3399): Linux and Windows differ by adapter, never
-  // Mac-only for both, so no nudge may say the listener runs only on a Mac.
-  it.each([
-    ['cli', 'linux'], ['cli', 'windows'], ['mcp', 'linux'], ['mcp', 'windows'],
-  ])('a %s copy from a %s browser claims no Mac-only listener and offers no --unsandboxed', async (kind, os) => {
-    setup();
-    copiedKinds({
-      byoCommandCopiedAt: new Date(OLD_TOKEN.getTime() + 8 * MINUTE),
-      byoCommandType: kind,
-      ...(kind === 'mcp' ? { byoMcpCopiedAt: new Date(OLD_TOKEN.getTime() + 8 * MINUTE) } : {}),
-      byoOpenedOs: os,
-    });
-    await scan({ now: NOW });
-    const { content } = mockPost.mock.calls[0][0];
-    expect(content).toContain(os === 'windows'
-      ? 'CLI 0.1.243 or newer, from the PowerShell lines on the Bring your own page. Codex does too in an invite-only pod, with CLI 0.1.273 or newer.'
-      : 'may not answer @mentions yet');
-    // The server can't tell Claude Code from Codex, and Codex takes no
-    // --unsandboxed, so the copy points at the page's lines, not the flag.
-    expect(content).not.toMatch(/only (from|on) a Mac|Mac only|--unsandboxed/i);
-  });
 
   it('holds fire inside the patience window', async () => {
     setup({ installs: [install({ runtimeTokens: [{ createdAt: FRESH_TOKEN }] })] });
@@ -485,7 +259,7 @@ describe('stalledConnectService.scan', () => {
 
     expect(r.nudged).toHaveLength(0);
     expect(r.skippedTooRecent).toBe(1);
-    expect(mockPost).not.toHaveBeenCalled();
+    expect(mockRecord).not.toHaveBeenCalled();
   });
 
   it('says nothing when the token has been used — that is not stalled', async () => {
@@ -509,7 +283,7 @@ describe('stalledConnectService.scan', () => {
     const r = await scan({ now: NOW });
 
     expect(r.nudged).toHaveLength(1);
-    expect(mockPost).toHaveBeenCalledTimes(1);
+    expect(mockRecord).toHaveBeenCalledTimes(1);
   });
 
   it('does not nudge an old seat whose lastListenedAt was backfilled from lastUsedAt', async () => {
@@ -523,21 +297,21 @@ describe('stalledConnectService.scan', () => {
 
     expect(r.nudged).toHaveLength(0);
     expect(r.skippedNotStalled).toBe(1);
-    expect(mockPost).not.toHaveBeenCalled();
+    expect(mockRecord).not.toHaveBeenCalled();
   });
 
-  it('claims the episode BEFORE posting, so a losing race costs a nudge not a duplicate', async () => {
+  it('claims the episode BEFORE writing the row, so a losing race never reopens a handled row', async () => {
     setup();
     const order = [];
     mockEpCreate.mockImplementation(async (d) => { order.push('claim'); return { _id: 'ep1', ...d }; });
-    mockPost.mockImplementation(async () => {
-      order.push('post');
-      return { success: true, message: { id: 'm' } };
+    mockRecord.mockImplementation(async () => {
+      order.push('row');
+      return { recorded: true };
     });
 
     await scan({ now: NOW });
 
-    expect(order).toEqual(['claim', 'post']);
+    expect(order).toEqual(['claim', 'row']);
   });
 
   it('stays silent when the episode was already explained (duplicate key)', async () => {
@@ -547,31 +321,30 @@ describe('stalledConnectService.scan', () => {
     const r = await scan({ now: NOW });
 
     expect(r.nudged).toHaveLength(0);
-    expect(mockPost).not.toHaveBeenCalled();
+    expect(mockRecord).not.toHaveBeenCalled();
   });
 
-  // The first live run landed 10 correct messages and recorded 10 empty ids,
-  // because postMessage returns { success, message } and the code read
-  // `posted.id`. The old fixture returned `{ id }` — the shape the bug
-  // expected — so the tests agreed with the bug rather than with the service.
-  it('records the real message id, which is nested under `message`', async () => {
+  it('does not count it as told when the installer is no longer in the pod', async () => {
     setup();
-    await scan({ now: NOW });
-
-    expect(mockEpUpdate).toHaveBeenCalledWith(
-      { _id: 'ep1' },
-      { $set: { nudgeMessageId: 'msg1' } },
-    );
-  });
-
-  it('does not report a nudge when postMessage declined to post', async () => {
-    setup();
-    mockPost.mockResolvedValue({ success: true, skipped: true, reason: 'duplicate_recent' });
+    mockRecord.mockResolvedValue({ recorded: false, reason: 'recipient_not_member' });
+    const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
 
     const r = await scan({ now: NOW });
+    warn.mockRestore();
 
     expect(r.nudged).toHaveLength(0);
     expect(mockEpUpdate).not.toHaveBeenCalled();
+  });
+
+  it('gives an MCP client that called in no row: it did connect', async () => {
+    const seen = new Date(NOW.getTime() - MINUTE);
+    setup({ installs: [install({ runtimeTokens: [{ createdAt: OLD_TOKEN, lastUsedAt: seen, lastMcpSeenAt: seen }] })] });
+
+    const r = await scan({ now: NOW });
+
+    expect(mockEpCreate).toHaveBeenCalledTimes(1);
+    expect(mockRecord).not.toHaveBeenCalled();
+    expect(r.nudged).toHaveLength(0);
   });
 
   it('records the episode against the token issue time and its source', async () => {
@@ -599,7 +372,7 @@ describe('stalledConnectService.scan', () => {
     const r = await scan({ now: NOW });
 
     expect(r.nudged).toHaveLength(1);
-    expect(mockPost).toHaveBeenCalledTimes(1);
+    expect(mockRecord).toHaveBeenCalledTimes(1);
     expect(mockEpCreate.mock.calls[0][0]).toEqual(expect.objectContaining({
       tokenIssuedAt: OLD_TOKEN,
       tokenSource: 'user',
@@ -672,7 +445,7 @@ describe('stalledConnectService.scan', () => {
     const result = await scan({ now: NOW });
 
     expect(mockUserFind.mock.calls[0][0].$or).toHaveLength(1);
-    // Both installs got the first row's token: one person, one line.
+    // Both installs got the first row's token: one person, one row.
     expect(mockEpCreate.mock.calls.map(([doc]) => doc.tokenSource)).toEqual(['user']);
     expect(result.skippedSameToken).toBe(1);
   });
@@ -700,7 +473,7 @@ describe('stalledConnectService.scan', () => {
   });
 });
 
-describe('keeping the forward promise', () => {
+describe('closing the row when the agent connects', () => {
   const openEpisode = {
     _id: 'ep9',
     installationId: 'inst1',
@@ -711,7 +484,7 @@ describe('keeping the forward promise', () => {
     status: 'open',
   };
 
-  it('posts a confirmation once the token is used, and closes the episode', async () => {
+  it('resolves the row as actioned once the token is used, closes the episode, and posts nothing', async () => {
     const usedAt = new Date(NOW.getTime() - 10 * MINUTE);
     setup({ installs: [], open: [openEpisode] });
     mockInstallFindById.mockReturnValue({
@@ -721,9 +494,7 @@ describe('keeping the forward promise', () => {
     const r = await scan({ now: NOW });
 
     expect(r.resolved).toHaveLength(1);
-    const posted = mockPost.mock.calls[0][0];
-    // Past stated flat, present derived at post time (ux-lead 53307).
-    expect(posted.content).toContain('last checked in 2026-08-15 11:50 UTC');
+    expect(mockRowClose).toHaveBeenCalledWith('inst1', 'ep9', { actioned: true });
     expect(mockEpUpdate).toHaveBeenCalledWith(
       expect.objectContaining({ _id: 'ep9', status: 'open' }),
       expect.objectContaining({ $set: expect.objectContaining({ status: 'resolved' }) }),
@@ -809,43 +580,7 @@ describe('keeping the forward promise', () => {
     expect(resolvedIds).toEqual(['ep-east']);
   });
 
-  // Byo-linux walk, 2026-11-05: the agent exited at 00:58 and the pass at 01:02
-  // still saw it inside the five-minute listening window. The time is the
-  // latest check-in, not the first, and "Listening now" was a promise the
-  // stopped agent could not keep.
-  it('names the latest check-in and does not promise it is listening now', async () => {
-    const usedAt = new Date(NOW.getTime() - 3.5 * MINUTE);
-    setup({ installs: [], open: [openEpisode] });
-    mockInstallFindById.mockReturnValue({
-      lean: () => Promise.resolve(install({ runtimeTokens: [{ createdAt: OLD_TOKEN, lastListenedAt: usedAt }] })),
-    });
-
-    await scan({ now: NOW });
-
-    const { content } = mockPost.mock.calls[0][0];
-    expect(content).toContain('last checked in 2026-08-15 11:56 UTC');
-    expect(content).not.toMatch(/first seen|Listening now/);
-    expect(content).toContain('while the listener is running');
-  });
-
-  it('reports the present honestly when it connected and has since gone quiet', async () => {
-    // Connected 3 hours ago, stale now: the past is still a fact, the present
-    // is not "listening". This is the connect-then-disconnect case.
-    const usedAt = new Date(NOW.getTime() - 180 * MINUTE);
-    setup({ installs: [], open: [openEpisode] });
-    mockInstallFindById.mockReturnValue({
-      lean: () => Promise.resolve(install({ runtimeTokens: [{ createdAt: OLD_TOKEN, lastListenedAt: usedAt }] })),
-    });
-
-    await scan({ now: NOW });
-
-    const posted = mockPost.mock.calls[0][0];
-    expect(posted.content).toContain('last checked in 2026-08-15 09:00 UTC');
-    expect(posted.content).toContain("isn't running right now");
-    expect(posted.content).toContain('npx -y @commonlyai/cli@latest agent run ai1-agent');
-  });
-
-  it("resolves the installer's needs-you row for the nudge once the agent connects", async () => {
+  it("resolves a pre-F666 nudge's needs-you row once the agent connects", async () => {
     const usedAt = new Date(NOW.getTime() - 10 * MINUTE);
     setup({ installs: [], open: [{ ...openEpisode, nudgeMessageId: 'msg-nudge-1' }] });
     mockInstallFindById.mockReturnValue({
@@ -854,35 +589,12 @@ describe('keeping the forward promise', () => {
 
     await scan({ now: NOW });
 
-    expect(mockAttentionResolve).toHaveBeenCalledWith('message', 'msg-nudge-1');
-  });
-
-  it('resolves the nudge row even when the confirmation post fails: the person still did it', async () => {
-    const usedAt = new Date(NOW.getTime() - 10 * MINUTE);
-    setup({ installs: [], open: [{ ...openEpisode, nudgeMessageId: 'msg-nudge-2' }] });
-    mockInstallFindById.mockReturnValue({
-      lean: () => Promise.resolve(install({ runtimeTokens: [{ createdAt: OLD_TOKEN, lastListenedAt: usedAt }] })),
-    });
-    mockPost.mockRejectedValueOnce(new Error('post down'));
-
-    await scan({ now: NOW });
-
-    expect(mockAttentionResolve).toHaveBeenCalledWith('message', 'msg-nudge-2');
+    expect(mockAttentionResolve).toHaveBeenCalledWith('message', 'msg-nudge-1', { strict: true });
   });
 
   // TASK-345: an MCP client uses its token and never listens, so the
-  // listener-based state never leaves never-connected. It did connect, and the
-  // promise is kept, without claiming it will answer @mentions.
+  // listener-based state never leaves never-connected. It did connect.
   const mcpEpisode = { ...openEpisode, installedBy: 'user1', nudgeMessageId: 'nudge1', tokenIssuedAt: OLD_TOKEN };
-  // The installer read asks only for the OS; the mock returns only what was asked.
-  const installer = (onboarding) => mockUserFindById.mockReturnValue({
-    select: (fields) => {
-      expect(fields).toContain('onboarding.byoOpenedOs');
-      const asked = new Set(String(fields).split(/\s+/).map((f) => f.replace(/^onboarding\./, '')));
-      const picked = Object.fromEntries(Object.entries(onboarding).filter(([k]) => asked.has(k)));
-      return { lean: () => Promise.resolve({ username: 'alice', onboarding: picked }) };
-    },
-  });
   const seenAt = new Date(NOW.getTime() - 4 * MINUTE);
   // A call the MCP client made on this episode's token.
   const mcpTokenOfThisEpisode = { createdAt: OLD_TOKEN, lastUsedAt: seenAt, lastMcpSeenAt: seenAt };
@@ -890,71 +602,44 @@ describe('keeping the forward promise', () => {
     lean: () => Promise.resolve(install({ runtimeTokens })),
   });
 
-  it('closes the episode for an MCP client that called in, without promising an answer to mentions', async () => {
+  it('closes the episode and its row for an MCP client that called in', async () => {
     setup({ installs: [], open: [mcpEpisode] });
-    installer({});
     withInstallTokens([mcpTokenOfThisEpisode]);
 
     const r = await scan({ now: NOW });
 
     expect(r.resolved).toHaveLength(1);
-    const { content } = mockPost.mock.calls[0][0];
-    expect(content).toContain('connected from your MCP client (seen 2026-08-15 11:56 UTC)');
-    expect(content).toContain("won't answer @ai1-agent on my own");
-    expect(content).toContain('in a Terminal on the machine where I should live');
-    expect(content).not.toMatch(/Listening now|I'll answer/);
-    expect(mockAttentionResolve).toHaveBeenCalledWith('message', 'nudge1');
+    expect(mockAttentionResolve).toHaveBeenCalledWith('message', 'nudge1', { strict: true });
+    expect(mockRowClose).toHaveBeenCalledWith('inst1', 'ep9', { actioned: true });
     expect(mockEpUpdate).toHaveBeenCalledWith(
       expect.objectContaining({ _id: 'ep9', status: 'open' }),
       expect.objectContaining({ $set: expect.objectContaining({ status: 'resolved' }) }),
     );
   });
 
-  it.each(['windows', 'linux'])('counts an MCP call recorded only on the bot row, and points a %s installer at Run it here', async (os) => {
+  it('counts an MCP call recorded only on the bot row', async () => {
     setup({ installs: [], open: [mcpEpisode], userTokens: [mcpTokenOfThisEpisode] });
-    installer({ byoOpenedOs: os });
     withInstallTokens([]);
 
     const r = await scan({ now: NOW });
 
     expect(r.resolved).toHaveLength(1);
-    const { content } = mockPost.mock.calls[0][0];
-    expect(content).toContain(os === 'windows'
-      ? 'that takes the listener. On Windows, Claude Code answers @mentions with CLI 0.1.243 or newer, from the PowerShell lines on the Bring your own page. Codex does too in an invite-only pod, with CLI 0.1.273 or newer.'
-      : '`npx -y @commonlyai/cli@latest agent run ai1-agent`, which is tested on a Mac. On Linux it may not answer @mentions yet');
-    expect(content).not.toMatch(/only (from|on) a Mac|Mac only|--unsandboxed/i);
-    expect(content).toContain('Run it here');
-  });
-
-  it.each(['mac', undefined])('the MCP close from a %s browser carries no platform note', async (os) => {
-    setup({ installs: [], open: [mcpEpisode], userTokens: [mcpTokenOfThisEpisode] });
-    installer(os ? { byoOpenedOs: os } : {});
-    withInstallTokens([]);
-
-    await scan({ now: NOW });
-
-    const { content } = mockPost.mock.calls[0][0];
-    expect(content).not.toContain('may not answer @mentions yet');
-    expect(content).toContain('in a Terminal on the machine where I should live');
   });
 
   it('keeps waiting on a token used by something other than the MCP client (attach, memory import)', async () => {
     // `lastUsedAt` alone: `commonly agent attach` and the BYO page's memory
     // import both use the token without being an MCP client.
     setup({ installs: [], open: [mcpEpisode], userTokens: [{ createdAt: OLD_TOKEN, lastUsedAt: seenAt }] });
-    installer({});
     withInstallTokens([{ createdAt: OLD_TOKEN, lastUsedAt: seenAt }]);
 
     const r = await scan({ now: NOW });
 
     expect(r.resolved).toHaveLength(0);
-    expect(mockPost).not.toHaveBeenCalled();
     expect(mockEpUpdate).not.toHaveBeenCalled();
   });
 
   it('keeps waiting when the only MCP call belongs to a token from before this episode, even a later call', async () => {
     setup({ installs: [], open: [mcpEpisode] });
-    installer({});
     const before = new Date(OLD_TOKEN.getTime() - 60 * MINUTE);
     withInstallTokens([
       { createdAt: before, lastMcpSeenAt: new Date(OLD_TOKEN.getTime() - 30 * MINUTE) },
@@ -966,18 +651,6 @@ describe('keeping the forward promise', () => {
     const r = await scan({ now: NOW });
 
     expect(r.resolved).toHaveLength(0);
-    expect(mockPost).not.toHaveBeenCalled();
-  });
-
-  it('still posts the MCP resolution when the installer OS cannot be read', async () => {
-    setup({ installs: [], open: [mcpEpisode] });
-    mockUserFindById.mockReturnValue({ select: () => ({ lean: () => Promise.reject(new Error('mongo down')) }) });
-    withInstallTokens([mcpTokenOfThisEpisode]);
-
-    const r = await scan({ now: NOW });
-
-    expect(r.resolved).toHaveLength(1);
-    expect(mockPost.mock.calls[0][0].content).toContain('in a Terminal on the machine where I should live');
   });
 
   it('a failed lookup on one episode leaves it open and still resolves the episodes after it', async () => {
@@ -992,19 +665,16 @@ describe('keeping the forward promise', () => {
     const r = await scan({ now: NOW });
 
     expect(r.resolved.map((x) => x.episodeId)).toEqual(['ep9']);
-    expect(mockPost).toHaveBeenCalledTimes(1);
     expect(mockEpUpdate).not.toHaveBeenCalledWith(expect.objectContaining({ _id: 'epA' }), expect.anything());
   });
 
   it('keeps waiting when the episode has no token issue time to scope by', async () => {
     setup({ installs: [], open: [{ ...mcpEpisode, tokenIssuedAt: undefined }] });
-    installer({});
     withInstallTokens([mcpTokenOfThisEpisode]);
 
     const r = await scan({ now: NOW });
 
     expect(r.resolved).toHaveLength(0);
-    expect(mockPost).not.toHaveBeenCalled();
   });
 
   it('keeps waiting while it is still never-connected', async () => {
@@ -1014,18 +684,18 @@ describe('keeping the forward promise', () => {
     const r = await scan({ now: NOW });
 
     expect(r.resolved).toHaveLength(0);
-    expect(mockPost).not.toHaveBeenCalled();
     expect(mockAttentionResolve).not.toHaveBeenCalled();
+    expect(mockRowClose).not.toHaveBeenCalled();
   });
 
-  it('closes silently when the seat was uninstalled — no room, no promise to keep', async () => {
+  it('closes when the seat was uninstalled: nothing left to start', async () => {
     setup({ installs: [], open: [openEpisode] });
     mockInstallFindById.mockReturnValue({ lean: () => Promise.resolve(null) });
 
     await scan({ now: NOW });
 
-    expect(mockPost).not.toHaveBeenCalled();
     expect(mockEpUpdate).toHaveBeenCalled();
+    expect(mockRowClose).toHaveBeenCalledWith('inst1', 'ep9', { actioned: false });
   });
 
   // F505: one unsorted batch of 200 left every open episode past it open for
@@ -1045,7 +715,7 @@ describe('keeping the forward promise', () => {
     expect(pages.map(([f]) => f._id?.$gt || null)).toEqual([null, `ep${String(RESOLVE_PAGE_SIZE - 1).padStart(4, '0')}`]);
   });
 
-  it('treats an uninstall as gone: the row stays, and the post would bring the agent back', async () => {
+  it('treats an uninstall as gone: the install row stays, and nobody started it', async () => {
     mockAttentionDismiss.mockClear();
     setup({ installs: [], open: [{ ...openEpisode, nudgeMessageId: 'nudge9' }] });
     mockInstallFindById.mockReturnValue({
@@ -1055,22 +725,10 @@ describe('keeping the forward promise', () => {
     const result = await scan({ now: NOW });
 
     expect(result.resolved).toHaveLength(1);
-    expect(mockPost).not.toHaveBeenCalled();
     expect(mockEpUpdate.mock.calls[0][1].$set.status).toBe('resolved');
     // Its "needs you" row goes too, and not as acted on.
-    expect(mockAttentionDismiss).toHaveBeenCalledWith('message', 'nudge9');
+    expect(mockAttentionDismiss).toHaveBeenCalledWith('message', 'nudge9', { strict: true });
     expect(mockAttentionResolve).not.toHaveBeenCalled();
-  });
-});
-
-describe('the resolution copy', () => {
-  // eslint-disable-next-line global-require
-  const { composeStalledConnectResolution } = require('../../../services/stalledConnectCopy');
-
-  it('claims no check-in time when the runtime keeps none', () => {
-    const content = composeStalledConnectResolution({
-      displayName: 'AI1 Agent', handle: 'ai1-agent', lastCheckInAt: null, presentState: 'reachable', fixCommand: 'x',
-    });
-    expect(content).toBe("AI1 Agent connected. Mention @ai1-agent while the listener is running and I'll answer.");
+    expect(mockRowClose).toHaveBeenCalledWith('inst1', 'ep9', { actioned: false });
   });
 });
