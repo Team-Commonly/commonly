@@ -375,11 +375,12 @@ describe('the stalled-connect nudge is private to the installer (F666)', () => {
       if (update?.$set?.createdAt) { failed += 1; throw new Error('storage down'); }
       return realModelUpdate(filter, update, options);
     });
-    expect('f'.repeat(24) > String(first.stalledConnectEpisodeId)).toBe(true);
+    expect(first.stalledConnectTokenIssuedAt.getTime()).toBe(ISSUED.getTime());
     try {
       await AttentionItemService.recordStalledConnect({
         recipientUserId: installer._id, podId: pod._id, installationId: install._id,
-        episodeId: 'f'.repeat(24), title: "Ada Agent hasn't connected", detail: 'Open its panel.',
+        episodeId: 'f'.repeat(24), tokenIssuedAt: new Date(ISSUED.getTime() + MINUTE),
+        title: "Ada Agent hasn't connected", detail: 'Open its panel.',
       }).catch(() => {});
     } finally {
       collectionSpy.mockRestore();
@@ -396,8 +397,8 @@ describe('the stalled-connect nudge is private to the installer (F666)', () => {
     const { installer, pod, install } = await world();
     const notice = { recipientUserId: installer._id, podId: pod._id, installationId: install._id,
       title: "Ada Agent hasn't connected", detail: 'Open its panel.' };
-    // The row an older episode's pass would insert, already acknowledged days ago.
-    await AttentionItemService.recordStalledConnect({ ...notice, episodeId: '6560f0f0f0f0f0f0f0f0f0f0' });
+    // The row an older token's pass would insert, already acknowledged days ago.
+    await AttentionItemService.recordStalledConnect({ ...notice, episodeId: '6560f0f0f0f0f0f0f0f0f0f0', tokenIssuedAt: ISSUED });
     const raced = await AttentionItem.findOne({}).lean();
     await AttentionItem.deleteMany({});
     const daysAgo = new Date(Date.now() - 3 * 24 * 60 * MINUTE);
@@ -414,7 +415,9 @@ describe('the stalled-connect nudge is private to the installer (F666)', () => {
       return result;
     });
     try {
-      await AttentionItemService.recordStalledConnect({ ...notice, episodeId: 'f'.repeat(24) });
+      await AttentionItemService.recordStalledConnect({
+        ...notice, episodeId: 'f'.repeat(24), tokenIssuedAt: new Date(ISSUED.getTime() + MINUTE),
+      });
     } finally {
       modelSpy.mockRestore();
     }
@@ -452,25 +455,65 @@ describe('the stalled-connect nudge is private to the installer (F666)', () => {
     expect((await StalledConnectEpisode.findOne({}).lean()).noticedAt).toBeTruthy();
   });
 
-  it('an older episode never re-tags a row a newer episode already wrote', async () => {
+  it('an older token never re-tags a row a newer token already wrote, even when it claimed last', async () => {
     const { installer, pod, install } = await world();
-    const older = '6560f0f0f0f0f0f0f0f0f0f0';
-    const newer = '6560f0f0f0f0f0f0f0f0f0f1';
+    // The stale pass claimed after the current one, so its episode id is larger.
+    const current = '6560f0f0f0f0f0f0f0f0f0f0';
+    const stale = '6560f0f0f0f0f0f0f0f0f0f1';
     const notice = {
       recipientUserId: installer._id, podId: pod._id, installationId: install._id,
       title: "Ada Agent hasn't connected", detail: 'Open its panel.',
     };
-    await AttentionItemService.recordStalledConnect({ ...notice, episodeId: newer });
+    await AttentionItemService.recordStalledConnect({
+      ...notice, episodeId: current, tokenIssuedAt: new Date(ISSUED.getTime() + MINUTE),
+    });
     const first = await AttentionItem.findOne({}).lean();
     await AttentionItemService.acknowledgeAttention(String(installer._id), String(first._id));
 
-    expect(await AttentionItemService.recordStalledConnect({ ...notice, episodeId: older }))
+    expect(await AttentionItemService.recordStalledConnect({ ...notice, episodeId: stale, tokenIssuedAt: ISSUED }))
       .toEqual({ recorded: true });
 
     const row = await AttentionItem.findById(first._id).lean();
-    expect(row.stalledConnectEpisodeId).toBe(newer);
+    expect(row.stalledConnectEpisodeId).toBe(current);
     expect(row.resolvedBy).toBe('acknowledged');
     expect(await AttentionItem.countDocuments({})).toBe(1);
+  });
+
+  it('a pass that read the token before a reissue leaves the row with the current episode', async () => {
+    const { bot } = await world();
+    // The stale pass read the first token at its top. Right before it claims,
+    // the token is reissued and a second pass claims and writes the current
+    // episode, so the stale claim lands last, with the larger id.
+    const realCreate = StalledConnectEpisode.create.bind(StalledConnectEpisode);
+    let reissued = false;
+    const createSpy = jest.spyOn(StalledConnectEpisode, 'create').mockImplementation(async (...args) => {
+      if (!reissued) {
+        reissued = true;
+        await User.updateOne({ _id: bot._id }, {
+          $set: { agentRuntimeTokens: [{ tokenHash: 'h2', createdAt: new Date(ISSUED.getTime() + MINUTE) }] },
+        });
+        await scan({ now: NOW });
+      }
+      return realCreate(...args);
+    });
+    try {
+      await scan({ now: NOW });
+    } finally {
+      createSpy.mockRestore();
+    }
+
+    const episodes = await StalledConnectEpisode.find({}).sort({ _id: 1 }).lean();
+    expect(episodes.map((episode) => episode.tokenIssuedAt.getTime()))
+      .toEqual([ISSUED.getTime() + MINUTE, ISSUED.getTime()]);
+    const [currentEpisode, staleEpisode] = episodes;
+    const rows = await AttentionItem.find({}).lean();
+    expect(rows).toHaveLength(1);
+    expect(rows[0].stalledConnectEpisodeId).toBe(String(currentEpisode._id));
+
+    // The stale episode closing on its own (an MCP call on the old token)
+    // leaves the current notice open.
+    await AttentionItemService.resolveStalledConnectEpisode(staleEpisode.installationId, staleEpisode._id, { actioned: true });
+    expect((await AttentionItem.findById(rows[0]._id).lean()).status).toBe('open');
   });
 
   it('closes a notice published before an uninstall closed its episode', async () => {
@@ -522,7 +565,8 @@ describe('the stalled-connect nudge is private to the installer (F666)', () => {
       // close pass resolved the (absent) row and before it closes the episode.
       await AttentionItemService.recordStalledConnect({
         recipientUserId: installer._id, podId: pod._id, installationId: install._id,
-        episodeId: episode._id, title: "Ada Agent hasn't connected", detail: 'Open its panel.',
+        episodeId: episode._id, tokenIssuedAt: episode.tokenIssuedAt,
+        title: "Ada Agent hasn't connected", detail: 'Open its panel.',
       });
     });
     try {

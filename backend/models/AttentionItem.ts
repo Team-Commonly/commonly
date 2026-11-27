@@ -30,6 +30,9 @@ interface IAttentionItem extends Document {
   sourceCreatedAt?: Date;
   /** A stalled-connect row: the episode that last wrote it, which alone may close it (F666). */
   stalledConnectEpisodeId?: string;
+  /** A stalled-connect row: the issue time of the token whose episode wrote it. Rows
+   * follow token order, never claim order, so a pass that read a replaced token can't take it. */
+  stalledConnectTokenIssuedAt?: Date;
   status: 'open' | 'resolved';
   resolvedAt?: Date;
   // Mention rows may resolve when their recipient replies; mention and handoff
@@ -75,6 +78,7 @@ const attentionItemSchema = new Schema<IAttentionItem>({
   options: [optionSchema],
   sourceCreatedAt: { type: Date },
   stalledConnectEpisodeId: { type: String },
+  stalledConnectTokenIssuedAt: { type: Date },
   status: { type: String, enum: ['open', 'resolved'], default: 'open', required: true },
   resolvedAt: { type: Date },
   resolvedBy: { type: String, enum: ['replied', 'acknowledged', 'actioned', 'missed'] },

@@ -745,15 +745,16 @@ export const recordHostedMcpDrift = async (drift: {
 // first listen finds the row to close. No email: the daily digest already
 // follows up on a stall (F502).
 //
-// ONE WRITE PER EPISODE. The write only matches a row that no episode, or an
-// older one, wrote. A retry of the same episode (its first try wrote the row,
-// then recording that failed) and a slow pass for an older episode both miss,
-// so neither reopens a row the person marked handled nor takes the row from
-// the episode that now owns it. They answer `recorded`: the row reached them.
-// Episode ids are ObjectIds, so their hex strings sort in claim order. That
-// covers a pass that claimed an older episode and then stalled; one that
-// claims an older episode after a newer one can still take the row, which
-// costs nothing, because that older episode's own close closes it.
+// ONE WRITE PER TOKEN. The write only matches a row that no token, or an
+// older one, wrote; each token has exactly one episode. A retry of the same
+// episode (its first try wrote the row, then recording that failed) and a pass
+// that read a token since replaced both miss, so neither reopens a row the
+// person marked handled nor takes the row from the episode that now owns it.
+// They answer `recorded`: the row reached them. Order is the token's issue
+// time, not the claim: a stale pass can claim after the current token's
+// episode, and if it took the row, its episode's own close (an MCP call on the
+// old token) would resolve the row while the current episode, already
+// noticed, never writes it again.
 //
 // Every write restamps `createdAt` (and `sourceCreatedAt`) in the same update
 // that reopens the row: the queue sorts and `since`-filters on `createdAt`, so
@@ -763,7 +764,7 @@ export const recordHostedMcpDrift = async (drift: {
 // stalled-connect pass closes it on its next run.
 export const recordStalledConnect = async (notice: {
   recipientUserId: unknown; podId: unknown; installationId: unknown; agentUserId?: unknown;
-  episodeId: unknown; title: string; detail: string;
+  episodeId: unknown; tokenIssuedAt: Date | string; title: string; detail: string;
 }): Promise<{ recorded: boolean; reason?: 'recipient_not_member' }> => {
   const recipient = (await currentHumanMembers(notice.podId))
     .find((member) => String(member._id) === String(notice.recipientUserId));
@@ -771,6 +772,7 @@ export const recordStalledConnect = async (notice: {
   const pod = await Pod.findById(notice.podId).select('name').lean();
   const sourceId = sourceKey('stalled_connect', notice.installationId);
   const episodeId = String(notice.episodeId);
+  const tokenIssuedAt = new Date(notice.tokenIssuedAt);
   const at = new Date();
   const fields = {
     status: 'open',
@@ -781,6 +783,7 @@ export const recordStalledConnect = async (notice: {
     updatedAt: at,
     sourceCreatedAt: at,
     stalledConnectEpisodeId: episodeId,
+    stalledConnectTokenIssuedAt: tokenIssuedAt,
     ...(notice.agentUserId ? { actorUserId: notice.agentUserId } : {}),
   };
   // A row this episode may take: reopened and restamped in this one write.
@@ -796,7 +799,12 @@ export const recordStalledConnect = async (notice: {
       recipientUserId: recipient._id,
       'source.type': 'stalled_connect',
       'source.id': sourceId,
-      $or: [{ stalledConnectEpisodeId: null }, { stalledConnectEpisodeId: { $lt: episodeId } }],
+      // Only a newer token's episode takes the row. Each token has one episode,
+      // so a retry of the same one misses, and a pass that read a token since
+      // replaced can't re-tag the row to an episode that closes on its own.
+      // Claim order would not do: a stale pass can claim last, and ObjectIds
+      // from two replicas order only to the second.
+      $or: [{ stalledConnectTokenIssuedAt: null }, { stalledConnectTokenIssuedAt: { $lt: tokenIssuedAt } }],
     },
     { $set: fields, $unset: { resolvedAt: 1, resolvedBy: 1 } },
     { strict: false, timestamps: false },
@@ -814,8 +822,8 @@ export const recordStalledConnect = async (notice: {
     }).save({ timestamps: false });
   } catch (error: any) {
     if (error?.code !== 11000) throw error;
-    // The row exists now. If another pass inserted it for an older episode,
-    // this reopens and restamps it; if this episode or a newer one wrote it,
+    // The row exists now. If another pass inserted it for an older token,
+    // this reopens and restamps it; if this token or a newer one wrote it,
     // nothing matches and it already reached them.
     await reopen();
   }

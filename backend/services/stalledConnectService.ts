@@ -485,6 +485,7 @@ const nudgeOnce = async ({
       installationId: install._id,
       agentUserId,
       episodeId: episode._id,
+      tokenIssuedAt: issuedAt,
       title,
       detail,
     });
