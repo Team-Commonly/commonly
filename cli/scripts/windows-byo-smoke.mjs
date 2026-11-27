@@ -57,6 +57,7 @@ import { tmpdir } from 'os';
 import { dirname, join, resolve } from 'path';
 import { fileURLToPath } from 'url';
 
+import { npmBinFor, runNpm, waitForNpmServed } from './npm-served-wait.mjs';
 import { runProdWalk } from './windows-byo-prod.mjs';
 import {
   cliHintsFrom, commandExitFrom, pasteScript, publishedOutcome, withCliSpec,
@@ -376,6 +377,23 @@ const withRestrictedPolicy = async (fn) => {
     setUserPolicy('Undefined');
   }
 };
+
+// First wait until npm serves the tarball @latest names: for minutes after a
+// cli publish @latest already points at a version whose tarball 404s, and that
+// is not what this walk tests (F674). The result never gates the walk: the
+// page's own line runs next either way, so a real outage still fails. It waits
+// on a pull request in report-only mode too, since the npx fetch failing is
+// what fails those PRs. The wait is bounded by COMMONLY_BYO_NPM_WAIT_TOTAL_SECONDS.
+try {
+  await waitForNpmServed({
+    pkg: '@commonlyai/cli', run: runNpm, npmBin: npmBinFor(),
+    sleep: (ms) => new Promise((r) => { setTimeout(r, ms); }), log,
+  });
+} catch (error) {
+  // A bad setting is a mistake in the workflow, not an outage: stop now rather than walk for minutes.
+  fail(`published: ${error.message}`);
+  process.exit(1);
+}
 
 // The published leg is what a person gets today. On a pull request, what the
 // published CLI does once it holds the @mention is reported, not failed: a fix
