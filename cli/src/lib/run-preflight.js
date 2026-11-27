@@ -15,7 +15,7 @@ import { readFileSync } from 'fs';
 import { checkNode, FAIL } from './doctor.js';
 import { loginState } from './adapter-login.js';
 import { missingHarnessHint } from './missing-harness.js';
-import { withClaudePath } from './adapters/claude.js';
+import { claudeLoginProbeLaunch, withClaudePath } from './adapters/claude.js';
 import { resolveWindowsCommandWithReason } from './windows-command.js';
 
 // The reason codes the instance accepts (POST /api/agents/runtime/listen-blocked).
@@ -66,33 +66,57 @@ export const nodeFinding = ({ nodeVersion = process.versions.node, enginesRange 
  * on Windows a name cmd can't find exits 1, which is the signed-out code, and
  * would stop a run that is signed in. null when the command can't be resolved
  * or the probe can't run or times out (no verdict).
+ *
+ * F647: given the seat's `environment` and name, a Claude seat confined by
+ * Seatbelt is probed inside its own sandbox (the turn's profile, HOME and
+ * environment), so a login the jail can't read is not reported signed in. A
+ * sandboxed probe that can't be prepared is no verdict, as any other.
  */
-export const runHarnessLoginStatus = (name, args, {
+const plainProbeLaunch = (name, args, { env, platform, resolve }) => {
+  const childEnv = name === 'claude' ? withClaudePath(env) : env;
+  const located = resolve(name, { env: childEnv, platform });
+  if (!located?.command) return null;
+  return { command: located.command, args: [...(located.args || []), ...args], env: childEnv };
+};
+
+export const runHarnessLoginStatus = async (name, args, {
   env = process.env,
   platform = process.platform,
   resolve = resolveWindowsCommandWithReason,
   spawnFn = spawn,
   timeoutMs = 10_000,
-} = {}) => new Promise((done) => {
-  const childEnv = name === 'claude' ? withClaudePath(env) : env;
-  const located = resolve(name, { env: childEnv, platform });
-  if (!located?.command) {
-    done(null);
-    return;
-  }
-  let child;
+  environment = null,
+  agentName = null,
+  _prepareClaudeState,
+} = {}) => {
+  let launch = null;
   try {
-    child = spawnFn(located.command, [...(located.args || []), ...args], {
-      stdio: 'ignore', windowsHide: true, env: childEnv, shell: false,
-    });
+    if (name === 'claude' && environment) {
+      launch = await claudeLoginProbeLaunch(args, {
+        environment, agentName, env, platform,
+        ...(_prepareClaudeState ? { _prepareState: _prepareClaudeState } : {}),
+      });
+    }
   } catch {
-    done(null);
-    return;
+    return null;
   }
-  const timer = setTimeout(() => { child.kill(); done(null); }, timeoutMs);
-  child.on('error', () => { clearTimeout(timer); done(null); });
-  child.on('exit', (code) => { clearTimeout(timer); done(typeof code === 'number' ? code : null); });
-});
+  launch = launch || plainProbeLaunch(name, args, { env, platform, resolve });
+  if (!launch) return null;
+  return new Promise((done) => {
+    let child;
+    try {
+      child = spawnFn(launch.command, launch.args, {
+        stdio: 'ignore', windowsHide: true, env: launch.env, shell: false, ...(launch.cwd ? { cwd: launch.cwd } : {}),
+      });
+    } catch {
+      done(null);
+      return;
+    }
+    const timer = setTimeout(() => { child.kill(); done(null); }, timeoutMs);
+    child.on('error', () => { clearTimeout(timer); done(null); });
+    child.on('exit', (code) => { clearTimeout(timer); done(typeof code === 'number' ? code : null); });
+  });
+};
 
 /**
  * The harness findings for one adapter: not installed, or installed and not
@@ -105,9 +129,11 @@ export const harnessFindings = async ({
   adapterName,
   adapter,
   environment = null,
+  // The seat's name, which keys its sandbox state folder (F647).
+  agentName = null,
   checkInstalled = true,
   env = process.env,
-  runStatus = (name, args) => runHarnessLoginStatus(name, args, { env }),
+  runStatus = (name, args) => runHarnessLoginStatus(name, args, { env, environment, agentName }),
 }) => {
   if (!adapter || !adapterName) return [];
   if (checkInstalled) {

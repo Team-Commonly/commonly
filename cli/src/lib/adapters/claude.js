@@ -1512,6 +1512,41 @@ const resolveClaudeInstall = (env) => {
   }
 };
 
+/**
+ * F647: how the sign-in probe (`claude auth status`) runs for a seat, so it
+ * reads the login the way the seat's turn does. A seat confined by Seatbelt
+ * (public or workspace trust on macOS) gets its turn's state folder as HOME,
+ * its turn's stripped environment and its turn's Seatbelt profile; a login the
+ * jail can't read then reports signed out at setup, not at the first mention.
+ * null for every other seat, which keeps the plain probe. `_prepareState` is a
+ * test seam for the state folder.
+ */
+export const claudeLoginProbeLaunch = async (args, {
+  environment = null,
+  agentName = null,
+  env = process.env,
+  platform = process.platform,
+  _prepareState = preparePublicClaudeState,
+} = {}) => {
+  // Normalized as `spawn` does: a saved `internal` seat's turn runs as `public`,
+  // so its probe must too, or it reports signed in without the jail's view.
+  const sandbox = normalizeSandboxTrust(environment?.sandbox);
+  if (platform !== 'darwin' || !isConfinedTrust(sandbox?.trust)
+    || !PUBLIC_SANDBOX_MODES.has(resolvePublicSandboxMode(sandbox, platform))) return null;
+  // The turn's own state folder, keyed on the same name, with its keychain link.
+  const state = await _prepareState({ agentName });
+  const claudeEnv = withClaudePath(buildClaudeEnv(env, state, {}, null, true, platform));
+  const claudeBin = resolveClaudePath(claudeEnv);
+  const wrapped = wrapArgvWithSeatbelt([claudeBin, ...args], {
+    workspacePath: state.tmpPath,
+    workspaceAccess: 'read',
+    executablePath: claudeBin,
+    statePath: state.statePath,
+    allowClaudeRuntimeAccess: true,
+  });
+  return { command: wrapped[0], args: wrapped.slice(1), env: claudeEnv, cwd: state.tmpPath };
+};
+
 // A jail that cannot carry claude would fail inside at every spawn.
 const claudeInstallRefusal = (claudeBin) => new Error(
   'Claude agents on Linux need Claude Code on PATH, so the sandbox can carry its install; '

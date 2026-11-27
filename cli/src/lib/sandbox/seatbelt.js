@@ -431,6 +431,30 @@ const isSymlink = (path) => {
   }
 };
 
+// F647: a confined Claude seat's HOME is its own state folder, whose
+// Library/Keychains is a link to the person's real one (preparePublicClaudeState
+// in adapters/claude.js). Seatbelt checks the path a link resolves to, so the
+// login keychain is admitted at that resolved path too, resolved once here. It
+// is admitted only when it is the login keychain directly inside the person's
+// own Library/Keychains: a link the seat's folder holds to anywhere else adds
+// nothing, and never a folder.
+const LOGIN_KEYCHAIN = 'login.keychain-db';
+const linkedLoginKeychain = (seatHome, personHome) => {
+  const seatKeychains = join(seatHome, 'Library', 'Keychains');
+  const seatLogin = join(seatKeychains, LOGIN_KEYCHAIN);
+  if (!isSymlink(seatKeychains) && !isSymlink(seatLogin)) return null;
+  let resolved;
+  try {
+    resolved = realpathSync(seatLogin);
+  } catch {
+    return null;
+  }
+  const personKeychains = join(personHome, 'Library', 'Keychains');
+  const allowedFolders = new Set([personKeychains, realpathOrSelf(personKeychains)]);
+  if (basename(resolved) !== LOGIN_KEYCHAIN || !allowedFolders.has(dirname(resolved))) return null;
+  return resolved;
+};
+
 // The two xcode-select links. The xcrun shim reads developer_dir; both name
 // the same folder on a normal install, and a turn admits each target.
 const XCODE_SELECT_LINKS = Object.freeze(['/private/var/select/developer_dir', '/private/var/db/xcode_select_link']);
@@ -664,6 +688,9 @@ export const buildSeatbeltProfile = ({
   hostReadDirectories = [],
   // The home folder those rules are judged against. Tests pass a temp one.
   hostReadHome = homedir(),
+  // The person whose login keychain a Claude seat reads (F647). Tests pass a
+  // temp one.
+  keychainHome = homedir(),
   loopbackNetworkPorts = [],
   allowClaudeRuntimeAccess = false,
   // 'open' (the default) or 'loopback': only the listed loopback ports.
@@ -826,11 +853,16 @@ export const buildSeatbeltProfile = ({
     // temp files on the machine, so it is not admitted.
     // Claude's security helper needs the encrypted login-keychain database and
     // this non-secret locale file: that one file, not the Keychains folder.
-    const loginKeychain = join(homedir(), 'Library', 'Keychains', 'login.keychain-db');
-    const textEncoding = join(homedir(), '.CFUserTextEncoding');
+    const loginKeychain = join(keychainHome, 'Library', 'Keychains', LOGIN_KEYCHAIN);
+    const textEncoding = join(keychainHome, '.CFUserTextEncoding');
+    const linked = linkedLoginKeychain(resolvedState, keychainHome);
     return [
       `(allow file-read* file-test-existence ${literal(loginKeychain)} ${literal(textEncoding)})`,
       `(allow file-read-metadata file-test-existence (path-ancestors "${escapeSbplString(loginKeychain)}"))`,
+      ...(linked && linked !== loginKeychain ? [
+        `(allow file-read* file-test-existence ${literal(linked)})`,
+        `(allow file-read-metadata file-test-existence (path-ancestors "${escapeSbplString(linked)}"))`,
+      ] : []),
     ];
   })() : [];
 

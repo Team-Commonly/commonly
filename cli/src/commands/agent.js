@@ -6188,6 +6188,7 @@ Docs:
         adapterName: record.adapter,
         adapter: getAdapter(record.adapter),
         environment: record.environment,
+        agentName: record.agentName,
         checkInstalled: !bootstrapped,
       });
       const harnessOutcome = preflightOutcome(harnessProblems, { firstRun: bootstrapped });
