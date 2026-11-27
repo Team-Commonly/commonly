@@ -93,9 +93,13 @@ const renderAt = (path = `/v2/agents/byo?pod=${POD}`) => {
   );
 };
 
+// Under fake timers, waitFor's timeout is fake time (20 rounds of 50 ms by
+// default), and the connect button can need more rounds than that on a busy
+// CI runner (F679, as in V2AgentBYOWindowsCheck). Real timers keep the default.
+const fakeTimersOn = () => Object.prototype.hasOwnProperty.call(globalThis.setTimeout, 'clock');
 const formReady = async () => {
   const action = await screen.findByRole('button', { name: /get my connect command/i });
-  await waitFor(() => expect(action).toBeEnabled());
+  await waitFor(() => expect(action).toBeEnabled(), { timeout: fakeTimersOn() ? 10000 : 1000 });
   return action;
 };
 

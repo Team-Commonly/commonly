@@ -48,6 +48,16 @@ const realUserAgent = window.navigator.userAgent;
 const setUserAgent = (value) => Object.defineProperty(window.navigator, 'userAgent', { value, configurable: true });
 const stalls = () => recordByoStep.mock.calls.filter(([, step]) => step === 'listen-stall-reported');
 
+// Under fake timers, waitFor's timeout is fake time: the default 1,000 ms is
+// 20 rounds of 50 ms, and each round lets the page's queued work run only one
+// real turn. The install button took 3 to 13 rounds on an idle machine (1 with
+// real timers), so a busy CI runner ran out (F679). Ten seconds of fake time is
+// 200 rounds; a page that settles early still stops waiting at once. Real
+// timers keep the default, inside jest's own 5 s test timeout. The check is
+// the one Testing Library uses to detect fake timers.
+const fakeTimersOn = () => Object.prototype.hasOwnProperty.call(globalThis.setTimeout, 'clock');
+const enabledWait = () => ({ timeout: fakeTimersOn() ? 10000 : 1000 });
+
 const issue = async () => {
   axios.post
     .mockResolvedValueOnce({ data: { ok: true } })
@@ -59,7 +69,7 @@ const issue = async () => {
   );
   fireEvent.click(await screen.findByTestId('byo-mode-byo'));
   const install = await screen.findByRole('button', { name: /^Get my connect command/ });
-  await waitFor(() => expect(install).toBeEnabled());
+  await waitFor(() => expect(install).toBeEnabled(), enabledWait());
   fireEvent.click(install);
   return screen.findByTestId('byo-listen');
 };
@@ -269,7 +279,7 @@ describe('Why isn’t it answering?', () => {
     axios.post.mockResolvedValueOnce({ data: { ok: true } }).mockResolvedValueOnce({ data: { token: 'cm_agent_test_token_2' } });
     await act(async () => { jest.advanceTimersByTime(5); });
     const install = await screen.findByRole('button', { name: /^Get my connect command/ });
-    await waitFor(() => expect(install).toBeEnabled());
+    await waitFor(() => expect(install).toBeEnabled(), enabledWait());
     fireEvent.click(install);
     await screen.findByTestId('byo-listen');
     await copyListen();
