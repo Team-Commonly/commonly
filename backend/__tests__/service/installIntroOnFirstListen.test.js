@@ -43,6 +43,7 @@ const Message = require('../../models/Message');
 const AgentEvent = require('../../models/AgentEvent');
 const { AgentRegistry, AgentInstallation } = require('../../models/AgentRegistry');
 const { composeInstallIntro } = require('../../routes/registry/helpers');
+const { snapshotPointer } = require('../../services/installIntroCopy');
 const { resetListenerCheckInThrottle } = require('../../services/agentListenerCheckIn');
 
 const JWT_SECRET = 'intro-first-listen-test-only';
@@ -55,12 +56,13 @@ let pod;
 let seat;
 let seatToken;
 
-const NEVER = composeInstallIntro({
-  displayName: 'Rivet', handle: 'rivet', state: 'never-connected',
-  fixCommand: 'npx -y @commonlyai/cli@latest agent run rivet', connectable: true,
-});
+// A never-connected intro as installs wrote it before F651, which stopped
+// posting one; rows like it stay in pods, and the first listen still settles them.
+const NEVER = "Hi all — I'm Rivet, just joined the pod. As I post this, nothing is running me yet, "
+  + "so mentioning me won't reach anyone. Whoever installed me can connect me from my Settings — "
+  + `then @rivet will get through. ${snapshotPointer('rivet')}`;
 const LISTENING = composeInstallIntro({
-  displayName: 'Rivet', handle: 'rivet', state: 'listening', fixCommand: 'unused',
+  displayName: 'Rivet', handle: 'rivet', state: 'listening',
 });
 
 const manifest = (name) => ({

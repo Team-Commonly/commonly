@@ -167,13 +167,12 @@ describe('registry install — an identity with no listener', () => {
     expect(AgentInstallation.install.mock.calls[0][2].config.runtime).toMatchObject({ listens: false, host: 'byo' });
   });
 
-  it('undeclared: the start instruction is conditional, since it may only call the API', async () => {
+  it('undeclared and never run: no intro at all, so no start command lands in the room (F651)', async () => {
     const res = makeRes();
     await installHandler(makeReq({ runtimeType: 'webhook' }), res);
 
-    const { content } = introPosts()[0][0];
-    expect(content).toMatch(/nothing is running me yet/);
-    expect(content).toMatch(/If I'm meant to answer mentions, whoever installed me can start me with `npx -y @commonlyai\/cli@latest agent run my-agent`/);
+    expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ success: true }));
+    expect(introPosts()).toHaveLength(0);
   });
 
   it.each(['no', 0, null, 'false'])('refuses listens %p before any write', async (listens) => {
