@@ -4,9 +4,15 @@
  * replace or removeAt only at the version read) and lets a test delay or fail
  * any call. Rows are keyed by their `id` column. pg-mem is not used because it
  * ignores the guard's `ON CONFLICT ... DO UPDATE ... WHERE`.
+ *
+ * With `tombstones`, it mirrors pgTableAdapter's tombstone SQL: a remove keeps
+ * the entry at its version, flagged `deleted` with only its id left in `row`
+ * (every payload column NULL), under the same guard as an upsert; every read
+ * but getAny and an includeDeleted scan leaves it out; a higher-version upsert
+ * revives it. `live(id)` is the live entry or undefined.
  */
 /** Mirrors pgTableAdapter's SQL: an upsert applies only above the stored version. */
-const fakePg = ({ presenceColumns = [] } = {}) => {
+const fakePg = ({ presenceColumns = [], tombstones = false } = {}) => {
   const rows = new Map();
   const calls = [];
   const holds = {};
@@ -25,11 +31,19 @@ const fakePg = ({ presenceColumns = [] } = {}) => {
     }
     return apply();
   };
+  const live = (id) => {
+    const current = rows.get(id);
+    return current && !current.deleted ? current : undefined;
+  };
+  const liveIds = () => [...rows.keys()].filter((id) => live(id));
+  const tombstone = (id, version) => rows.set(id, { row: { id }, version, deleted: true });
   return {
     rows,
     calls,
+    live,
     // The columns the store may test with $exists, as pgTableAdapter declares them.
     presenceColumns,
+    tombstones,
     upsert: (row, version) => run('upsert', () => {
       const current = rows.get(row.id);
       if (current && current.version >= version) return false;
@@ -38,29 +52,46 @@ const fakePg = ({ presenceColumns = [] } = {}) => {
     }),
     remove: (id, version) => run('remove', () => {
       const current = rows.get(id);
-      if (current && current.version < version) rows.delete(id);
+      if (tombstones) {
+        if (!current || current.version < version) tombstone(id, version);
+      } else if (current && current.version < version) rows.delete(id);
     }),
-    // pg mode's compare-and-set: applies only to the row still at `version`.
+    // pg mode's compare-and-set: applies only to the live row still at `version`.
     replace: (row, version) => run('replace', () => {
-      const current = rows.get(row.id);
+      const current = live(row.id);
       if (!current || current.version !== version) return false;
       rows.set(row.id, { row: { ...row }, version: version + 1 });
       return true;
     }),
     removeAt: (id, version) => run('removeAt', () => {
-      const current = rows.get(id);
+      const current = live(id);
       if (!current || current.version !== version) return false;
-      rows.delete(id);
+      if (tombstones) tombstone(id, version + 1);
+      else rows.delete(id);
       return true;
     }),
     get: (id) => run('get', () => {
-      const current = rows.get(id);
+      const current = live(id);
       return current ? { row: { ...current.row }, version: current.version } : null;
     }),
+    ...(tombstones && {
+      getAny: (id) => run('getAny', () => {
+        const current = rows.get(id);
+        return current ? { deleted: Boolean(current.deleted), version: current.version } : null;
+      }),
+    }),
     // Keyset paging in id order, like the SQL's COLLATE "C" (ids here are ASCII).
-    scan: (after, limit) => run('scan', () => [...rows.keys()]
-      .filter((id) => after == null || id > after).sort().slice(0, limit)
-      .map((id) => ({ id, row: { ...rows.get(id).row }, version: rows.get(id).version }))),
+    scan: (after, limit, { includeDeleted = false } = {}) => run('scan', () => {
+      const withDeleted = tombstones && includeDeleted;
+      return (withDeleted ? [...rows.keys()] : liveIds())
+        .filter((id) => after == null || id > after).sort().slice(0, limit)
+        .map((id) => ({
+          id,
+          row: { ...rows.get(id).row },
+          version: rows.get(id).version,
+          ...(withDeleted && { deleted: Boolean(rows.get(id).deleted) }),
+        }));
+    }),
     // pgTableAdapter's filtered read: equality (null is IS NULL), ranges, $in and $exists,
     // ANDed, in id order. A range never matches NULL, as in SQL. The real
     // adapter's column and operator refusals are tested against its SQL.
@@ -84,7 +115,7 @@ const fakePg = ({ presenceColumns = [] } = {}) => {
         }
         return condition === null ? stored === null : scalar(stored) === scalar(condition);
       });
-      return [...rows.keys()].sort().filter((id) => matches(rows.get(id).row))
+      return liveIds().sort().filter((id) => matches(rows.get(id).row))
         .slice(0, limit ?? Infinity)
         .map((id) => ({ row: { ...rows.get(id).row }, version: rows.get(id).version }));
     }),
