@@ -124,6 +124,7 @@ import {
   factsFromFallback,
   factsFromStamp,
   otherRequesterOf,
+  ownerOnlyCue,
   podOpenToStrangers,
   requesterMayBeAgent,
   setupLine as accountUseSetupLine,
@@ -2743,6 +2744,9 @@ export const performRun = ({
       return accountUseRefusedResult();
     }
     if (accountVerdict === 'warn') await noticeAccountUseWarn(accountFacts, eventPodId);
+    // F685: in an open pod the owner's turn can still read a stranger's words
+    // through its tools, so it is told whose requests it acts on.
+    const ownerCue = ownerOnlyCue({ adapterName: adapter.name, facts: accountFacts });
 
     // Snapshot the pod's recent messages so that, after the spawn, we can
     // tell whether the agent posted itself via commonly_post_message. If it
@@ -2947,7 +2951,7 @@ export const performRun = ({
       turnResult = await runTurn({
         event,
         eventPodId,
-        prompt: `${peerFrame ? `${peerFrame}\n\n` : ''}${prompt}${earlierLine}`,
+        prompt: `${ownerCue ? `${ownerCue}\n\n` : ''}${peerFrame ? `${peerFrame}\n\n` : ''}${prompt}${earlierLine}`,
         preSpawnIds,
         snapshotMessages,
         claimKeeper,
@@ -3929,9 +3933,13 @@ export const performRun = ({
       : null;
     const digestFrame = formatDigestFrame(digestEvents, rollup, { bodiesBelow: Boolean(unreadFrame) });
     const omitted = Math.max(0, inboxCount - entries.length);
+    // F685: the batch is one pod, so any item's facts say whether it is open.
+    const ownerCue = entries.map((entry) => ownerOnlyCue({ adapterName: adapter.name, facts: entry.accountFacts }))
+      .find(Boolean);
     return [
       `[Inbox batch: ${inboxCount} new event${inboxCount === 1 ? '' : 's'} in this pod. `
         + 'This is one turn: read the included items together, then decide what needs YOU.]',
+      ...(ownerCue ? [ownerCue] : []),
       `After tool-side work is committed (including any reply posted through a tool)${answersPerson ? ',' : ', or an intentional NO_REPLY,'} checkpoint that item with its supplied IDs. `
         + 'Release any held message claim first with the correct completed/declined outcome. '
         + 'Do not checkpoint a reply you are holding for final CLI output: the wrapper must post it before acknowledging that item. '
@@ -4517,6 +4525,7 @@ export const performRun = ({
     });
     for (const [index, entry] of unjudged.entries()) {
       const { verdict, facts } = accountUse[index];
+      entry.accountFacts = facts;
       if (isRedelivery(entry)) {
         // Already acked or noticed once; only kept out of the turn.
         if (verdict === 'refuse') entry.accountRefused = true;
