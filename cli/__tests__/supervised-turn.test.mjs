@@ -142,8 +142,9 @@ describe('the isRunning helper', () => {
     expect(isRunning(4242, { kill: alive, readStat: failing('EMFILE'), hasProc: true })).toBe(true);
   });
 
-  test('a zombie is not running, and a sleeping process is', () => {
+  test('a zombie or dead process is not running, and a sleeping process is', () => {
     expect(isRunning(4242, { kill: alive, readStat: () => '4242 (node) Z 1 2 3', hasProc: true })).toBe(false);
+    expect(isRunning(4242, { kill: alive, readStat: () => '4242 (node) X 1 2 3', hasProc: true })).toBe(false);
     expect(isRunning(4242, { kill: alive, readStat: () => '4242 (node) S 1 2 3', hasProc: true })).toBe(true);
   });
 });
