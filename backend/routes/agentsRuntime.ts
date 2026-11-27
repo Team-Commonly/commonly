@@ -25,6 +25,8 @@ import rateLimit from 'express-rate-limit';
 import { SharedRateLimitStore } from '../middleware/sharedRateLimitStore';
 import { platformIpRateLimit } from '../middleware/platformRateLimit';
 import { logOutboundFailure } from '../utils/safeErrorLog';
+import { podVisibility } from '../services/podVisibility';
+import { stampAccountUse } from '../services/accountUseStamp';
 import { parsePublicPrRef, PublicPrError, readPublicPullRequest } from '../services/githubPublicPr';
 
 const express = require('express');
@@ -852,21 +854,13 @@ router.get('/installations', phase4RateLimit, agentRuntimeAuth, async (req: any,
     const podMap = Object.fromEntries(pods.map((p: any) => [String(p._id), p]));
 
     // Whether strangers can read or join each room this seat answers in
-    // (TASK-294). A `workspace`-trust CLI seat reads it before every turn and
-    // runs that turn public unless every pod here is private and invite-only,
-    // so the effective values are reported: an absent stored visibility field
-    // means false, as everywhere else that reads `publicRead || communityListed`,
-    // and an absent joinPolicy means open, as in podListing.ts. Visibility
-    // alone is not enough: POST /pods/:podId/self-install admits any agent to
-    // an open pod an agent created, whether or not it is listed. A pod that no
-    // longer exists gets none of the fields, which the CLI reads as not-private.
-    const podVisibility = (pod: any) => (pod?._id
-      ? {
-        publicRead: pod.publicRead === true,
-        communityListed: pod.communityListed === true,
-        joinPolicy: pod.joinPolicy === 'invite-only' ? 'invite-only' : 'open',
-      }
-      : {});
+    // (TASK-294), by the shared rule in services/podVisibility.ts (the events
+    // stamp reads the same one). A `workspace`-trust CLI seat reads it before
+    // every turn and runs that turn public unless every pod here is private
+    // and invite-only. Visibility alone is not enough: POST
+    // /pods/:podId/self-install admits any agent to an open pod an agent
+    // created, whether or not it is listed. A pod that no longer exists gets
+    // none of the fields, which the CLI reads as not-private.
 
     // The installation Settings reads the model and effort from, by the
     // daemon projection's rule: the oldest active one that declares a seat.
@@ -1142,6 +1136,17 @@ router.get('/events', longPollIpLimit, agentRuntimeAuth, async (req: any, res: a
         res.once('finish', onAnswerFinish);
         res.once('close', onAnswerClose);
       }
+    }
+
+    // F662: an own-machine seat runs each turn on its owner's login or key,
+    // so tell its CLI who asked and whose account answers (payload.accountUse).
+    // Every answer path with events passes here, the long-poll's included.
+    // BYO seats only; an empty page or another seat costs no query, and a
+    // failure serves the page unstamped. Never throws.
+    if (Array.isArray(events) && events.length > 0) {
+      events = await stampAccountUse(events, {
+        agentUser, installations: req.agentInstallations, credential: req.agentCredential,
+      });
     }
 
     // Fire the typing indicator now — at gateway-fetch time, not

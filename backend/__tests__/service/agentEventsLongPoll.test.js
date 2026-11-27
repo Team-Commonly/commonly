@@ -188,6 +188,37 @@ describe('GET /events?waitMs', () => {
     expect((await AgentEvent.findById(event._id).lean()).status).toBe('delivered');
   });
 
+  test('F662: a BYO seat\'s held answer carries payload.accountUse', async () => {
+    await AgentInstallation.updateMany(
+      { agentName: 'alice' },
+      { $set: { 'config.runtime': { runtimeType: 'webhook', host: 'byo' } } },
+    );
+    await User.updateOne(
+      { isBot: true, 'botMetadata.agentName': 'alice' },
+      { $set: { 'botMetadata.ownerUserId': person._id } },
+    );
+    const pending = timed(poll('?waitMs=10000'));
+    await untilHeld();
+    await AgentEventService.enqueue({
+      agentName: 'alice',
+      instanceId: 'default',
+      podId: pod._id,
+      type: 'chat.mention',
+      payload: { content: 'from the owner', messageId: 'm-owner', userId: String(person._id) },
+    });
+    const { res } = await pending;
+    expect(res.status).toBe(200);
+    expect(res.body.events[0].payload.accountUse).toEqual({
+      v: 1,
+      ownerUserId: String(person._id),
+      ownerName: 'lp-person',
+      requesterUserIds: [String(person._id)],
+      requesterKind: 'human',
+      pod: { type: 'chat', publicRead: false, communityListed: false, joinPolicy: 'open' },
+      requesterSharesTeamPod: null,
+    });
+  });
+
   test('an empty hold that times out answers empty after about waitMs', async () => {
     const { res, ms } = await timed(poll('?waitMs=700'));
     expect(res.status).toBe(200);
@@ -329,6 +360,45 @@ describe('GET /events?waitMs', () => {
     const { res, ms } = await timed(poll('?waitMs=5000&onlyIds=0123456789abcdef01234567'));
     expect(res.body.events).toEqual([]);
     expect(ms).toBeLessThan(1000);
+  });
+});
+
+describe('F662: the DM team-pod check runs on real Mongo', () => {
+  // The unit tests stub Pod.aggregate; this runs the pipeline itself, where
+  // aggregate skips schema casting and $setIntersection compares ObjectIds.
+  test('a teammate shares a team pod; a stranger who shares only a publicRead pod does not', async () => {
+    // eslint-disable-next-line global-require
+    const { stampAccountUse } = require('../../services/accountUseStamp');
+    const mk = (u, extra = {}) => User.create({
+      username: u, email: `${u}@test.com`, password: 'password123', ...extra,
+    });
+    const owner = await mk('f662-owner');
+    const mate = await mk('f662-mate');
+    const stranger = await mk('f662-stranger');
+    const bot = await mk('f662-bot', {
+      isBot: true, botMetadata: { agentName: 'f662-bot', instanceId: 'default', ownerUserId: owner._id },
+    });
+    await Pod.create({ name: 'team', type: 'chat', createdBy: owner._id, members: [owner._id, mate._id, bot._id] });
+    await Pod.create({
+      name: 'open', type: 'chat', createdBy: owner._id, members: [stranger._id, bot._id], publicRead: true,
+    });
+    const mateRoom = await Pod.create({
+      name: 'mate-room', type: 'agent-room', createdBy: mate._id, members: [mate._id, bot._id],
+    });
+    const strangerRoom = await Pod.create({
+      name: 'stranger-room', type: 'agent-room', createdBy: stranger._id, members: [stranger._id, bot._id],
+    });
+    const events = [
+      { type: 'chat.mention', podId: String(mateRoom._id), payload: { userId: String(mate._id) } },
+      { type: 'chat.mention', podId: String(strangerRoom._id), payload: { userId: String(stranger._id) } },
+    ];
+    await stampAccountUse(events, {
+      agentUser: bot.toObject(),
+      installations: [{ config: { runtime: { runtimeType: 'webhook', host: 'byo' } } }],
+    });
+    expect(events[0].payload.accountUse.requesterSharesTeamPod).toBe(true);
+    expect(events[0].payload.accountUse.pod.type).toBe('agent-room');
+    expect(events[1].payload.accountUse.requesterSharesTeamPod).toBe(false);
   });
 });
 
