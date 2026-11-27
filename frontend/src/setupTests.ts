@@ -1,10 +1,30 @@
 // Import jest-dom matchers
 import '@testing-library/jest-dom';
+import { act, configure } from '@testing-library/react';
 import { TextEncoder } from 'util';
 import './i18n';
 
 // jsdom omits this browser API; use Node's implementation for UTF-8 encoding.
 Object.assign(global, { TextEncoder });
+
+// Under fake timers, waitFor and findBy advance fake time in 50 ms rounds.
+// In jsdom, React's scheduler runs on the real setTimeout it captured at
+// import, so a state update that lands outside act (a mocked request resolving
+// after render) waits on a real 1 ms timer. A round's only real yield was act's
+// setImmediate, which runs before a timer queued in the same loop turn, so the
+// update rendered only in a round where its timer was already due: a BYO page
+// took 1 to 14 of the default 20 rounds, and a merge-queue run ran out (F679).
+// Each round now ends with one real setTimeout(0), queued after the
+// scheduler's, and every wait in that BYO file takes one round. A test that
+// resets modules and requires Testing Library again gets a copy without this.
+// Guard: src/__tests__/fakeTimerWaitFor.test.tsx.
+const realSetTimeout: typeof setTimeout = jest.requireActual('timers').setTimeout;
+configure({
+  unstable_advanceTimersWrapper: async (advance) => {
+    await act(async () => { await advance(); });
+    await new Promise((resolve) => { realSetTimeout(resolve, 0); });
+  },
+});
 
 // Mock axios
 jest.mock('axios', () => ({
