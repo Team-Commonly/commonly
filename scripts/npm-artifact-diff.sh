@@ -30,8 +30,20 @@ mkdir -p "$work/local" "$work/registry" "$work/tgz-local" "$work/tgz-registry" |
 # The cli copies its skill in at prepublishOnly, which `npm pack` does not run.
 npm run --silent --if-present prepublishOnly >/dev/null || cannot "prepublishOnly failed in $dir"
 npm pack --silent --pack-destination "$work/tgz-local" >/dev/null || cannot "npm pack failed in $dir"
-( cd "$work" && npm pack --silent "$name@$want" --pack-destination "$work/tgz-registry" >/dev/null ) \
-  || cannot "could not fetch $name@$want from npm"
+# package-version-guard runs right after npm-publish, and npm can take a few
+# minutes to serve a version it has just accepted, so a failed fetch is retried
+# (default 10 tries, 30 s apart, about 5 minutes) before it counts as a 2.
+attempts=${NPM_FETCH_ATTEMPTS:-10}; delay=${NPM_FETCH_RETRY_DELAY:-30}; try=1
+# A bad setting fails at once: `[ -ge ]` on a non-number errors, which would
+# keep the loop from ever reaching its last try.
+case $attempts in ''|*[!0-9]*|0) cannot "NPM_FETCH_ATTEMPTS must be a whole number of at least 1" ;; esac
+case $delay in ''|*[!0-9]*) cannot "NPM_FETCH_RETRY_DELAY must be a whole number of seconds" ;; esac
+until ( cd "$work" && npm pack --silent "$name@$want" --pack-destination "$work/tgz-registry" >/dev/null ); do
+  [ "$try" -ge "$attempts" ] && cannot "could not fetch $name@$want from npm after $attempts attempts"
+  echo "· $name@$want not fetchable yet (try $try of $attempts); retrying in ${delay}s"
+  rm -f -- "$work"/tgz-registry/*.tgz
+  try=$((try + 1)); sleep "$delay"
+done
 tar -xzf "$work"/tgz-local/*.tgz -C "$work/local" || cannot "cannot extract the local tarball"
 tar -xzf "$work"/tgz-registry/*.tgz -C "$work/registry" || cannot "cannot extract the registry tarball"
 for side in local registry; do
