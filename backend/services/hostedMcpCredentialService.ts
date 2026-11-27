@@ -449,9 +449,11 @@ export const credentialFor = async (
     if ((error as { code?: string })?.code === 'client_not_configured') {
       // An instance secret/config rollout must not permanently mark every
       // existing row as errored. The entry is not offerable until configured,
-      // and a later call can succeed if the instance value is restored.
+      // and a later call can succeed if the instance value is restored. Its
+      // own code (F688): only whoever runs the instance can fix it, so it must
+      // not tell the agent to send the owner to reconnect.
       throw new HostedMcpCredentialError(
-        'reconnect_required',
+        'client_unavailable',
         'OAuth client configuration is unavailable; restore instance configuration to continue',
       );
     }

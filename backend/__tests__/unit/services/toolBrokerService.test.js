@@ -938,4 +938,10 @@ describe('host GitHub push authority', () => {
     expect(executionErrorOutcome(new SeatPushError('non_fast_forward', 409))).toBe('refused');
     expect(executionErrorOutcome(new SeatPushError('provider_git_failed', 502))).toBe('failed');
   });
+
+  it('records an instance OAuth-client fault as a failure, and an owner reconnect as a refusal (F688)', () => {
+    const { HostedMcpCredentialError } = require('../../../services/hostedMcpCredentialError');
+    expect(executionErrorOutcome(new HostedMcpCredentialError('client_unavailable', 'x'))).toBe('failed');
+    expect(executionErrorOutcome(new HostedMcpCredentialError('reconnect_required', 'x'))).toBe('refused');
+  });
 });

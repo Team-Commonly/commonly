@@ -538,6 +538,17 @@ describe('hosted-MCP tool definitions', () => {
     expect(deps.fetcher).not.toHaveBeenCalled();
   });
 
+  it('an instance OAuth-client fault passes through as client_unavailable, never a 403 refusal (F688)', async () => {
+    const { HostedMcpCredentialError } = require('../../../services/hostedMcpCredentialError');
+    const fault = new HostedMcpCredentialError('client_unavailable', 'OAuth client configuration is unavailable');
+    const deps = makeDeps({ credentialFor: jest.fn(async () => { throw fault; }) });
+
+    const thrown = await definitionFor('linear.list_issues', deps).call({}, CONNECTION).catch((e) => e);
+    expect(thrown).toBe(fault);
+    expect(thrown.statusCode).toBeUndefined();
+    expect(deps.fetcher).not.toHaveBeenCalled();
+  });
+
   it('calls the vendor name the pin recorded, not the name the agent sees', async () => {
     const deps = makeDeps();
     const definition = definitionFor('linear.create_issue', deps);

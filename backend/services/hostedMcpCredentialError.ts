@@ -5,7 +5,10 @@ export type HostedMcpCredentialErrorCode =
   | 'credential_missing'
   | 'refresh_unreachable'
   | 'connection_error'
-  | 'credential_refreshing';
+  | 'credential_refreshing'
+  // The instance's own OAuth client config is missing (F688): an admin fix,
+  // not the connection owner's, so it is a failure and never a reconnect.
+  | 'client_unavailable';
 
 export class HostedMcpCredentialError extends Error {
   readonly code: HostedMcpCredentialErrorCode;
