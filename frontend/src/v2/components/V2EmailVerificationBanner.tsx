@@ -4,26 +4,34 @@ import { useAuth } from '../../context/AuthContext';
 import axios from '../../utils/axiosConfig';
 import { ShellGlyph } from '../icons/glyphs';
 
+// A dismiss is kept per account in a module-level set (F652). V2App mounts a
+// fresh shell behind each auth gate, so component state alone was lost on
+// every route change between them. The set survives in-app navigation and
+// remounts, and the reminder comes back on the next page load, as the
+// product ruling says.
+const dismissedAccounts = new Set<string>();
+
 const V2EmailVerificationBanner: React.FC = () => {
   const { currentUser } = useAuth();
   const { t } = useTranslation();
-  const [dismissed, setDismissed] = useState(false);
+  const [dismissedFor, setDismissedFor] = useState<string | null>(null);
   const [resending, setResending] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
 
   const needsVerification = currentUser?.verified === false;
+  const accountKey = String(currentUser?._id || currentUser?.id || currentUser?.email || '');
 
   useEffect(() => {
     setNotice(null);
-    // Keep a dismissal through route changes in this mounted app shell, but
-    // restore the reminder on the next page load as the product ruling says.
-    setDismissed(false);
-  }, [currentUser?._id, currentUser?.id, needsVerification]);
+  }, [accountKey, needsVerification]);
+
+  const dismissed = Boolean(accountKey) && (dismissedFor === accountKey || dismissedAccounts.has(accountKey));
 
   if (!needsVerification || dismissed || !currentUser?.email) return null;
 
   const dismiss = () => {
-    setDismissed(true);
+    dismissedAccounts.add(accountKey);
+    setDismissedFor(accountKey);
   };
 
   const resend = async () => {
