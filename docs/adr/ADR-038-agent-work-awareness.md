@@ -84,9 +84,11 @@ contain it. So:
   program-naming key in that config, or a hook, means nothing is sent.
 
   That function is synchronous (`spawnSync`, 10 s per call) and throws when git's answer can't be
-  read, so phase 1 doesn't call it as-is. It runs either an async variant of the same check, or a
-  result cached on the mtimes of the repository's config and hooks directory. Either way it fits
-  inside the 5 s budget. The wrapper catches any throw and sends nothing.
+  read, so phase 1 doesn't call it as-is. It runs an async variant of the same check before every
+  read, never a cached result. A cache keyed on file mtimes misses a config source the key leaves
+  out (`config.worktree`), and anything that can write the config can also set its mtime back. The
+  check refuses `include.path` and `includeIf` keys outright, so an included file is never trusted.
+  Two git spawns fit inside the 5 s budget. The wrapper catches any throw and sends nothing.
 
 **`.git` symlinks and gitdir files.**
 - *Inside the sandbox*, git follows a `.git` symlink or a `gitdir:` file only as far as the profile
@@ -247,13 +249,18 @@ the wrapper runs no git at all.
 
 With `branch` mode, the server strips `paths` before storing.
 
-**Off hides at once.** The off-write unsets `work` when the record's `podId` is that pod, and the read
-side checks the current mode as well. Nothing waits for a report.
+**Off hides at once, and so does narrowing.** The off-write unsets `work` when the record's `podId` is
+that pod. A write that changes `files` to `branch` unsets `work.paths` the same way. The read side
+checks the current mode as well, so a record stored under `files` shows no paths once the mode is
+`branch`, even if the write's unset failed. Nothing waits for a report.
 
 **Read.** `agent-states` includes `work` only when all of these hold:
 - the pod is the record's `podId`;
 - the mode is on now, and the pod is still confirmed private and not a DM;
 - the caller is in `pod.members`.
+
+When the mode is `branch` now, the read drops `paths` before it returns the record, and before §5
+computes overlap from it.
 
 `DMService.canViewPod` is not the test, because it also admits instance admins and the ADR-001 §3.7
 agent-dm fan-out. Neither of those gets `work`. The read has no admin bypass.
@@ -301,6 +308,9 @@ unconfined. It builds:
   and a `publicRead` pod refuse and hide.
 - **Off hides at once:** the off-write unsets `work`, and a read after it returns none, with no
   report in between.
+- **Narrowing hides paths at once:** after `files` changes to `branch`, a read returns the record
+  with no `paths` and §5 finds no overlap from it, with no report in between, including when the
+  write's unset is skipped.
 - **Uninstall resets consent:** after an uninstall and a reinstall by another person, the pod is
   `off` and refuses reports.
 - **Who may flip it:** a mention-installer, a second installer and an instance admin each get a 403
@@ -312,6 +322,8 @@ unconfined. It builds:
   - the macOS confined read runs under `wrapArgvWithSeatbelt` and can't write the workspace;
   - a missing merge-base ref falls through to the next base and doesn't clear the record;
   - a throw from the code-running-config check sends nothing;
+  - the check runs again before every read: a filter added after a clean read, with the config's
+    mtime set back, sends nothing;
   - a Linux confined seat sends nothing;
   - a code-running git config or a non-directory `.git` outside the sandbox sends nothing;
   - a slow read doesn't delay the next poll.
