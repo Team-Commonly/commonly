@@ -3933,8 +3933,9 @@ export const performRun = ({
       : null;
     const digestFrame = formatDigestFrame(digestEvents, rollup, { bodiesBelow: Boolean(unreadFrame) });
     const omitted = Math.max(0, inboxCount - entries.length);
-    // F685: the batch is one pod, so any item's facts say whether it is open.
-    const ownerCue = entries.map((entry) => ownerOnlyCue({ adapterName: adapter.name, facts: entry.accountFacts }))
+    // F685: the batch is one pod, so a shown item's facts say whether it is open.
+    // An item held past the cap may carry an older stamp, so it doesn't decide.
+    const ownerCue = inTurn.map((entry) => ownerOnlyCue({ adapterName: adapter.name, facts: entry.accountFacts }))
       .find(Boolean);
     return [
       `[Inbox batch: ${inboxCount} new event${inboxCount === 1 ? '' : 's'} in this pod. `
