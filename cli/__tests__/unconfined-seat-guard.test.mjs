@@ -5,6 +5,7 @@
  * refuses the turn, and a read that fails defers it.
  */
 import { jest } from '@jest/globals';
+import { ownerStampedAll } from '../test-support/owner-stamp.mjs';
 import os from 'os';
 import path from 'path';
 import fs from 'fs';
@@ -135,10 +136,10 @@ const setup = ({ environment = null, podsPerTurn }) => {
       if (served >= podsPerTurn.length) return { events: [] };
       served += 1;
       return {
-        events: [{
+        events: ownerStampedAll([{
           _id: `evt-${runs}-${served}`, type: 'chat.mention', podId: 'pod-abc', agentName: 'quill', instanceId: 'default',
           payload: { content: `hello ${served}`, deliveryId: `delivery-${runs}-${served}` },
-        }],
+        }]),
       };
     }
     return {};

@@ -17,6 +17,7 @@
  */
 
 import { jest } from '@jest/globals';
+import { ownerStampedAll } from '../test-support/owner-stamp.mjs';
 import os from 'os';
 import path from 'path';
 import fs from 'fs';
@@ -75,6 +76,8 @@ const makeEvent = (overrides = {}) => ({
   payload: { content: 'hello from tester' },
   ...overrides,
 });
+// The same event as its owner sent it, for a claude or codex run (F662).
+const makeOwnEvent = (overrides = {}) => ownerStampedAll([makeEvent(overrides)])[0];
 
 // A seat with no enforced sandbox re-reads its pods before every turn and runs
 // only while all are confirmed private (lib/unconfined-seat-guard.js). Tests of
@@ -257,7 +260,7 @@ describe('performRun', () => {
     const mockGet = jest.fn(async (url) => (url === '/api/agents/runtime/installations'
       ? { installations: [{ type: 'installation', podId: 'pod-abc', instanceId: 'default',
         ...PRIVATE_POD_FLAGS, runtimeAdapter: 'codex', runtimeControls: { model: 'gpt-6.1-sol', effort: 'max' } }] }
-      : { events: [makeEvent()] }));
+      : { events: [makeOwnEvent()] }));
     createClient.mockReturnValue({ get: mockGet, post: mockPost });
     const spawn = jest.fn(async (_prompt, ctx) => ({ text: 'ok',
       stats: { model: ctx.environment.model, effort: ctx.environment.effort } }));
@@ -2809,7 +2812,7 @@ describe('performRun', () => {
     let stop;
     try {
       const realAdapter = (await import(`../src/lib/adapters/${name}.js`)).default;
-      const event = makeEvent({ _id: `evt-byo-model-${name}` });
+      const event = makeOwnEvent({ _id: `evt-byo-model-${name}` });
       const get = jest.fn(async (route) => route.endsWith('/messages')
         ? { messages: [] } : { events: [event] });
       const post = jest.fn().mockResolvedValue({});
@@ -2839,7 +2842,7 @@ describe('performRun', () => {
     if (requirement === undefined) delete process.env.COMMONLY_REQUIRE_SEAT_MODEL;
     else process.env.COMMONLY_REQUIRE_SEAT_MODEL = requirement;
     const realAdapter = (await import(`../src/lib/adapters/${name}.js`)).default;
-    const event = makeEvent({ _id: `evt-model-${name}` });
+    const event = makeOwnEvent({ _id: `evt-model-${name}` });
     const get = jest.fn(async (route) => route.endsWith('/messages')
       ? { messages: [] } : { events: [event] });
     const post = jest.fn().mockResolvedValue({});

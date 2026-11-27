@@ -4,6 +4,7 @@
  * (lib/public-seat-mcp-flag.js, commonly-mcp/src/public-seat-gate.js).
  */
 import { jest } from '@jest/globals';
+import { ownerStampedAll } from '../test-support/owner-stamp.mjs';
 import os from 'os';
 import path from 'path';
 import fs from 'fs';
@@ -96,10 +97,10 @@ const spawnedEnvironment = async (environment, installations = [PRIVATE_POD]) =>
     if (served) return { events: [] };
     served = true;
     return {
-      events: [{
+      events: ownerStampedAll([{
         _id: `evt-flag-${delivery}`, type: 'chat.mention', podId: 'pod-abc', agentName: 'quill', instanceId: 'default',
         payload: { content: 'hello', deliveryId: `delivery-flag-${delivery}` },
-      }],
+      }]),
     };
   });
   createClient.mockReturnValue({ get: mockGet, post: jest.fn().mockResolvedValue({}), del: jest.fn().mockResolvedValue({}) });
