@@ -120,10 +120,14 @@ started next to the signal profiler in `backend/server.ts`.
 **How it behaves.**
 
 - **Off unless `LOOP_STALL_PROFILE=1`.** When off, it creates no inspector
-  session, histogram or timer. It needs no signal, so it is safe in local dev.
+  session, sampler or timer. It needs no signal, so it is safe in local dev.
 - It profiles in rolling windows of `LOOP_STALL_PROFILE_WINDOW_S` seconds
   (default 60, clamped to 10–60), sampling every 10 ms. Its own loop-delay
-  histogram is reset each window.
+  sampler (a 20 ms timer that records how late each tick ran) is reset each
+  window. The read at a window end also counts the interval still in
+  progress, so it needs no wait and a stall that ends right at the boundary,
+  or starts right after a reset, is not lost. (`monitorEventLoopDelay` lost
+  both: its `reset()` zeroes the previous-sample time.)
 - At each window end, if the window's worst loop delay is at least
   `LOOP_STALL_PROFILE_THRESHOLD_MS` (default 1000, clamped to 100–60000), it
   writes that window and the one before it, so a stall across the boundary is
@@ -154,8 +158,9 @@ started next to the signal profiler in `backend/server.ts`.
 default rate. The larger cost is the `Profiler.start` at each window: about
 50–150 ms loop pause at the start of each window (V8 re-logs compiled code),
 so one such pause a minute at the default; a shorter window means more of
-them. The pause isn't counted as a stall: the histogram is reset in the same
-tick. `Profiler.stop` also builds the window's profile on the loop, and only
+them. The pause isn't counted as a stall: the window is read before
+`Profiler.stop`, and the sampler is re-baselined in the same tick right after
+the stop and again right after the start. `Profiler.stop` also builds the window's profile on the loop, and only
 a stall window pays for `JSON.stringify` and the file write. One extra profile
 is held in memory between windows.
 
