@@ -315,15 +315,26 @@ exports.createMessage = async (req: AuthRequest, res: Response): Promise<void> =
       message = normalizeMongo(populated || mongoMsg);
     } else {
       try {
-        const created = await PGMessage.create(
-          podId,
-          userId,
-          messageContent || '',
-          'text',
-          replyToMessageId || null,
-          null,
-          resolvedThreadRootId,
-        );
+        // F655: a bot row posting with a user token is an agent posting; its
+        // message records the agent's owner. A person's post records nothing.
+        const actor = req.botCaller
+          // eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
+          ? await require('../services/messageActorService').actorForBotCaller(podId, userId, req.botCaller)
+          : null;
+        const created = actor
+          ? await PGMessage.create(
+            podId, userId, messageContent || '', 'text', replyToMessageId || null, null, resolvedThreadRootId,
+            null, null, null, false, null, actor,
+          )
+          : await PGMessage.create(
+            podId,
+            userId,
+            messageContent || '',
+            'text',
+            replyToMessageId || null,
+            null,
+            resolvedThreadRootId,
+          );
         // create() returns the raw INSERT row with no users JOIN, so the
         // response would lack username/profile_picture and the v2 chat would
         // render the author as "Unknown" until a refresh pulled the joined

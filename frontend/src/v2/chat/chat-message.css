@@ -399,6 +399,33 @@
   letter-spacing: 0.02em;
 }
 
+/* F655: whose agent this is, quiet beside the name. It gives way first, on
+   one line: only the owner's name is cut with an ellipsis, and "'s agent" /
+   " 的智能体" stays whole (pre keeps the zh half-width space). A zero basis
+   with a floor makes it shrink before it wraps: the phone head breaks only
+   when less than 8em is left, and it never grows past its own text. */
+.v2-msg__owner {
+  display: inline-flex;
+  flex: 1 1 0;
+  min-width: 8em;
+  max-width: max-content;
+  white-space: nowrap;
+  color: var(--v2-text-muted);
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.v2-msg__owner-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.v2-msg__owner-suffix {
+  flex-shrink: 0;
+  white-space: pre;
+}
+
 .v2-msg__avatar-btn {
   appearance: none;
   background: transparent;

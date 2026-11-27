@@ -93,6 +93,10 @@ jest.mock('../../../services/installable/eventHandlers', () => ({
   dispatch: (...args) => mockDispatch(...args),
 }));
 const mockFirstTask = jest.fn();
+const mockResolveActor = jest.fn().mockResolvedValue(null);
+jest.mock('../../../services/messageActorService', () => ({
+  resolveMessageActor: (...args) => mockResolveActor(...args),
+}));
 jest.mock('../../../services/starterTaskService', () => ({
   completeFirstTaskOnAnswer: (...args) => mockFirstTask(...args),
 }));
@@ -102,6 +106,7 @@ let emitted;
 
 beforeEach(() => {
   jest.clearAllMocks();
+  mockResolveActor.mockResolvedValue(null);
   emitted = [];
   process.env.PG_HOST = 'localhost';
   jest.spyOn(AgentMessageService, 'getRecentMessages').mockResolvedValue([]);
@@ -135,6 +140,49 @@ afterEach(() => {
   if (AgentMessageService.getRecentMessages.mockRestore) {
     AgentMessageService.getRecentMessages.mockRestore();
   }
+});
+
+// F655: the server records whose agent posted and the person it answered.
+describe('the message actor (F655)', () => {
+  const OWNER = '64b000000000000000000001';
+  const ASKER = '64b000000000000000000002';
+
+  it('hands the resolved actor to create, and the live message carries neither id', async () => {
+    mockResolveActor.mockResolvedValue({ ownerUserId: OWNER, onBehalfOfUserId: ASKER });
+    await AgentMessageService.postMessage({
+      agentName: 'sprint-review',
+      instanceId: 'default',
+      podId: POD,
+      content: 'Done: the redirect is fixed.',
+      replyToMessageId: '57500',
+    });
+    // The declared installation key goes to the owner lookup, and only the
+    // run's own trigger can name a person: the reply edge is not passed.
+    expect(mockResolveActor).toHaveBeenCalledWith({
+      podId: POD,
+      agentUser: expect.objectContaining({ _id: 'agent-user-1' }),
+      agentName: 'sprint-review',
+      instanceId: 'default',
+      answeringMessageId: undefined,
+      authorKind: null,
+    });
+    expect(PGMessage.create).toHaveBeenCalledWith(
+      POD, 'agent-user-1', 'Done: the redirect is fixed.', 'text', '57500', null, null, undefined, null, null,
+      false, null, { ownerUserId: OWNER, onBehalfOfUserId: ASKER },
+    );
+    const live = JSON.stringify(emitted);
+    expect(live).not.toContain(OWNER);
+    expect(live).not.toContain(ASKER);
+  });
+
+  it('keeps the old call when there is no actor', async () => {
+    await AgentMessageService.postMessage({
+      agentName: 'sprint-review', instanceId: 'default', podId: POD, content: 'plain broadcast',
+    });
+    expect(PGMessage.create).toHaveBeenCalledWith(
+      POD, 'agent-user-1', 'plain broadcast', 'text', null, null, null, undefined,
+    );
+  });
 });
 
 describe('agent in-thread posts (threadRootId, no reply edge)', () => {

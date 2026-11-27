@@ -2,6 +2,9 @@ import { podMemberPopulate } from '../services/podMemberPopulate';
 import { resolveAgentDisplayLabel } from '../utils/agentDisplayLabel';
 import { leaveUnviewablePodRooms } from '../services/sessionSocketService';
 import { mirrorRegistryRow } from '../services/installable/registryReconciler';
+import {
+  ownersForPod, displayOwnerId, isOwner, AgentOwners,
+} from '../services/agentOwnerService';
 const mongoose = require('mongoose');
 const Pod = require('../models/Pod');
 const Message = require('../models/Message');
@@ -433,19 +436,29 @@ const pickPodFields = (plain: any, fields: readonly string[]) => Object.fromEntr
 const withAgentLabels = (plain: any) => ({
   ...plain,
   members: (plain?.members || []).map((member: any) => {
-    const { agentName: _runtime, ownerUserId: _owner, ...botMetadata } = member?.botMetadata || {};
+    const {
+      agentName: _runtime, ownerUserId: _owner, officialAgent: _official, ...botMetadata
+    } = member?.botMetadata || {};
     if (!member?.isBot) return member?.botMetadata ? { ...member, botMetadata } : member;
     return { ...member, botMetadata, displayLabel: resolveAgentDisplayLabel(member, member.username) };
   }),
 });
 
-// F402: the board says whose agent holds a task. Each agent member gets
-// `ownerName`, the owner's display name or else username, for a reader who is
-// a member of the pod only. One read for all owners; a gone owner is left out.
-const agentOwnerNames = async (members: any[]): Promise<Map<string, string>> => {
-  const ownerIds = [...new Set(members
-    .map((member: any) => (member?.isBot ? String(member.botMetadata?.ownerUserId || '') : ''))
-    .filter((id: string) => /^[0-9a-f]{24}$/i.test(id)))];
+// F402: the board says whose agent holds a task, and F655 the chat byline.
+// Each agent member gets `ownerName`, its owner's display name or else
+// username, for a reader who is a member of the pod only. The owner is the
+// agentOwnerService rule (this pod's installer, else ownerUserId, people only),
+// so an agent installed from the marketplace names who installed it. An
+// official agent names nobody: whoever made the pod installed it. A gone owner
+// is left out. `ownedByViewer` tells the reader which agents are theirs, as a
+// flag: either owner counts (the installer here, or the identity's owner), and
+// nobody gets an owner's id.
+const agentOwnersOf = async (podId: unknown, members: any[]): Promise<Map<string, AgentOwners>> => {
+  const candidates = members.filter((member: any) => member?.isBot && !member.botMetadata?.officialAgent);
+  return ownersForPod(podId, candidates);
+};
+const agentOwnerNames = async (ownerOf: Map<string, AgentOwners>): Promise<Map<string, string>> => {
+  const ownerIds = [...new Set([...ownerOf.values()].map(displayOwnerId).filter((id): id is string => Boolean(id)))];
   if (!ownerIds.length) return new Map();
   const owners = await User.find({ _id: { $in: ownerIds } }).select('username displayName').lean() as Array<{
     _id: unknown; username?: string; displayName?: string;
@@ -454,18 +467,17 @@ const agentOwnerNames = async (members: any[]): Promise<Map<string, string>> => 
     .filter((owner) => owner.displayName || owner.username)
     .map((owner) => [String(owner._id), String(owner.displayName || owner.username)]));
 };
-const withAgentOwners = (body: any, rawMembers: any[], names: Map<string, string>) => {
-  const ownerOf = new Map(rawMembers
-    .filter((member: any) => member?.isBot && member.botMetadata?.ownerUserId)
-    .map((member: any) => [String(member._id), String(member.botMetadata.ownerUserId)]));
-  return {
-    ...body,
-    members: (body.members || []).map((member: any) => {
-      const ownerName = names.get(ownerOf.get(String(member?._id)) || '');
-      return ownerName ? { ...member, ownerName } : member;
-    }),
-  };
-};
+const withAgentOwners = (
+  body: any, ownerOf: Map<string, AgentOwners>, names: Map<string, string>, viewerId: string,
+) => ({
+  ...body,
+  members: (body.members || []).map((member: any) => {
+    const owners = ownerOf.get(String(member?._id));
+    const ownerName = owners ? names.get(displayOwnerId(owners) || '') : undefined;
+    if (!owners || !ownerName) return member;
+    return { ...member, ownerName, ...(isOwner(owners, viewerId) ? { ownedByViewer: true } : {}) };
+  }),
+});
 
 // Get a specific pod
 exports.getPodById = async (req: any, res: any) => {
@@ -479,7 +491,7 @@ exports.getPodById = async (req: any, res: any) => {
     // Get the pod with populated data
     const pod = await Pod.findById(id)
       .populate('createdBy', 'username profilePicture')
-      .populate(podMemberPopulate('username displayName profilePicture isBot botMetadata.displayName botMetadata.instanceId botMetadata.agentName botMetadata.ownerUserId'))
+      .populate(podMemberPopulate('username displayName profilePicture isBot botMetadata.displayName botMetadata.instanceId botMetadata.agentName botMetadata.ownerUserId botMetadata.officialAgent'))
       .populate('parentPod', 'name _id');
 
     if (!pod) {
@@ -510,9 +522,11 @@ exports.getPodById = async (req: any, res: any) => {
     const isMember = (pod.members || []).some((m: any) => String(m?._id || m) === viewerId);
     const plain = typeof pod.toJSON === 'function' ? pod.toJSON() : pod;
     const labelled = withAgentLabels(pickPodFields(plain, isMember ? POD_MEMBER_FIELDS : POD_READER_FIELDS));
-    const body = isMember
-      ? withAgentOwners(labelled, plain.members || [], await agentOwnerNames(plain.members || []))
-      : labelled;
+    let body = labelled;
+    if (isMember) {
+      const ownerOf = await agentOwnersOf(pod._id, plain.members || []);
+      body = withAgentOwners(labelled, ownerOf, await agentOwnerNames(ownerOf), viewerId);
+    }
     if (pod.type === 'agent-room') {
       const agentGone = (await goneAgentRoomIds([pod._id])).has(String(pod._id));
       return res.json({ ...body, agentGone });

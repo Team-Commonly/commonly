@@ -25,6 +25,7 @@ pg.public.none(`CREATE TABLE messages (
   content TEXT, message_type VARCHAR(50) DEFAULT 'text', author_kind VARCHAR(20), summary TEXT, kind VARCHAR(20),
   -- pg-mem types the model's payload parameter as text, so the column is TEXT here.
   receipt JSONB, payload TEXT, reply_to_message_id INTEGER, thread_root_id INTEGER, top_level_answer BOOLEAN,
+  owner_user_id VARCHAR(24), on_behalf_of_user_id VARCHAR(24),
   created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP, updated_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
 )`);
 pg.public.none(`CREATE TABLE message_claims (

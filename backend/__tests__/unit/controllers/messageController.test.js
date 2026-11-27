@@ -37,6 +37,10 @@ const mockProposeNewPodFirstTask = jest.fn();
 jest.mock('../../../services/newPodFirstTaskService', () => ({
   proposeNewPodFirstTask: (...args) => mockProposeNewPodFirstTask(...args),
 }));
+const mockActorForBotCaller = jest.fn().mockResolvedValue(null);
+jest.mock('../../../services/messageActorService', () => ({
+  actorForBotCaller: (...args) => mockActorForBotCaller(...args),
+}));
 const { markPodOpened, markStartPicked } = require('../../../services/onboardingMarks');
 // The gate's own rules are pinned in services/welcomeHostedStart.test.js; here,
 // that every page served goes through it. Pass-through unless a test says so.
@@ -793,5 +797,47 @@ describe('messageController', () => {
       await messageController.deleteMessage(req, res);
       expect(res.json).toHaveBeenCalledWith({ msg: 'Message deleted' });
     });
+  });
+});
+
+// F655: a bot row posting through the person route with a user token records
+// its owner; a person's post records nothing.
+describe('messageController agent author (F655)', () => {
+  const OLD_PG_HOST = process.env.PG_HOST;
+  beforeEach(() => {
+    process.env.PG_HOST = 'localhost';
+    AgentInstallation.countDocuments.mockResolvedValue(0);
+  });
+  afterEach(() => {
+    jest.clearAllMocks();
+    if (OLD_PG_HOST === undefined) delete process.env.PG_HOST;
+    else process.env.PG_HOST = OLD_PG_HOST;
+  });
+
+  const post = async (extra) => {
+    Pod.findById.mockResolvedValue({ members: ['u1'], type: 'chat' });
+    PGMessage.create.mockResolvedValue({ id: 1, content: 'done' });
+    const res = { status: jest.fn().mockReturnThis(), json: jest.fn() };
+    await messageController.createMessage({
+      params: { podId: 'p1' }, body: { content: 'done' }, user: { id: 'u1' }, ...extra,
+    }, res);
+    return res;
+  };
+
+  it('records the owner of a bot row posting with a user token', async () => {
+    const botCaller = { username: 'nova', botMetadata: { agentName: 'openclaw', instanceId: 'nova' } };
+    mockActorForBotCaller.mockResolvedValueOnce({ ownerUserId: '64b000000000000000000001' });
+    await post({ botCaller });
+    expect(mockActorForBotCaller).toHaveBeenCalledWith('p1', 'u1', botCaller);
+    expect(PGMessage.create).toHaveBeenCalledWith(
+      'p1', 'u1', 'done', 'text', null, null, null, null, null, null, false, null,
+      { ownerUserId: '64b000000000000000000001' },
+    );
+  });
+
+  it("a person's post records no actor and keeps the old write", async () => {
+    await post({});
+    expect(mockActorForBotCaller).not.toHaveBeenCalled();
+    expect(PGMessage.create).toHaveBeenCalledWith('p1', 'u1', 'done', 'text', null, null, null);
   });
 });

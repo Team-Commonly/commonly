@@ -1659,6 +1659,16 @@ const V2Thread: React.FC<V2ThreadProps> = ({ detail, podsState, firstRunVisible 
     });
     return ids;
   }, [agentStates, messages, agentKeyByAuthorString]);
+  // F655: whose agent each agent member is, from the pod read (members only;
+  // official agents and agents with no human owner carry no name).
+  const agentOwners = React.useMemo(() => {
+    const map = new Map<string, { name: string; mine?: boolean }>();
+    (members || []).forEach((member) => {
+      if (!member?.isBot || !member._id || !member.ownerName) return;
+      map.set(String(member._id), { name: member.ownerName, ...(member.ownedByViewer ? { mine: true } : {}) });
+    });
+    return map;
+  }, [members]);
   const agentAuthorKeys = React.useMemo(
     () => new Set(agentKeyByAuthorString.keys()),
     [agentKeyByAuthorString],
@@ -2540,6 +2550,7 @@ const V2Thread: React.FC<V2ThreadProps> = ({ detail, podsState, firstRunVisible 
             ownerConnectLinks={ownerConnectLinks}
             connectedIntroIds={connectedIntroIds}
             agentTags={agentTags}
+            agentOwners={agentOwners}
             agentAuthorKeys={agentAuthorKeys}
             afterMessage={teammateMoment ? { messageId: teammateMoment.messageId, content: teammateCard } : undefined}
             onAuthorClick={onOpenMember ? handleAuthorClick : undefined}

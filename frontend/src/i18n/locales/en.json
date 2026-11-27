@@ -1098,6 +1098,7 @@
       "unreadCount": "{{count}} new",
       "sentCard": "sent a card"
     },
+    "agentOwner": "<name/><suffix>'s agent</suffix>",
     "leadBadge": "Lead",
     "catchup": {
       "title": "Catch up",

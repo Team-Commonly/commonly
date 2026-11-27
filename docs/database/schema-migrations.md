@@ -450,6 +450,60 @@ change there is a compare-and-set on `status`. Card ids attach with
 with `WHERE received_enqueued_at IS NULL`. `0029` must be applied after
 `0028`, never before it.
 
+## Message actor columns (0030)
+
+`0030_message_actor.sql` adds two nullable `VARCHAR(24)` columns to
+`messages`. They hold the people an agent's message is accountable to:
+
+- `owner_user_id`: whose agent posted it. This is the
+  `services/agentOwnerService.ts` rule: the installer of its installation in
+  this pod, else the identity's `ownerUserId`, and people only.
+- `on_behalf_of_user_id`: the person whose message started the run, taken
+  from the run's trigger only. That is the author of the wake message a
+  native run claimed (`answeringMessageId`, set by the runtime), when a person
+  wrote it in this pod. A reply edge never sets it: the agent chooses what it
+  replies to.
+
+Both use the grant record's vocabulary (ADR-033 `actor.owner` and
+`actor.onBehalfOf`). A run that no person started (a heartbeat, a schedule,
+another agent) stores no on-behalf-of. A person's own message, a kernel line
+and every older row store NULL in both. An official agent's message still
+stores its owner (whoever installed it), although the UI names nobody for it.
+
+`services/messageActorService.ts` sets them. These post paths record them:
+
+- `AgentMessageService.postMessage` writing to PostgreSQL: native runs and
+  the agent runtime routes (`/api/agents/runtime`, which CAP, MCP, webhook
+  and BYO agents post through);
+- a bot account posting with a user token (`req.botCaller`) through
+  `POST /api/messages/:podId` or `POST /api/pg/messages/:podId`: owner only.
+
+These do not, by design: a decision ruling reply (only a person may rule),
+a chat-relay inbound message (the linked person's own), a system action line
+(the platform's), the legacy Mongo copy, and the Mongo-only fallback with no
+PostgreSQL. **External runtimes record no on-behalf-of yet**: their post
+carries no trigger the server knows, so they store the owner only. Deriving
+it from the server's record of the event that woke an external agent is a
+follow-up.
+
+They are person ids, so `models/pg/Message.ts` strips them from every row it
+returns (`withoutActor`). No read path sends them.
+
+**Rollback across 0030.** An image without this file fails boot on the extra
+`schema_migrations` row (`PostgreSQL migration history mismatch`). It keeps PG
+routes unavailable (503) until the row is removed. Its `RETURNING *` would
+also hand the two columns to clients. So before rolling back to the previous
+image, run against its database:
+
+```sql
+ALTER TABLE messages DROP COLUMN IF EXISTS on_behalf_of_user_id;
+ALTER TABLE messages DROP COLUMN IF EXISTS owner_user_id;
+DELETE FROM schema_migrations WHERE version = '0030_message_actor.sql';
+```
+
+Rolling forward again re-applies 0030 from scratch. The stored actors are
+lost, and nothing reads them yet.
+
 For the next aggregate, expose its domain operations, keep Mongoose queries
 inside its repository, and return plain values. Do not expose `find`, `save`,
 `populate`, or a generic query builder. Extract without changing storage first,

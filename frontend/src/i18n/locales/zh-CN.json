@@ -1092,6 +1092,7 @@
       "unreadCount": "{{count}}条未读",
       "sentCard": "[卡片]"
     },
+    "agentOwner": "<name/><suffix> 的智能体</suffix>",
     "leadBadge": "负责人",
     "catchup": {
       "title": "回顾",

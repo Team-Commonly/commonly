@@ -1,7 +1,7 @@
 import React, { lazy, Suspense, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import V2Lightbox, { type V2LightboxImage } from './V2Lightbox';
 import { Link, useNavigate } from 'react-router-dom';
-import { useTranslation } from 'react-i18next';
+import { Trans, useTranslation } from 'react-i18next';
 import ReactMarkdown, { type ExtraProps } from 'react-markdown';
 import V2Avatar from './V2Avatar';
 import V2GithubPrCard, { parseGithubPrUrls } from './V2GithubPrCard';
@@ -140,6 +140,10 @@ interface V2MessageRowProps {
   // column is kept as an empty grid cell so text stays aligned. Reply moves
   // to a hover affordance since the head row is gone.
   grouped?: boolean;
+  // F655: agent user id -> its owner's name from the pod read, and whether the
+  // viewer is that owner. An agent's head says whose agent it is; the viewer's
+  // own agents, and agents the pod names no owner for, show nothing.
+  agentOwners?: Map<string, { name: string; mine?: boolean }>;
 }
 
 interface ParsedFile {
@@ -545,7 +549,7 @@ const arrivedJustNow = (message: V2Message): boolean => (
   typeof message.liveArrivedAt === 'number' && Date.now() - message.liveArrivedAt < LIVE_ENTER_WINDOW_MS
 );
 
-const V2MessageRow: React.FC<V2MessageRowProps> = ({ message, introConnectedNow = false, sourceMessageId, decision, onDecisionRuled, isDecisionRuling = false, isLead, agentDisplayNames, ownerConnectLinks, agentTags, agentAuthorKeys, onAuthorClick, onOpenFile, onReply, onThread, onQuoteNavigate, grouped, insideThreadRoot }) => {
+const V2MessageRow: React.FC<V2MessageRowProps> = ({ message, introConnectedNow = false, sourceMessageId, decision, onDecisionRuled, isDecisionRuling = false, isLead, agentDisplayNames, ownerConnectLinks, agentTags, agentAuthorKeys, onAuthorClick, onOpenFile, onReply, onThread, onQuoteNavigate, grouped, insideThreadRoot, agentOwners }) => {
   const { currentUser } = useAuth();
   // Decided at mount and never again, so a re-render or a refetch that drops
   // the flag cannot replay the enter.
@@ -648,6 +652,26 @@ const V2MessageRow: React.FC<V2MessageRowProps> = ({ message, introConnectedNow 
     : undefined;
   const humanProfileLabel = humanProfileId ? t('profile.viewProfile', { name: author }) : undefined;
   const time = formatRelativeTime(message.created_at);
+  // F655: whose agent this is. Only on an agent's own words: never a person's
+  // row, a kernel line or a system line, and never the viewer's own agent.
+  const isSystemRow = message.message_type === 'system' || message.messageType === 'system';
+  const agentOwner = message.user?.isBot === true && message.author_kind !== 'kernel' && !isSystemRow
+    ? agentOwners?.get(String(message.user_id || ''))
+    : undefined;
+  // One translatable string, so the translator keeps the word order; only the
+  // owner's name may be cut, and the suffix stays whole. The name is the
+  // owner's own text, so it goes in as the component's child, never through
+  // `values`: Trans parses a filled string for tags, and the app turns escaping
+  // off (transNames.test.tsx holds every Trans to this).
+  const ownerByline = agentOwner?.name && !agentOwner.mine ? (
+    <Trans
+      i18nKey="podChat.agentOwner"
+      components={{
+        name: <span className="v2-msg__owner-name">{agentOwner.name}</span>,
+        suffix: <span className="v2-msg__owner-suffix" />,
+      }}
+    />
+  ) : null;
 
   // Kernel system actions have a structured payload and no message actions,
   // avatar, reply affordance or mention semantics. Legacy system messages
@@ -961,6 +985,7 @@ const V2MessageRow: React.FC<V2MessageRowProps> = ({ message, introConnectedNow 
           {message.author_kind === 'kernel' && (
             <span className="v2-msg__author-kind" aria-label="Commonly system message">Commonly</span>
           )}
+          {ownerByline && <span className="v2-msg__owner">{ownerByline}</span>}
           {isLead && <span className="v2-msg__lead-badge">{t('podChat.leadBadge')}</span>}
           {runtimeTag && <span className="v2-msg__tag">{runtimeTag}</span>}
           {time && <span className="v2-msg__time">{time}</span>}

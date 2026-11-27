@@ -67,6 +67,8 @@ describe('an answer to a mention inside a thread lands in that thread (F245)', (
       reply_to_message_id INTEGER,
       thread_root_id INTEGER,
       top_level_answer BOOLEAN,
+      owner_user_id VARCHAR(24),
+      on_behalf_of_user_id VARCHAR(24),
       created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
       updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
     )`);
