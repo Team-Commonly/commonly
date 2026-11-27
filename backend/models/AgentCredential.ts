@@ -8,6 +8,7 @@
 // falls back to the embedded records, so every existing token keeps working
 // untouched. New mints dual-write here; nothing migrates destructively.
 import mongoose, { Document, Schema, Types } from 'mongoose';
+import { DAEMON_REVOKED_REASONS, DaemonRevokedReason, isDaemonRevokedReason } from '../services/daemonRevokeReasons';
 
 export type AgentCredentialKind = 'runtime' | 'daemon';
 export type AgentCredentialStatus = 'active' | 'revoked';
@@ -36,6 +37,11 @@ export interface IAgentCredential extends Document {
   // this, so a supervisor that never stops renewing still dies at 24h.
   maxExpiresAt?: Date | null;
   revokedAt?: Date | null;
+  // F641: why an operator revoked this DAEMON key, when the revoke said.
+  // Written on daemon keys only (never on the runtime children a cascade
+  // revokes). The daemon's 401 and the app turn it into text for the person;
+  // null means no reason given.
+  revokedReason?: DaemonRevokedReason | null;
 }
 
 const AgentCredentialSchema = new Schema<IAgentCredential>(
@@ -53,6 +59,7 @@ const AgentCredentialSchema = new Schema<IAgentCredential>(
     expiresAt: { type: Date, default: null },
     maxExpiresAt: { type: Date, default: null },
     revokedAt: { type: Date, default: null },
+    revokedReason: { type: String, enum: [...DAEMON_REVOKED_REASONS, null], default: null },
   },
   { timestamps: true, collection: 'agentcredentials' },
 );
@@ -71,17 +78,32 @@ AgentCredentialSchema.index(
 
 // Revoke a credential AND every descendant, breadth-first. One level deep
 // today (daemon → runtime), but written as a walk so a deeper chain can
-// never orphan a live child.
+// never orphan a live child. An optional reason (F641) is written on every
+// daemon key this call revokes; a key already revoked keeps what it had, and
+// a null or absent reason is no reason.
 AgentCredentialSchema.statics.revokeCascade = async function revokeCascade(
   credentialId: Types.ObjectId | string | (Types.ObjectId | string)[],
+  options: { reason?: DaemonRevokedReason | null } = {},
 ): Promise<number> {
+  const reason = options.reason ?? null;
+  if (reason !== null && !isDaemonRevokedReason(reason)) {
+    throw new Error(`Unknown revoke reason: ${String(reason)}`);
+  }
   const now = new Date();
+  const revoke = { status: 'revoked', revokedAt: now };
   let frontier: (Types.ObjectId | string)[] = Array.isArray(credentialId) ? credentialId : [credentialId];
   let revoked = 0;
   while (frontier.length) {
+    if (reason) {
+      const daemons = await this.updateMany(
+        { _id: { $in: frontier }, status: 'active', kind: 'daemon' },
+        { $set: { ...revoke, revokedReason: reason } },
+      );
+      revoked += daemons.modifiedCount || 0;
+    }
     const res = await this.updateMany(
       { _id: { $in: frontier }, status: 'active' },
-      { $set: { status: 'revoked', revokedAt: now } },
+      { $set: revoke },
     );
     revoked += res.modifiedCount || 0;
     const children = await this.find({ parentId: { $in: frontier } }).select('_id').lean();
@@ -91,7 +113,10 @@ AgentCredentialSchema.statics.revokeCascade = async function revokeCascade(
 };
 
 interface AgentCredentialModel extends mongoose.Model<IAgentCredential> {
-  revokeCascade(credentialId: Types.ObjectId | string | (Types.ObjectId | string)[]): Promise<number>;
+  revokeCascade(
+    credentialId: Types.ObjectId | string | (Types.ObjectId | string)[],
+    options?: { reason?: DaemonRevokedReason | null },
+  ): Promise<number>;
 }
 
 export default mongoose.model<IAgentCredential, AgentCredentialModel>('AgentCredential', AgentCredentialSchema);

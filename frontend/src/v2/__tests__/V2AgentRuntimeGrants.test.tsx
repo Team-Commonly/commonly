@@ -1,6 +1,6 @@
 // @ts-nocheck
 import React from 'react';
-import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import V2AgentRuntimeBody, { V2AgentConnectorsRow, describeRuntime } from '../components/V2AgentRuntimeGrants';
 import { AuthContext } from '../../context/AuthContext';
@@ -83,6 +83,176 @@ test('revoked Runtime row offers an active computer and moves in one request', a
   await waitFor(() => expect(axios.post).toHaveBeenCalledWith('/api/agent-binding/move',
     { agentName: 'nib', instanceId: 'default', machineId: 'new', fromMachineId: 'old' }, expect.anything()));
   expect(axios.post).toHaveBeenCalledTimes(1);
+});
+
+// F641: a key revoked with a reason tells the person what to do. The line sits
+// in the panel body, never inside <summary>. It names that computer's OWN setup
+// line, shown right below from the placement record (its OS, its sandbox
+// choice), never a link to the generic add-a-computer page: that page builds the
+// line from the browser's OS with default options, so on Windows it would add
+// --unsandboxed for an owner who opted out (review of #4356).
+const revokedWithLiveComputer = (host) => axios.get.mockImplementation((url) => Promise.resolve({ data: url.includes('/agent-binding/placement')
+  ? { boundMachineId: 'old', requestedMachineId: null, boundMachineRevoked: true, boundMachineRevokedReason: 'cli_duplicate_daemons',
+    boundMachineHost: host, activeMachines: [{ machineId: 'new', name: 'New Mac' }] } : response }));
+
+test('a computer revoked because of a CLI bug shows its own setup line below, with no generic link', async () => {
+  revokedWithLiveComputer({ platform: 'darwin', unsandboxedOptIn: false });
+  renderSection();
+  const line = await screen.findByTestId('agent-machine-revoked-reason');
+  expect(line).toHaveTextContent('This computer was disconnected because of a bug in our CLI. Run the computer setup command below on it again to get the fixed version.');
+  expect(line).toHaveTextContent('Setup adds it as a new computer, and this agent stays on the old one until you move it: then choose the new computer under Run on and select Move agent.');
+  expect(within(screen.getByTestId('agent-machine-placement')).queryByRole('link')).not.toBeInTheDocument();
+  expect(line.closest('summary')).toBeNull();
+  expect(screen.getByTestId('agent-machine-revoked-setup').querySelector('code').textContent).toBe(daemonSetupCommandFor('unix'));
+  // The move step stays on offer beside it.
+  expect(screen.getByLabelText('Run on')).toBeInTheDocument();
+  expect(screen.getByTestId('agent-machine-placement').querySelector('summary'))
+    .toHaveTextContent('This computer’s key was revoked. Choose another computer to run this agent.');
+});
+
+test('a revoked Windows computer that opted out never gets --unsandboxed, even from a Windows browser', async () => {
+  const platform = jest.spyOn(window.navigator, 'platform', 'get').mockReturnValue('Win32');
+  try {
+    revokedWithLiveComputer({ platform: 'win32', unsandboxedOptIn: false });
+    renderSection();
+    const setup = await screen.findByTestId('agent-machine-revoked-setup');
+    expect(setup.querySelector('code').textContent).toBe(daemonSetupCommandFor('windows', undefined, { unsandboxed: false }));
+    expect(screen.getByTestId('agent-machine-placement')).not.toHaveTextContent('--unsandboxed');
+  } finally {
+    platform.mockRestore();
+  }
+});
+
+test('the revoked computer\'s OS follows the record, not the browser', async () => {
+  // A Mac browser, a Windows computer: the Windows line.
+  revokedWithLiveComputer({ platform: 'win32', unsandboxedOptIn: true });
+  const { unmount } = renderSection();
+  const win = await screen.findByTestId('agent-machine-revoked-setup');
+  expect(win.querySelector('code').textContent).toBe(daemonSetupCommandFor('windows'));
+  unmount();
+
+  // A Windows browser, a Mac computer: the Unix line.
+  const platform = jest.spyOn(window.navigator, 'platform', 'get').mockReturnValue('Win32');
+  try {
+    revokedWithLiveComputer({ platform: 'darwin', unsandboxedOptIn: null });
+    renderSection();
+    const mac = await screen.findByTestId('agent-machine-revoked-setup');
+    expect(mac.querySelector('code').textContent).toBe(daemonSetupCommandFor('unix'));
+  } finally {
+    platform.mockRestore();
+  }
+});
+
+test('with no computer left, the reason points at the setup command the panel already shows', async () => {
+  axios.get.mockImplementation((url) => Promise.resolve({ data: url.includes('/agent-binding/placement')
+    ? { boundMachineId: 'old', requestedMachineId: null, boundMachineRevoked: true, boundMachineRevokedReason: 'cli_duplicate_daemons',
+      activeMachines: [] } : response }));
+  renderSection();
+  const line = await screen.findByTestId('agent-machine-revoked-reason');
+  expect(line).toHaveTextContent('This computer was disconnected because of a bug in our CLI. Run the computer setup command below on it again to get the fixed version.');
+  expect(line).toHaveTextContent('Setup adds it as a new computer, and this agent stays on the old one until you move it: then choose the new computer under Run on and select Move agent.');
+  expect(within(line).queryByRole('link')).not.toBeInTheDocument();
+  expect(screen.getByTestId('agent-machine-placement')).toHaveTextContent(daemonSetupCommandFor('unix'));
+});
+
+test('with no computer left, the line below is the revoked computer\'s own, keeping its opt-in', async () => {
+  const placement = (host) => axios.get.mockImplementation((url) => Promise.resolve({ data: url.includes('/agent-binding/placement')
+    ? { boundMachineId: 'old', requestedMachineId: null, boundMachineRevoked: true, boundMachineRevokedReason: 'cli_duplicate_daemons',
+      boundMachineHost: host, activeMachines: [] } : response }));
+  placement({ platform: 'win32', unsandboxedOptIn: true });
+  const { unmount } = renderSection();
+  const opted = await screen.findByTestId('agent-machine-revoked-setup');
+  expect(opted.querySelector('code')).toHaveTextContent(daemonSetupCommandFor('windows'));
+  expect(opted).toHaveTextContent('--unsandboxed keeps this computer’s choice to run without a sandbox: agents act with your own access to files and commands, and get no connector grants.');
+  unmount();
+
+  placement({ platform: 'win32', unsandboxedOptIn: false });
+  renderSection();
+  const plain = await screen.findByTestId('agent-machine-revoked-setup');
+  expect(plain.querySelector('code').textContent).toBe(daemonSetupCommandFor('windows', undefined, { unsandboxed: false }));
+  expect(plain).not.toHaveTextContent('--unsandboxed');
+});
+
+test('with no computer left and an unknown sandbox choice, the line has no flag and says how to keep one', async () => {
+  axios.get.mockImplementation((url) => Promise.resolve({ data: url.includes('/agent-binding/placement')
+    ? { boundMachineId: 'old', requestedMachineId: null, boundMachineRevoked: true, boundMachineRevokedReason: 'cli_duplicate_daemons',
+      boundMachineHost: { platform: 'win32', unsandboxedOptIn: null }, activeMachines: [] } : response }));
+  renderSection();
+  const line = await screen.findByTestId('agent-machine-revoked-setup');
+  expect(line.querySelector('code').textContent).toBe(daemonSetupCommandFor('windows', undefined, { unsandboxed: false }));
+  expect(line).toHaveTextContent('If this computer ran agents without a sandbox, add --unsandboxed to keep that: agents then act with your own access to files and commands, and get no connector grants.');
+});
+
+// F641: the owner runs the shown line in a terminal with settings still open.
+// Coming back to the page reads placement again, so the computer it just set up
+// joins the Run on picker without reopening settings.
+test.each([
+  ['the page becomes visible again', () => fireEvent(document, new Event('visibilitychange'))],
+  ['the window regains focus', () => fireEvent(window, new Event('focus'))],
+])('while the setup line is shown, a newly set-up computer joins Run on when %s', async (_label, comeBack) => {
+  let activeMachines = [];
+  axios.get.mockImplementation((url) => Promise.resolve({ data: url.includes('/agent-binding/placement')
+    ? { boundMachineId: 'old', requestedMachineId: null, boundMachineRevoked: true, boundMachineRevokedReason: 'cli_duplicate_daemons',
+      boundMachineHost: { platform: 'darwin', unsandboxedOptIn: false }, activeMachines } : response }));
+  renderSection();
+  await screen.findByTestId('agent-machine-revoked-setup');
+  expect(screen.queryByLabelText('Run on')).not.toBeInTheDocument();
+  const placementReads = () => axios.get.mock.calls.filter(([url]) => url.includes('/agent-binding/placement')).length;
+  const before = placementReads();
+
+  activeMachines = [{ machineId: 'new', name: 'New Mac' }];
+  comeBack();
+  await waitFor(() => expect(placementReads()).toBe(before + 1));
+  const select = await screen.findByLabelText('Run on');
+  expect(Array.from(select.querySelectorAll('option')).map((option) => option.value)).toEqual(['new']);
+  expect(select).toHaveValue('new');
+});
+
+// Placement reads overlap and aren't ordered, so an older one finishing late
+// must not replace a newer snapshot: only the newest read writes the page.
+test('an older placement read that finishes after a newer one does not take back the newly added computer', async () => {
+  const revoked = (activeMachines) => ({
+    boundMachineId: 'old', requestedMachineId: null, boundMachineRevoked: true, boundMachineRevokedReason: 'cli_duplicate_daemons',
+    boundMachineHost: { platform: 'darwin', unsandboxedOptIn: false }, activeMachines,
+  });
+  const held = [];
+  let reads = 0;
+  axios.get.mockImplementation((url) => {
+    if (!url.includes('/agent-binding/placement')) return Promise.resolve({ data: response });
+    reads += 1;
+    if (reads === 1) return Promise.resolve({ data: revoked([]) });
+    // Each later read waits until the test releases it.
+    return new Promise((resolve) => { held.push(resolve); });
+  });
+  renderSection();
+  await screen.findByTestId('agent-machine-revoked-setup');
+
+  fireEvent(window, new Event('focus')); // older read
+  fireEvent(window, new Event('focus')); // newer read
+  await waitFor(() => expect(held).toHaveLength(2));
+  held[1]({ data: revoked([{ machineId: 'new', name: 'New Mac' }]) });
+  const select = await screen.findByLabelText('Run on');
+  expect(select).toHaveValue('new');
+
+  // act flushes whatever the late read would write before the check.
+  await act(async () => {
+    held[0]({ data: revoked([]) });
+    await new Promise((resolve) => { setTimeout(resolve, 20); });
+  });
+  expect(screen.getByLabelText('Run on')).toHaveValue('new');
+});
+
+test('a revoke without a reason keeps the generic line and no connect link', async () => {
+  axios.get.mockImplementation((url) => Promise.resolve({ data: url.includes('/agent-binding/placement')
+    ? { boundMachineId: 'old', requestedMachineId: null, boundMachineRevoked: true, boundMachineRevokedReason: null,
+      activeMachines: [{ machineId: 'new', name: 'New Mac' }] } : response }));
+  renderSection();
+  const row = await screen.findByTestId('agent-machine-placement');
+  await waitFor(() => expect(row).toHaveTextContent('This computer’s key was revoked. Choose another computer to run this agent.'));
+  expect(row).not.toHaveTextContent('bug in our CLI');
+  expect(screen.queryByTestId('agent-machine-revoked-reason')).not.toBeInTheDocument();
+  expect(screen.queryByTestId('agent-machine-revoked-setup')).not.toBeInTheDocument();
+  expect(within(row).queryByRole('link')).not.toBeInTheDocument();
 });
 
 test('a revoked machine tells the page the body needs attention; a healthy one does not', async () => {

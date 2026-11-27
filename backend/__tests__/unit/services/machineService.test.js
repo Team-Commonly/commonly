@@ -178,6 +178,63 @@ describe('ADR-026 machine lifecycle service', () => {
     expect(cleared.hostUnconfined).toBe(false);
   });
 
+  // F641: the revoked-computer notice builds that computer's own setup line,
+  // so the record keeps whether its owner opted out of the sandbox. Only
+  // 'unsandboxed-opted-in' is the opt-in; a Windows daemon without it reports
+  // 'native-windows', which is unconfined but not opted in.
+  it('keeps the sandbox opt-in apart from unconfined, and lists it only for a computer revoked with a reason', async () => {
+    const ownerUserId = new mongoose.Types.ObjectId();
+    const { machine } = await machineService.registerMachine({ ownerUserId, name: 'Windows PC' });
+    const optIn = async () => (await Machine.findById(machine.id).lean()).hostUnsandboxedOptIn;
+    const beat = (sandbox, host) => Machine.findById(machine.id)
+      .then((m) => machineService.recordMachineHeartbeat(m, [], undefined, sandbox, host));
+    // Unknown until a daemon reports it: never a confident false.
+    expect(await optIn() ?? null).toBeNull();
+
+    expect(await beat('unsandboxed-opted-in', { platform: 'win32' })).toMatchObject({ hostUnconfined: true });
+    expect(await optIn()).toBe(true);
+    // A check-in that says nothing about the sandbox leaves the opt-in standing.
+    await beat(undefined);
+    expect(await optIn()).toBe(true);
+    // Without a reason the list carries nothing of the host but its CLI version (F427).
+    let { machines } = await machineService.listMachinesForOwner(ownerUserId);
+    expect(machines[0]).not.toHaveProperty('platform');
+    expect(machines[0]).not.toHaveProperty('unsandboxedOptIn');
+
+    const daemon = await AgentCredential.findOne({ machineId: machine.machineId, kind: 'daemon' });
+    await AgentCredential.revokeCascade(daemon._id, { reason: 'cli_duplicate_daemons' });
+    ({ machines } = await machineService.listMachinesForOwner(ownerUserId));
+    expect(machines[0]).toMatchObject({ revokedReason: 'cli_duplicate_daemons', platform: 'win32', unsandboxedOptIn: true });
+
+    expect(await beat('native-windows')).toMatchObject({ hostUnconfined: true });
+    expect(await optIn()).toBe(false);
+    await beat('unsandboxed-opted-in');
+    expect(await beat('default')).toMatchObject({ hostUnconfined: false });
+    expect(await optIn()).toBe(false);
+  });
+
+  // F641: a computer revoked before this field existed never checks in again,
+  // so a missing field is UNKNOWN (null), never a confident false.
+  it('lists the opt-in as unknown when the record has none, and as stored otherwise', async () => {
+    const ownerUserId = new mongoose.Types.ObjectId();
+    const { machine } = await machineService.registerMachine({ ownerUserId, name: 'Windows PC' });
+    await mongoose.connection.collection('machines').updateOne(
+      { _id: new mongoose.Types.ObjectId(machine.id) },
+      { $set: { host: { platform: 'win32' } }, $unset: { hostUnsandboxedOptIn: '' } },
+    );
+    const daemon = await AgentCredential.findOne({ machineId: machine.machineId, kind: 'daemon' });
+    await AgentCredential.revokeCascade(daemon._id, { reason: 'cli_duplicate_daemons' });
+    const listed = async () => (await machineService.listMachinesForOwner(ownerUserId)).machines[0].unsandboxedOptIn;
+
+    expect(await listed()).toBeNull();
+    for (const stored of [false, true]) {
+      // eslint-disable-next-line no-await-in-loop
+      await Machine.updateOne({ _id: machine.id }, { $set: { hostUnsandboxedOptIn: stored } });
+      // eslint-disable-next-line no-await-in-loop
+      expect(await listed()).toBe(stored);
+    }
+  });
+
   it('keeps only the four stored seat fields when a daemon reports its full payload', () => {
     // FILTER 1 of 2. This pins the rebuild in normalizeAgentStates
     // (backend/services/machineService.ts:28-47). Do not move this assertion up
@@ -222,6 +279,54 @@ describe('ADR-026 machine lifecycle service', () => {
     const { machines } = await machineService.listMachinesForOwner(ownerUserId);
 
     expect(machines).toEqual([expect.objectContaining({ machineId: 'mach-round-trip', createdAt: saved.createdAt })]);
+  });
+
+  // F641: a computer whose key an operator revoked with a reason names that
+  // reason as a stable code, so the app can say what to do. Never for a revoke
+  // without a reason, and not while the machine holds a live key (an operator
+  // restoring one; the person's own re-setup registers a new machine).
+  it('names the revoke reason of a computer with no live key, and only then', async () => {
+    const ownerUserId = new mongoose.Types.ObjectId();
+    const revoked = await machineService.registerMachine({ ownerUserId, name: 'Windows PC' });
+    const plain = await machineService.registerMachine({ ownerUserId, name: 'Old Mac' });
+    const restored = await machineService.registerMachine({ ownerUserId, name: 'Laptop' });
+    const live = await machineService.registerMachine({ ownerUserId, name: 'Studio' });
+    const credFor = (m) => AgentCredential.findOne({ machineId: m.machine.machineId, kind: 'daemon' });
+    await AgentCredential.revokeCascade((await credFor(revoked))._id, { reason: 'cli_duplicate_daemons' });
+    await AgentCredential.revokeCascade((await credFor(plain))._id);
+    await AgentCredential.revokeCascade((await credFor(restored))._id, { reason: 'cli_duplicate_daemons' });
+    await AgentCredential.create({
+      tokenHash: `restored-${Date.now()}`, kind: 'daemon', ownerUserId, machineId: restored.machine.machineId,
+    });
+
+    const { machines } = await machineService.listMachinesForOwner(ownerUserId);
+    const byName = Object.fromEntries(machines.map((m) => [m.name, m]));
+
+    expect(byName['Windows PC'].revokedReason).toBe('cli_duplicate_daemons');
+    expect(byName['Old Mac']).not.toHaveProperty('revokedReason');
+    expect(byName.Laptop).not.toHaveProperty('revokedReason');
+    expect(byName.Studio).not.toHaveProperty('revokedReason');
+    expect(live.machine).not.toHaveProperty('revokedReason');
+  });
+
+  it('reads the most recent revoke: a newer one without a reason beats an older one with a reason', async () => {
+    const ownerUserId = new mongoose.Types.ObjectId();
+    const { machine } = await machineService.registerMachine({ ownerUserId, name: 'Windows PC' });
+    const first = await AgentCredential.findOne({ machineId: machine.machineId, kind: 'daemon' });
+    await AgentCredential.updateOne({ _id: first._id }, {
+      $set: { status: 'revoked', revokedAt: new Date('2026-11-01T00:00:00Z'), revokedReason: 'cli_duplicate_daemons' },
+    });
+    await AgentCredential.create({
+      tokenHash: `newer-${Date.now()}`, kind: 'daemon', ownerUserId, machineId: machine.machineId,
+      status: 'revoked', revokedAt: new Date('2026-11-20T00:00:00Z'),
+    });
+
+    const { machines } = await machineService.listMachinesForOwner(ownerUserId);
+    expect(machines[0]).not.toHaveProperty('revokedReason');
+
+    await AgentCredential.updateOne({ _id: first._id }, { $set: { revokedAt: new Date('2026-11-25T00:00:00Z') } });
+    const again = await machineService.listMachinesForOwner(ownerUserId);
+    expect(again.machines[0].revokedReason).toBe('cli_duplicate_daemons');
   });
 
   it('returns only the credential-bound machine for daemon status', async () => {

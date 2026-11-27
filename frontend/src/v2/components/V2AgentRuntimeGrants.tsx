@@ -11,6 +11,9 @@ import ConnectorLogo, { connectorName } from '../connectors/ConnectorLogo';
 import V2RuntimeControls, { runtimeNotReady, RuntimeSettings, RuntimeUpdate } from './V2RuntimeControls';
 import { browserIsWindows, daemonSetupCommandFor } from '../utils/daemonSetupCommand';
 import { usePhone } from '../connectors/usePhone';
+import V2DaemonRevokedReason, {
+  hasDaemonRevokedReasonText, revokedComputerSetup, RevokedComputerHost, V2KeepsUnsandboxedNote, V2UnsandboxedUnknownNote,
+} from './V2DaemonRevokedReason';
 
 export interface Runtime extends RuntimeSettings {}
 
@@ -34,6 +37,10 @@ interface Placement {
   boundMachineId: string | null;
   requestedMachineId: string | null;
   boundMachineRevoked: boolean;
+  // F641: why the bound computer's key was revoked, as a stable code, or null.
+  boundMachineRevokedReason?: string | null;
+  // F641: with a reason, the revoked computer's OS and sandbox opt-in, for its own setup line.
+  boundMachineHost?: RevokedComputerHost | null;
   // F476: the computer whose removal unbound this agent, while it sits unplaced.
   removedMachine?: { name: string; at: string } | null;
   activeMachines: Array<{ machineId: string; name: string; createdAt?: string | null }>;
@@ -106,9 +113,17 @@ const V2AgentRuntimeBody: React.FC<Props> = ({
     return data?.code && key[data.code] ? t(`agentManage.runtime.${key[data.code]}`) : t(fallback);
   };
 
+  // Placement reads can overlap (mount, focus, visibility, a move's recheck),
+  // and the requests are not ordered or cancelled. Only the newest read writes
+  // state, so an older one finishing late can't drop a newly added computer.
+  // Every read still returns its own snapshot for the caller's check.
+  const placementRead = useRef(0);
   const loadPlacement = useCallback(async () => {
+    placementRead.current += 1;
+    const read = placementRead.current;
     const response = await api.get<Placement>('/api/agent-binding/placement', { params: { agentName: name, instanceId } });
     const next = { ...response, activeMachines: response.activeMachines || [] };
+    if (read !== placementRead.current) return next;
     setPlacement(next);
     setMachineChoice((current) => next.activeMachines.some((machine) => machine.machineId === current)
       ? current : next.activeMachines.find((machine) => machine.machineId !== next.boundMachineId)?.machineId || '');
@@ -161,6 +176,28 @@ const V2AgentRuntimeBody: React.FC<Props> = ({
   const needsAttention = Boolean(placementError) || (showsPlacement && canMove)
     || Boolean(runtimeNotReady(runtime));
   useEffect(() => { onNeedsAttention?.(needsAttention); }, [needsAttention, onNeedsAttention]);
+  // F641: a computer revoked with a reason gets back ITS setup line (its OS, its
+  // sandbox choice); anything else keeps the browser's line, as before.
+  const revokedSetup = placement?.boundMachineRevoked && hasDaemonRevokedReasonText(placement.boundMachineRevokedReason)
+    ? revokedComputerSetup(placement.boundMachineHost, browserIsWindows() ? 'windows' : 'unix')
+    : null;
+  // F641: the owner runs that line in a terminal with settings still open, so
+  // coming back to the page reads placement again and the new computer joins
+  // the Run on picker. No timer: only focus or the page becoming visible.
+  const showsRevokedSetup = Boolean(revokedSetup);
+  useEffect(() => {
+    if (!showsRevokedSetup) return undefined;
+    const refresh = () => {
+      if (document.visibilityState === 'hidden') return;
+      void loadPlacement().catch(() => {});
+    };
+    window.addEventListener('focus', refresh);
+    document.addEventListener('visibilitychange', refresh);
+    return () => {
+      window.removeEventListener('focus', refresh);
+      document.removeEventListener('visibilitychange', refresh);
+    };
+  }, [showsRevokedSetup, loadPlacement]);
   const machineState = placement && <>
     {placement.boundMachineRevoked && <span role="status">{t('agentManage.runtime.machineRevoked')}</span>}
     {removedMachine && !waitingForMachine && <span role="status">{t('agentManage.runtime.machineRemoved', { name: removedMachine.name })}</span>}
@@ -182,6 +219,21 @@ const V2AgentRuntimeBody: React.FC<Props> = ({
                 <V2AgentSettingsIcon name="chev" className="chev" />
               </summary>
               <div className="dbody">
+                {/* F641: why the key was revoked, in the body rather than <summary>. */}
+                {revokedSetup && (
+                  <p className="v2-agent-settings-page__live" data-testid="agent-machine-revoked-reason">
+                    <V2DaemonRevokedReason reason={placement.boundMachineRevokedReason} />
+                  </p>
+                )}
+                {/* F641: that computer's own setup line, from its record, whether
+                    or not another computer can take the agent. Never a link to
+                    the add-a-computer page, whose line follows the browser's OS
+                    and on Windows turns an opt-out into --unsandboxed. */}
+                {revokedSetup && <p className="v2-agent-settings-page__live" data-testid="agent-machine-revoked-setup">
+                  {placement.activeMachines.length === 0 && <>{t('agentManage.runtime.noActiveMachine')} </>}<code>{revokedSetup.command}</code>
+                  {revokedSetup.keepsUnsandboxed && <>{' '}<V2KeepsUnsandboxedNote /></>}
+                  {revokedSetup.unsandboxedUnknown && <>{' '}<V2UnsandboxedUnknownNote /></>}
+                </p>}
                 {placement.activeMachines.length > 0 ? <div className="v2-agent-settings-page__move">
                   <label className="mu" htmlFor="agent-runtime-machine">{t('agentManage.runtime.moveLabel')}</label>
                   <span className="sel">
@@ -193,7 +245,7 @@ const V2AgentRuntimeBody: React.FC<Props> = ({
                   <button type="button" className="b b-s b-sm" disabled={!machineChoice || moving} onClick={() => { void moveAgent(); }}>
                     {moving ? t('agentManage.runtime.moving') : t('agentManage.runtime.move')}
                   </button>
-                </div> : <p className="v2-agent-settings-page__live">{t('agentManage.runtime.noActiveMachine')} <code>{daemonSetupCommandFor(browserIsWindows() ? 'windows' : 'unix')}</code></p>}
+                </div> : revokedSetup ? null : <p className="v2-agent-settings-page__live">{t('agentManage.runtime.noActiveMachine')} <code>{daemonSetupCommandFor(browserIsWindows() ? 'windows' : 'unix')}</code></p>}
               </div>
             </details>
           ) : (

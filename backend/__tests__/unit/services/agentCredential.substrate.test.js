@@ -136,6 +136,52 @@ describe('AgentCredential substrate', () => {
     const after = await AgentCredential.find({ _id: { $in: [daemon._id, ...kids.map((k) => k._id)] } });
     expect(after.every((c) => c.status === 'revoked')).toBe(true);
   });
+
+  // F641: a revoke can say why, so the daemon and the app can tell the person.
+  it('revokeCascade writes a known reason on the daemon keys it revokes, and none without one', async () => {
+    const owner = new mongoose.Types.ObjectId();
+    const daemon = await AgentCredential.create({
+      tokenHash: hash(`cm_daemon_${'R'.repeat(32)}`), kind: 'daemon', ownerUserId: owner, machineId: 'm-reason',
+    });
+    const kid = await AgentCredential.create({
+      tokenHash: hash(`cm_agent_${'S'.repeat(32)}`), kind: 'runtime', ownerUserId: owner, parentId: daemon._id,
+    });
+    const plain = await AgentCredential.create({
+      tokenHash: hash(`cm_daemon_${'P'.repeat(32)}`), kind: 'daemon', ownerUserId: owner, machineId: 'm-plain',
+    });
+
+    expect(await AgentCredential.revokeCascade(daemon._id, { reason: 'cli_duplicate_daemons' })).toBe(2);
+    expect(await AgentCredential.revokeCascade(plain._id)).toBe(1);
+
+    const [d, k, p] = await Promise.all([daemon, kid, plain].map((c) => AgentCredential.findById(c._id).lean()));
+    expect(d).toMatchObject({ status: 'revoked', revokedReason: 'cli_duplicate_daemons' });
+    expect(d.revokedAt).toBeInstanceOf(Date);
+    // The reason is a daemon code: the runtime child is revoked without it.
+    expect(k.status).toBe('revoked');
+    expect(k.revokedReason ?? null).toBeNull();
+    expect(p.status).toBe('revoked');
+    expect(p.revokedReason ?? null).toBeNull();
+  });
+
+  it('revokeCascade refuses an unknown reason before revoking anything', async () => {
+    const owner = new mongoose.Types.ObjectId();
+    const daemon = await AgentCredential.create({
+      tokenHash: hash(`cm_daemon_${'U'.repeat(32)}`), kind: 'daemon', ownerUserId: owner, machineId: 'm-unknown',
+    });
+    await expect(AgentCredential.revokeCascade(daemon._id, { reason: 'because' })).rejects.toThrow(/unknown revoke reason/i);
+    expect((await AgentCredential.findById(daemon._id).lean()).status).toBe('active');
+  });
+
+  it('revokeCascade reads a null reason as no reason', async () => {
+    const owner = new mongoose.Types.ObjectId();
+    const daemon = await AgentCredential.create({
+      tokenHash: hash(`cm_daemon_${'N'.repeat(32)}`), kind: 'daemon', ownerUserId: owner, machineId: 'm-null',
+    });
+    expect(await AgentCredential.revokeCascade(daemon._id, { reason: null })).toBe(1);
+    const after = await AgentCredential.findById(daemon._id).lean();
+    expect(after.status).toBe('revoked');
+    expect(after.revokedReason ?? null).toBeNull();
+  });
 });
 
 // TASK-094: the per-spawn child credential, end to end on a real database —

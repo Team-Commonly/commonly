@@ -81,3 +81,54 @@ exec on its node can do it again. `ops-runner` is the fix.
 - To see what the backend's own CPU is spent on, don't attach a profiler from
   inside it: [cpu-profile-on-signal.md](cpu-profile-on-signal.md) has it write a
   profile on a signal sent from the host.
+
+## Recipe: revoke a computer's daemon key with a reason (F641)
+
+When one computer's daemon misbehaves, revoke its daemon key
+(`AgentCredential`, `kind: 'daemon'`) and say why, so the person is told what
+to do. The reason is a code from `backend/services/daemonRevokeReasons.ts`
+(today only `cli_duplicate_daemons`, for a CLI bug such as one machine running
+many daemon copies). The daemon's 401 then carries that reason's text in
+`error` (the `message` stays `Daemon token revoked or unknown`, which old CLIs
+stop on), the daemon prints it before it exits 77, and the agent's settings and
+the Bring your own agent page show it with the computer setup command. Today's
+text: "This computer was disconnected because of a bug in our CLI. Run the
+computer setup command again from Bring your own agent to get the fixed
+version." A revoke with no reason behaves as before, so never add one for a
+person's own revoke.
+
+Revoke by credential id (the key and every runtime token it minted; the
+reason is written on the daemon key only):
+
+```js
+// node - < revoke-daemon.js, inside ops-runner
+const mongoose = require('mongoose');
+const AgentCredential = require('/app/dist/models/AgentCredential');
+const ID = '<credential _id>';
+(async () => {
+  await mongoose.connect(process.env.MONGO_URI);
+  const revoked = await AgentCredential.revokeCascade(ID, { reason: 'cli_duplicate_daemons' });
+  console.log({ revoked });
+  await mongoose.disconnect();
+})();
+```
+
+`revokeCascade` throws on a reason it doesn't know, before revoking anything;
+`reason: null` is no reason.
+It only touches active keys, so it won't add a reason to one already revoked.
+To stamp a reason on a key that is already revoked, by credential id (same
+script shape, replacing the `revokeCascade` call):
+
+```js
+const res = await AgentCredential.updateOne(
+  { _id: ID, kind: 'daemon', status: 'revoked' },
+  { $set: { revokedReason: 'cli_duplicate_daemons' } },
+  { runValidators: true },
+);
+console.log({ matched: res.matchedCount, modified: res.modifiedCount });
+```
+
+`matched: 0` means the id isn't a revoked daemon key: check it before retrying.
+Reconnecting registers the computer again under a new machine id, so the old
+entry keeps its note until the person removes that computer or moves its
+agents to the new one.

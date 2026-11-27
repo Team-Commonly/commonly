@@ -28,6 +28,9 @@ revoked) **and 78** (no valid local registration). On those it disables the task
 watchdog does not restart a daemon that was told to stop. These are the codes systemd's
 `RestartPreventExitStatus=77 78` exempts. Task Scheduler's own "restart on failure" setting fires only
 when a task fails to *start*, not when its program exits non-zero, so it cannot be the keep-alive.
+An operator can revoke a computer's key with a reason (F641); the daemon then logs the server's text
+for it before the usual stop line and still exits 77. Recipe:
+[ops-runner runbook](../runbooks/ops-runner-and-no-exec-into-backend.md#recipe-revoke-a-computers-daemon-key-with-a-reason-f641).
 
 **Exit 79: another daemon already runs for this computer.** The launcher sleeps 30 s and tries again.
 It never disables the task or exits for 79, so the task stays running and takes over once the other
@@ -104,7 +107,10 @@ on the launcher's (reused) pid counted as alive, and its dead stdout pipe was sw
 
 A public seat is confined with Seatbelt on macOS and bubblewrap on Linux. Windows has neither, so by
 default a Claude Code (or OpenCode, Qwen) seat is **refused** on native Windows, in the foreground
-and under the daemon. The person at the keyboard can choose otherwise:
+and under the daemon. A Codex seat is refused there by default too, because Codex's unelevated Windows
+sandbox can't enforce the public profile; the one exception is a `public`-trust Codex seat with
+`COMMONLY_SANDBOX_MICROVM=1` set in the host process, which runs inside the microVM where WHP is on.
+The person at the keyboard can choose otherwise (for Codex, only within the narrower rule below):
 
 - `commonly agent run <name> --unsandboxed`: this one foreground run.
 - `commonly daemon install --unsandboxed`: writes `%USERPROFILE%\.commonly\daemon\unsandboxed.json`;
@@ -126,8 +132,25 @@ Rules the code enforces:
   read the seat's token from its environment. A foreground `--unsandboxed` run doesn't report to the
   server (only the daemon's check-in does), so this local rule and the win32 broker withhold are what
   hold for it.
-- **Claude Code only.** OpenCode and Qwen stay refused with the flag; Codex is never refused (its own
-  profiles confine it) and needs no flag.
+- **The full opt-in is Claude Code's; Codex gets a narrower one; OpenCode and Qwen get none.** OpenCode
+  and Qwen stay refused with the flag. For Codex on native Windows (`codexUnconfinedForRun` in
+  `cli/src/lib/sandbox/windows-unsandboxed.js`, `hostSandboxRefusal` in `host-check.js`, and
+  `agent run` in `cli/src/commands/agent.js`):
+  - Without the flag or the daemon's marker, every Codex seat is refused before its first poll, except
+    the microVM case above (refused where WHP is off).
+  - With the flag, `agent run` reads the seat's installations from the server, and the seat runs with no
+    sandbox only if every pod it answers in is confirmed private. A failed or empty read stops the run.
+    A seat whose saved trust is `public` qualifies the same way: this run drops its sandbox block, the
+    saved record keeps it, and a later run without the flag is refused again. Before it starts, the run
+    tells the server the seat is unconfined (`POST /api/agents/runtime/host-unconfined`) and stops if that
+    call fails. The pods are re-read before every turn (`unconfinedTurnPlacement`), and a turn is refused
+    once a pod stops being invite-only. Nothing confines the seat: it runs with the person's own access to
+    files and commands, with no tool policy beneath it (`CODEX_UNSANDBOXED_NOTICE`).
+  - A seat with any pod that is publicly readable, open to join, or not reported is refused with the flag
+    too, and the message stops offering the flag. `agent attach` refuses a `public`-trust Codex seat on
+    native Windows the same way, outside the microVM case.
+  - `workspace` trust is refused for Codex on every platform, at spawn (`refuseWorkspaceTrust`); the flag
+    doesn't change that.
 - **No seat on native Windows gets connector grants**, opted in or not: `confinementReason` returns
   `sandbox_mode_unenforceable` on win32 for every adapter.
 - **The server refuses too.** A Windows check-in carries `sandbox: 'native-windows'`, or

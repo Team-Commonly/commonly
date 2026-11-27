@@ -280,10 +280,22 @@ export const getDaemonMachineStatus = async ({ client, record }) => {
   return machine;
 };
 
-const isRevokedDaemonKey = (error) => error?.status === 401 && [
+// Keys on body.message, never error.message: a server that explains a revoke
+// (F641) puts its text in body.error, which api.js prefers for error.message.
+export const isRevokedDaemonKey = (error) => error?.status === 401 && [
   'Daemon token revoked or unknown',
   'Machine access revoked',
 ].includes(error?.body?.message);
+
+// F641: what the server says the person should do about a revoked key, as one
+// printable line, or '' when it says nothing. Control characters are dropped
+// so a response can never drive the terminal.
+const REVOKED_REASON_MAX = 500;
+export const revokedDaemonReasonText = (error) => {
+  if (!isRevokedDaemonKey(error) || typeof error?.body?.error !== 'string') return '';
+  // eslint-disable-next-line no-control-regex
+  return error.body.error.replace(/[\u0000-\u001f\u007f-\u009f]/g, '').trim().slice(0, REVOKED_REASON_MAX);
+};
 
 const isMissingDaemonMachine = (error) => error?.status === 404
   && error?.body?.message === 'Machine not found';
@@ -299,8 +311,30 @@ const storedDaemonState = async (client, record) => {
   }
 };
 
+// The daemon's stop when the server refuses its key for good: save the stop
+// marker, say why, end supervision and exit 77. A server reason (F641) prints
+// first; the stop line stays as it was, for anyone reading logs for it.
+export const createTerminalAuthStop = ({
+  record, stampLog, stopSupervision, saveStop = saveDaemonStop, platform = process.platform,
+}) => (error) => {
+  let saved = false;
+  try {
+    saveStop(record, 77);
+    saved = true;
+  } catch (saveError) {
+    stampLog(`could not save revoked-machine stop marker: ${saveError.message}`);
+  }
+  const reason = revokedDaemonReasonText(error);
+  if (reason) stampLog(reason);
+  stampLog(`machine key revoked; stopping supervised agents. Run: ${CLI} daemon register`);
+  stopSupervision();
+  // Without the marker launchd would restart forever. A successful
+  // exit parks it on macOS; systemd honors 77 directly.
+  process.exitCode = saved || platform !== 'darwin' ? 77 : 0;
+};
+
 export const daemonStatusErrorMessage = (error) => (isRevokedDaemonKey(error)
-  ? `This computer's old key was revoked. Run: ${CLI} daemon register`
+  ? [revokedDaemonReasonText(error), `This computer's old key was revoked. Run: ${CLI} daemon register`].filter(Boolean).join('\n')
   : isMissingDaemonMachine(error)
     ? `This computer is no longer registered. Run: ${CLI} daemon register`
   : `Daemon status failed: ${error.message}`);
@@ -790,24 +824,19 @@ Examples:
         let terminalEnded = false;
         const terminalAuth = (error) => isRevokedDaemonKey(error)
           || isMissingDaemonMachine(error);
-        const onTerminalAuthError = () => {
-          terminalEnded = true;
-          let saved = false;
-          try {
-            saveDaemonStop(record, 77);
-            saved = true;
-          } catch (error) {
-            stampLog(`could not save revoked-machine stop marker: ${error.message}`);
-          }
-          stampLog(`machine key revoked; stopping supervised agents. Run: ${CLI} daemon register`);
-          clearInterval(pollTimer);
-          clearInterval(heartbeatTimer);
-          supervisor.stop();
-          releaseLock();
-          // Without the marker launchd would restart forever. A successful
-          // exit parks it on macOS; systemd honors 77 directly.
-          process.exitCode = saved || process.platform !== 'darwin' ? 77 : 0;
-        };
+        // F637's order holds: marker, log lines, then timers, supervisor and the
+        // one-daemon lock, then the exit code (createTerminalAuthStop).
+        const onTerminalAuthError = createTerminalAuthStop({
+          record,
+          stampLog,
+          stopSupervision: () => {
+            terminalEnded = true;
+            clearInterval(pollTimer);
+            clearInterval(heartbeatTimer);
+            supervisor.stop();
+            releaseLock();
+          },
+        });
         const runtimeInventory = createInventoryCache((harnesses) => collectRuntimeInventory(getAdapter, undefined, harnesses, { loginState }));
         supervisor = createDaemonSupervisor({
           record,

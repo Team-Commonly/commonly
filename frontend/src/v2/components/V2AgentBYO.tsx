@@ -18,6 +18,9 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { Trans, useTranslation } from 'react-i18next';
+import {
+  hasDaemonRevokedReasonText, revokedComputerSetup, V2KeepsUnsandboxedNote, V2UnsandboxedUnknownNote,
+} from './V2DaemonRevokedReason';
 import axios from '../../utils/axiosConfig';
 import { recordByoStep, type ByoCopyType, type ByoStallReason, type ByoStep } from '../utils/byoTelemetry';
 import getApiBaseUrl from '../../utils/apiBaseUrl';
@@ -222,6 +225,12 @@ type MachineRow = {
   hostUnconfined?: boolean;
   // The CLI version its daemon last reported running; null when too old to say.
   cliVersion?: string | null;
+  // F641: its OS (Node's platform name; null when too old to say) and whether
+  // its owner opted out of the sandbox, for its own setup line.
+  platform?: string | null;
+  unsandboxedOptIn?: boolean | null;
+  // F641: why an operator revoked its key, as a stable code, while no live key replaced it.
+  revokedReason?: string;
 };
 const MACHINE_STATUS_POLL_MS = 4000;
 const HARNESS_RECHECK_MS = 10_000;
@@ -481,6 +490,9 @@ const V2AgentBYO: React.FC = () => {
   // the machine they browse on is not always the one they set up.
   // A handoff card's link names the OS its person picked there.
   const [setupOs, setSetupOs] = useState<SetupOs>(() => prefill.os || browserOs());
+  // F667: an OS picked in the add-a-computer block itself. Until then a block
+  // opened for a revoked computer follows that computer's record, not setupOs.
+  const [addComputerOsPicked, setAddComputerOsPicked] = useState(false);
   const repoPod = pods.find((p) => p._id === (issued?.podId || podId));
   // The prompt says the key "hasn't been used" only when nothing has used it.
   const neverConnected = existingConnection?.connection.state === 'never' && !existingConnection.connection.keyUsed;
@@ -1840,6 +1852,11 @@ const V2AgentBYO: React.FC = () => {
   // One line, run through npx — nothing to install first. It works as is in
   // PowerShell, so there is no per-line split any more (Windows form: the util).
   const daemonCommand = daemonSetupCommandFor(setupOs === 'windows' ? 'windows' : 'unix', apiUrl);
+  // F641: a computer revoked with a reason gets ITS line (its OS, its sandbox
+  // choice), not this browser's; with no OS on record, the browser's.
+  const revokedSetup = hasDaemonRevokedReasonText(selectedMachine?.revokedReason)
+    ? revokedComputerSetup(selectedMachine, setupOs === 'windows' ? 'windows' : 'unix', apiUrl)
+    : null;
 
   const claudeSnippet = issued
     ? `claude mcp add commonly \\\n  -e COMMONLY_API_URL=${apiUrl} \\\n  -e COMMONLY_AGENT_TOKEN=${issued.token} \\\n  -- npx -y @commonlyai/mcp`
@@ -1940,7 +1957,30 @@ const V2AgentBYO: React.FC = () => {
   // A new computer's setup installs the current CLI, so it takes any instance.
   // Computers already on file that can't take this instance get the same line,
   // which is also how a set-up computer updates (docs/cli/daemon-setup.md).
-  const addComputerBlock = machines.length === 0 || machinesNeedUpdate ? (
+  // F641: a computer whose key was revoked with a reason is fixed by this same
+  // setup command, so the page shows it then too, with its fold open on arrival.
+  const revokedWithReason = machines.filter((m) => hasDaemonRevokedReasonText(m.revokedReason));
+  const machineRevokedWithReason = revokedWithReason.length > 0;
+  // F667: open for a revoked computer, the block's line is for THAT computer:
+  // `daemon install` with --unsandboxed turns the Windows opt-in on, and
+  // without it turns it off, so the new-computer default (the browser's OS,
+  // the flag on for Windows) would undo an owner's opt-out. One revoked
+  // computer with its OS on record gets its OS and its own opt-in; several, no
+  // OS on record, or an OS the owner picked here gets no flag, and an owner who
+  // wants it adds it as the Windows note below says. A new computer (nothing
+  // revoked) keeps the default line.
+  const revokedHost = revokedWithReason.length === 1 && revokedWithReason[0].platform
+    ? revokedWithReason[0]
+    : null;
+  const addComputerOs: SetupOs = revokedHost && !addComputerOsPicked
+    ? (revokedHost.platform === 'win32' ? 'windows' : revokedHost.platform === 'darwin' ? 'mac' : 'linux')
+    : setupOs;
+  const addComputerCommand = machineRevokedWithReason
+    ? daemonSetupCommandFor(addComputerOs === 'windows' ? 'windows' : 'unix', apiUrl, {
+      unsandboxed: Boolean(revokedHost && !addComputerOsPicked && revokedHost.unsandboxedOptIn === true),
+    })
+    : daemonCommand;
+  const addComputerBlock = machines.length === 0 || machinesNeedUpdate || machineRevokedWithReason ? (
     <div className="v2-byo__add-computer" data-testid="byo-add-computer">
       <span className="v2-byo__label">{t(machinesNeedUpdate ? 'agentByo.addComputer.updateTitle' : 'agentByo.addComputer.title')}</span>
       <p className="v2-byo__hint" data-testid="byo-add-computer-recommended">
@@ -1955,9 +1995,9 @@ const V2AgentBYO: React.FC = () => {
             key={os}
             type="button"
             className="v2-byo__link"
-            aria-pressed={setupOs === os}
+            aria-pressed={addComputerOs === os}
             data-testid={`byo-add-computer-os-${os}`}
-            onClick={() => setSetupOs(os)}
+            onClick={() => { setAddComputerOsPicked(true); setSetupOs(os); }}
           >
             {t(labelKey)}
           </button>
@@ -1968,7 +2008,7 @@ const V2AgentBYO: React.FC = () => {
             at a space and never inside `--unsandboxed` (F629). The single-space
             text nodes keep the selected text equal to the command. */}
         <code>
-          {daemonCommand.split(' ').map((token, i) => (
+          {addComputerCommand.split(' ').map((token, i) => (
             <React.Fragment key={i}>
               {i > 0 && ' '}
               <span className="v2-byo__token">{token}</span>
@@ -1978,12 +2018,12 @@ const V2AgentBYO: React.FC = () => {
         <button
           type="button"
           className="v2-byo__copy"
-          onClick={() => copy('daemon-setup', daemonCommand)}
+          onClick={() => copy('daemon-setup', addComputerCommand)}
         >
           {copied === 'daemon-setup' ? t('agentByo.addComputer.copied') : t('agentByo.addComputer.copy')}
         </button>
       </div>
-      {setupOs === 'windows' && (
+      {addComputerOs === 'windows' && (
         <p className="v2-byo__hint" data-testid="byo-add-computer-windows">
           <Trans i18nKey="agentByo.addComputer.windowsNote" components={{ cmd: <code /> }} />
         </p>
@@ -2449,6 +2489,21 @@ const V2AgentBYO: React.FC = () => {
               </select>
             </label>
           )}
+          {/* F641: outside the <label>, so nothing here selects the picker. */}
+          {mode === 'machine' && revokedSetup && (
+            <p className="v2-byo__needs" data-testid="byo-machine-revoked-reason">
+              {t('agentByo.machine.revokedCliBug')} <code>{revokedSetup.command}</code>{' '}
+              {/* This computer's own line: the add-computer block copies the page's. */}
+              <button type="button" className="v2-byo__copy" data-testid="byo-revoked-setup-copy"
+                onClick={() => { void copy('revoked-setup', revokedSetup.command); }}>
+                {copied === 'revoked-setup' ? t('agentByo.addComputer.copied') : t('agentByo.addComputer.copy')}
+              </button>
+              {revokedSetup.keepsUnsandboxed && <>{' '}<V2KeepsUnsandboxedNote /></>}
+              {revokedSetup.unsandboxedUnknown && <>{' '}<V2UnsandboxedUnknownNote /></>}
+              {/* Setup registers a NEW computer; agents bound to this one stay until moved. */}
+              {' '}{t('agentByo.machine.revokedMoveAgents')}
+            </p>
+          )}
           {mode === 'machine' && (
             <label className="v2-byo__field">
               <span className="v2-byo__label">{t('agentByo.form.adapterLabel')}</span>
@@ -2656,7 +2711,7 @@ const V2AgentBYO: React.FC = () => {
           {/* One command is THE path (QA BYO walk 1): the daemon and the SDK
               are real alternatives, but shown as equals beside the button they
               read as a choice a stranger has to make before starting. */}
-          <details className="v2-byo__more" data-testid="byo-more-ways"
+          <details className="v2-byo__more" data-testid="byo-more-ways" open={machineRevokedWithReason || undefined}
             onMouseDownCapture={(event) => {
               if ((event.target as Element).closest('summary, button, a')) event.preventDefault();
             }}>

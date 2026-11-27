@@ -19,11 +19,17 @@ type DaemonSetupOs = 'unix' | 'windows';
 // the install step: agents run without a sandbox there, as `agent run` does.
 // Every surface that shows the line takes it from here (F467), and CI runs this
 // exact text on Windows and macOS (cli/scripts/daemon-setup-line-smoke.mjs).
-export const daemonSetupCommandFor = (os: DaemonSetupOs, apiUrl: string = getApiBaseUrl()): string => (
-  os === 'windows'
-    ? `${daemonSetupCommand(apiUrl).replace(/^npx /, 'npx.cmd ')} --unsandboxed`
-    : daemonSetupCommand(apiUrl)
-);
+// `unsandboxed: false` drops the flag, for a known Windows computer whose owner
+// never opted in (F641): setup would otherwise turn the opt-in on for them.
+export const daemonSetupCommandFor = (
+  os: DaemonSetupOs,
+  apiUrl: string = getApiBaseUrl(),
+  { unsandboxed = true }: { unsandboxed?: boolean } = {},
+): string => {
+  if (os !== 'windows') return daemonSetupCommand(apiUrl);
+  const line = daemonSetupCommand(apiUrl).replace(/^npx /, 'npx.cmd ');
+  return unsandboxed ? `${line} --unsandboxed` : line;
+};
 
 // navigator.platform reads "Win32" on every Windows browser, 64-bit included.
 // Browser spellings only, case-sensitive: jsdom's user agent carries the host's

@@ -17,7 +17,7 @@ import {
 } from '../services/seatEnvironmentProjection';
 import { ownsRuntimeIdentity, OwnershipFailure, describeRuntimeIdentityBlockers } from '../services/runtimeIdentityOwnership';
 import { logAgentInstallRefusal } from '../middleware/logAgentInstallRefusal';
-import { machineHasLiveAuthorization } from '../services/machineService';
+import { daemonRevokedReasonsForMachines, machineHasLiveAuthorization } from '../services/machineService';
 import { createRateLimitRejectionLog, RateLimitedRequest } from '../utils/rateLimitLog';
 import { DUPLICATE_DAEMON_429_ERROR } from '../utils/daemonDuplicates';
 
@@ -109,8 +109,12 @@ router.get('/placement', bindingRateLimit, auth, async (req: express.Request & {
       isBot: true, 'botMetadata.agentName': agentName, 'botMetadata.instanceId': instanceId,
     }).select('botMetadata.machineId botMetadata.requestedMachineId +removedMachine').lean();
     if (!identity) return res.status(404).json({ message: 'Agent identity not found' });
-    const machines = await Machine.find({ ownerUserId: req.user?.id }).select('machineId name createdAt').lean();
-    type PlacementMachine = { machineId: string; name: string; createdAt: Date };
+    const machines = await Machine.find({ ownerUserId: req.user?.id })
+      .select('machineId name createdAt host.platform hostUnsandboxedOptIn').lean();
+    type PlacementMachine = {
+      machineId: string; name: string; createdAt: Date;
+      host?: { platform?: string | null } | null; hostUnsandboxedOptIn?: boolean | null;
+    };
     const activeMachines = (await Promise.all(machines.map(async (machine: PlacementMachine) => ({
       machineId: machine.machineId,
       name: machine.name,
@@ -121,10 +125,27 @@ router.get('/placement', bindingRateLimit, auth, async (req: express.Request & {
         && await machineHasLiveAuthorization(machine.machineId, req.user!.id!),
     })))).filter((machine) => machine.active).map(({ machineId, name, createdAt }) => ({ machineId, name, createdAt }));
     const boundMachineId = identity.botMetadata?.machineId || null;
+    const boundMachineRevoked = Boolean(boundMachineId && !activeMachines.some((machine) => machine.machineId === boundMachineId));
+    // F641: why the bound computer's key was revoked, as a code the app turns
+    // into text; null when the revoke gave no reason.
+    const boundMachineRevokedReason = boundMachineRevoked
+      ? (await daemonRevokedReasonsForMachines(req.user!.id!, [boundMachineId!])).get(boundMachineId!) || null
+      : null;
     return res.json({
       boundMachineId,
       requestedMachineId: identity.botMetadata?.requestedMachineId || null,
-      boundMachineRevoked: Boolean(boundMachineId && !activeMachines.some((machine) => machine.machineId === boundMachineId)),
+      boundMachineRevoked,
+      boundMachineRevokedReason,
+      // F641: for that notice, the revoked computer's OS and sandbox opt-in, so
+      // the app gives back its own setup line; null without a reason.
+      boundMachineHost: boundMachineRevokedReason
+        ? (() => {
+          const bound = machines.find((machine: PlacementMachine) => machine.machineId === boundMachineId);
+          // A missing opt-in is unknown (null), never a confident false.
+          const optIn = bound?.hostUnsandboxedOptIn;
+          return { platform: bound?.host?.platform ?? null, unsandboxedOptIn: typeof optIn === 'boolean' ? optIn : null };
+        })()
+        : null,
       // F476: the computer whose removal unbound it, until a daemon adopts it.
       removedMachine: !boundMachineId && identity.removedMachine
         ? { name: identity.removedMachine.name, at: identity.removedMachine.at } : null,
