@@ -34,7 +34,8 @@ interface IAttentionItem extends Document {
   // recipient did what the row asked, outside the thread (today: started the
   // agent a stalled-connect nudge asked them to start). An agent's mention
   // nobody answered in its thread for a week leaves the queue as `missed`:
-  // resolved, never counted as acted on. Decision and approval actions have
+  // resolved, never counted as acted on. An agent's [BLOCKED] post nobody
+  // answered for a week leaves the same way (F648). Decision and approval actions have
   // source-specific writers and never become dismissible through this field.
   // Growth's NEEDSYOU metric allowlists what counts as acted on; tell it when a value is added or a new kind starts writing one.
   resolvedBy?: 'replied' | 'acknowledged' | 'actioned' | 'missed';

@@ -871,6 +871,239 @@ describe('V2ActivityPage', () => {
     expect(await screen.findByText('Alex ruled: Ship now')).toBeInTheDocument();
   });
 
+  test('F648: a ruled decision leaves Needs you and shows under Decided', async () => {
+    let queueReads = 0;
+    mockGet.mockImplementation((url: string) => {
+      if (url === '/api/activity/decision-queue') {
+        queueReads += 1;
+        return queueReads === 1
+          ? Promise.resolve({ data: decisionQueue })
+          : Promise.resolve({ data: { items: [], count: 0, countsByPod: {}, composePodId: 'pod-1' } });
+      }
+      if (url === '/api/activity/decision-history') return Promise.resolve({ data: { items: [] } });
+      return Promise.resolve({ data: recap });
+    });
+    mockPost.mockResolvedValue({ data: { ok: true, decision: { ruling: { value: 'Ship now', by: 'You' } } } });
+    renderPage();
+
+    const needsYou = (await screen.findByRole('heading', { name: 'Needs you' })).closest('section') as HTMLElement;
+    expect(within(needsYou).getByText('Choose the eslint scope')).toBeInTheDocument();
+    fireEvent.click(await screen.findByRole('button', { name: 'Rule: Ship now (Recommended)' }));
+
+    const ruledLine = await screen.findByText('You ruled: Ship now');
+    const decided = screen.getByRole('heading', { name: 'Decided' }).closest('section') as HTMLElement;
+    expect(decided).toContainElement(ruledLine);
+    expect(within(decided).getByText('Choose the eslint scope')).toBeInTheDocument();
+    expect(within(needsYou).queryByText('Choose the eslint scope')).not.toBeInTheDocument();
+    // The first queue also holds a mention, which still needs you until the
+    // refetch after the ruling returns the empty queue, so wait for it.
+    expect(await within(needsYou).findByText('Nothing needs you.')).toBeInTheDocument();
+  });
+
+  test('F648: a Decided row keeps the settled-card markup the queue CSS styles (button.v2-activity__queue-detail)', async () => {
+    const settled = {
+      id: 'decision-024', kind: 'decision', title: 'Choose the eslint scope', detail: 'What should the agent do?',
+      podId: 'pod-1', podName: 'Launch pod', messageId: '700', options: [{ label: 'Ship now' }], status: 'ruled',
+      ruling: { value: 'Ship now', by: 'You' },
+    };
+    mockGet.mockImplementation((url: string) => {
+      if (url === '/api/activity/decision-queue') return Promise.resolve({ data: { items: [], count: 0, countsByPod: {} } });
+      if (url === '/api/activity/decision-history') return Promise.resolve({ data: { items: [settled], count: 1, remaining: 0 } });
+      return Promise.resolve({ data: recap });
+    });
+    renderPage();
+    const decided = (await screen.findByRole('heading', { name: 'Decided' })).closest('section') as HTMLElement;
+    const row = within(decided).getByText('Choose the eslint scope').closest('article') as HTMLElement;
+    expect(row).toHaveClass('v2-activity__queue-row', 'v2-activity__queue-row--decision', 'v2-activity__queue-row--settled');
+    const detail = within(row).getByText('What should the agent do?');
+    // Every rule for this class is scoped to the button element (V2ActivityPage.css).
+    expect(detail.tagName).toBe('BUTTON');
+    expect(detail).toHaveClass('v2-activity__queue-detail');
+    expect(row.querySelector('strong.v2-activity__queue-name')).toHaveAttribute('id', expect.stringMatching(/-title$/));
+  });
+
+  describe('F648: ruling the last card shows Nothing needs you before the refetch agrees', () => {
+    const onlyDecision = {
+      ...decisionQueue,
+      items: decisionQueue.items.filter((item) => item.kind === 'decision'),
+      count: 1,
+      countsByPod: { 'pod-1': 1 },
+    };
+    test.each([
+      ['a refetch that never lands', () => new Promise(() => {})],
+      ['a refetch that still returns the old count and row', () => Promise.resolve({ data: onlyDecision })],
+    ])('%s', async (_label, refetch) => {
+      let queueReads = 0;
+      mockGet.mockImplementation((url: string) => {
+        if (url === '/api/activity/decision-queue') {
+          queueReads += 1;
+          return queueReads === 1 ? Promise.resolve({ data: onlyDecision }) : refetch();
+        }
+        if (url === '/api/activity/decision-history') return Promise.resolve({ data: { items: [] } });
+        return Promise.resolve({ data: recap });
+      });
+      mockPost.mockResolvedValue({ data: { ok: true, decision: { ruling: { value: 'Ship now', by: 'You' } } } });
+      renderPage();
+
+      const needsYou = (await screen.findByRole('heading', { name: 'Needs you' })).closest('section') as HTMLElement;
+      expect(await within(needsYou).findByLabelText('1 waiting on you')).toBeInTheDocument();
+      fireEvent.click(await screen.findByRole('button', { name: 'Rule: Ship now (Recommended)' }));
+
+      expect(await within(needsYou).findByText('Nothing needs you.')).toBeInTheDocument();
+      await waitFor(() => expect(queueReads).toBeGreaterThan(1));
+      expect(within(needsYou).queryByText('1 waiting on you')).not.toBeInTheDocument();
+      expect(within(needsYou).queryByLabelText('1 waiting on you')).not.toBeInTheDocument();
+      expect(within(needsYou).getByText('Nothing needs you.')).toBeInTheDocument();
+    });
+  });
+
+  // CodeRabbit on F648: a refresh must not publish the new server count while
+  // the retained queue still holds the ruled row. If revalidating the second
+  // page fails, the count and the rows on screen stay one consistent pair.
+  test('F648: a refresh whose second page fails keeps the count matched to the rows shown', async () => {
+    const decision = { ...decisionQueue.items[1], id: 'decision-paged', title: 'Paged decision', createdAt: '2026-08-26T08:00:00.000Z' };
+    const mentions = Array.from({ length: 100 }, (_, index) => ({
+      id: `paged-mention-${index}`, attentionItemId: `paged-attention-${index}`, kind: 'mention', title: `Paged ${index}`,
+      detail: 'Loaded row.', podId: 'pod-1', podName: 'Launch pod', createdAt: '2026-08-26T11:00:00.000Z',
+    }));
+    const before = [decision, ...mentions];
+    let ruled = false;
+    mockGet.mockImplementation((url: string, config: any) => {
+      if (url === '/api/activity/decision-history') return Promise.resolve({ data: { items: [] } });
+      if (url !== '/api/activity/decision-queue') return Promise.resolve({ data: recap });
+      const offset = config?.params?.offset || 0;
+      if (!ruled) {
+        const items = before.slice(offset, offset + 50);
+        return Promise.resolve({ data: {
+          items, count: 101, remaining: Math.max(101 - offset - items.length, 0), countsByPod: { 'pod-1': 101 },
+        } });
+      }
+      if (offset > 0) return Promise.reject(new Error('second page failed'));
+      return Promise.resolve({ data: { items: mentions.slice(0, 50), count: 100, remaining: 50, countsByPod: { 'pod-1': 100 } } });
+    });
+    mockPost.mockImplementation(() => {
+      ruled = true;
+      return Promise.resolve({ data: { ok: true, decision: { ruling: { value: 'Ship now', by: 'You' } } } });
+    });
+    renderPage();
+
+    const needsYou = (await screen.findByRole('heading', { name: 'Needs you' })).closest('section') as HTMLElement;
+    expect(await within(needsYou).findByText('Paged 99')).toBeInTheDocument();
+    expect(within(needsYou).getByLabelText('101 waiting on you')).toBeInTheDocument();
+    fireEvent.click(within(needsYou).getByRole('button', { name: 'Rule: Ship now (Recommended)' }));
+
+    await waitFor(() => expect(within(needsYou).queryByText('Paged decision')).not.toBeInTheDocument());
+    await waitFor(() => expect(mockGet).toHaveBeenCalledWith('/api/activity/decision-queue', expect.objectContaining({
+      params: expect.objectContaining({ offset: 50 }),
+    })));
+    await act(async () => { await new Promise((resolve) => { setTimeout(resolve, 0); }); });
+    expect(needsYou.querySelectorAll('article.v2-activity__queue-row')).toHaveLength(100);
+    expect(within(needsYou).getByLabelText('100 waiting on you')).toBeInTheDocument();
+    expect(within(needsYou).queryByLabelText('99 waiting on you')).not.toBeInTheDocument();
+  });
+
+  // CodeRabbit on F648: a refresh that revalidates later pages awaits them after
+  // its first freshness check. If a newer refresh replaced it meanwhile (the
+  // window changed), the stale one must not publish its rows and count over it.
+  test('F648: a refresh superseded while revalidating a later page never publishes over the newer one', async () => {
+    const decision = { ...decisionQueue.items[1], id: 'decision-stale', title: 'Stale decision', createdAt: '2026-08-26T08:00:00.000Z' };
+    const mentions = Array.from({ length: 100 }, (_, index) => ({
+      id: `stale-mention-${index}`, attentionItemId: `stale-attention-${index}`, kind: 'mention', title: `Stale ${index}`,
+      detail: 'Loaded row.', podId: 'pod-1', podName: 'Launch pod', createdAt: '2026-08-26T11:00:00.000Z',
+    }));
+    const fresh = Array.from({ length: 3 }, (_, index) => ({
+      id: `fresh-mention-${index}`, attentionItemId: `fresh-attention-${index}`, kind: 'mention', title: `Fresh ${index}`,
+      detail: 'Newer row.', podId: 'pod-1', podName: 'Launch pod', createdAt: '2026-08-26T12:00:00.000Z',
+    }));
+    const before = [decision, ...mentions];
+    let phase: 'before' | 'stale' | 'newer' = 'before';
+    let releaseStale: (() => void) | undefined;
+    mockGet.mockImplementation((url: string, config: any) => {
+      if (url === '/api/activity/decision-history') return Promise.resolve({ data: { items: [] } });
+      if (url !== '/api/activity/decision-queue') return Promise.resolve({ data: recap });
+      const offset = config?.params?.offset || 0;
+      if (phase === 'before') {
+        const items = before.slice(offset, offset + 50);
+        return Promise.resolve({ data: {
+          items, count: 101, remaining: Math.max(101 - offset - items.length, 0), countsByPod: { 'pod-1': 101 },
+        } });
+      }
+      if (phase === 'stale') {
+        if (offset === 0) {
+          return Promise.resolve({ data: { items: mentions.slice(0, 50), count: 100, remaining: 50, countsByPod: { 'pod-1': 100 } } });
+        }
+        phase = 'newer';
+        return new Promise((resolve) => {
+          releaseStale = () => resolve({ data: { items: mentions.slice(50), count: 100, remaining: 0, countsByPod: { 'pod-1': 100 } } });
+        });
+      }
+      const items = offset === 0 ? fresh : [];
+      return Promise.resolve({ data: { items, count: 3, remaining: 0, countsByPod: { 'pod-1': 3 } } });
+    });
+    mockPost.mockImplementation(() => {
+      phase = 'stale';
+      return Promise.resolve({ data: { ok: true, decision: { ruling: { value: 'Ship now', by: 'You' } } } });
+    });
+    renderPage();
+
+    const needsYou = (await screen.findByRole('heading', { name: 'Needs you' })).closest('section') as HTMLElement;
+    expect(await within(needsYou).findByText('Stale 99')).toBeInTheDocument();
+    fireEvent.click(within(needsYou).getByRole('button', { name: 'Rule: Ship now (Recommended)' }));
+    await waitFor(() => expect(releaseStale).toBeDefined());
+
+    fireEvent.click(screen.getByRole('radio', { name: '7 days' }));
+    expect(await within(needsYou).findByText('Fresh 0')).toBeInTheDocument();
+
+    await act(async () => {
+      releaseStale!();
+      await new Promise((resolve) => { setTimeout(resolve, 0); });
+    });
+    expect(within(needsYou).getByText('Fresh 0')).toBeInTheDocument();
+    expect(within(needsYou).queryByText('Stale 99')).not.toBeInTheDocument();
+    expect(within(needsYou).getByLabelText('3 waiting on you')).toBeInTheDocument();
+  });
+
+  // CodeRabbit on F648: the Back snapshot pairs the raw server count with the
+  // raw queue. Saving the locally adjusted count made a return trip subtract a
+  // history-restored ruling twice and read "Nothing needs you" over an open mention.
+  test('F648: leaving and returning with a failed queue refresh keeps the open mention and its count', async () => {
+    let phase = 'first';
+    let queueReads = 0;
+    const settled = { ...decisionQueue.items[1], status: 'ruled', ruling: { value: 'Ship now', by: 'You' } };
+    mockGet.mockImplementation((url: string) => {
+      if (url === '/api/activity/decision-queue') {
+        queueReads += 1;
+        if (phase === 'first') return queueReads === 1 ? Promise.resolve({ data: decisionQueue }) : new Promise(() => {});
+        return Promise.reject(new Error('queue down'));
+      }
+      if (url === '/api/activity/decision-history') {
+        return Promise.resolve({ data: phase === 'first' ? { items: [] } : { items: [settled], count: 1, remaining: 0 } });
+      }
+      return Promise.resolve({ data: recap });
+    });
+    mockPost.mockResolvedValue({ data: { ok: true, decision: { ruling: { value: 'Ship now', by: 'You' } } } });
+    const first = renderPageWithAuth({ _id: 'user-a' });
+
+    const needsYou = (await screen.findByRole('heading', { name: 'Needs you' })).closest('section') as HTMLElement;
+    expect(await within(needsYou).findByLabelText('2 waiting on you')).toBeInTheDocument();
+    fireEvent.click(within(needsYou).getByRole('button', { name: 'Rule: Ship now (Recommended)' }));
+    expect(await within(needsYou).findByLabelText('1 waiting on you')).toBeInTheDocument();
+    await waitFor(() => expect(queueReads).toBeGreaterThan(1));
+    const mentionRow = within(needsYou).getByText('Review requested').closest('article') as HTMLElement;
+    fireEvent.click(within(mentionRow).getByRole('button', { name: 'Open', exact: true }));
+    expect(screen.getByTestId('current-path')).toHaveTextContent('#message-699');
+    first.unmount();
+
+    phase = 'return';
+    renderPageWithAuth({ _id: 'user-a' });
+    const back = (await screen.findByRole('heading', { name: 'Needs you' })).closest('section') as HTMLElement;
+    expect(await screen.findByText('You ruled: Ship now')).toBeInTheDocument();
+    await act(async () => { await new Promise((resolve) => { setTimeout(resolve, 0); }); });
+    expect(within(back).getByText('Review requested')).toBeInTheDocument();
+    expect(within(back).getByLabelText('1 waiting on you')).toBeInTheDocument();
+    expect(within(back).queryByText('Nothing needs you.')).not.toBeInTheDocument();
+  });
+
   test('restores a settled Activity card from durable history after leave and return', async () => {
     const settled = {
       id: 'decision-024', kind: 'decision', title: 'Choose the eslint scope', detail: 'What should the agent do?',

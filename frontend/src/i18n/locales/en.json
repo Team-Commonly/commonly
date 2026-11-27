@@ -499,6 +499,9 @@
         "done": "Done"
       }
     },
+    "decided": {
+      "title": "Decided"
+    },
     "movedForward": {
       "title": "Moved forward",
       "order": "newest first",
