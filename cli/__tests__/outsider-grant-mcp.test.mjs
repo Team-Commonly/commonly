@@ -6,6 +6,7 @@
  * deploys. Unconfined seats are not checked.
  */
 import { jest } from '@jest/globals';
+import { ownerStampedAll } from '../test-support/owner-stamp.mjs';
 import os from 'os';
 import path from 'path';
 import fs from 'fs';
@@ -116,10 +117,10 @@ const setup = ({ environment, installations }) => {
     if (served) return { events: [] };
     served = true;
     return {
-      events: [{
+      events: ownerStampedAll([{
         _id: 'evt-1', type: 'chat.mention', podId: 'pod-abc', agentName: 'quill', instanceId: 'default',
         payload: { content: 'hello' },
-      }],
+      }]),
     };
   });
   const mockPost = jest.fn().mockResolvedValue({});

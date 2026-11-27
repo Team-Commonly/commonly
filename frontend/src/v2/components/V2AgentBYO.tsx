@@ -2042,6 +2042,20 @@ const V2AgentBYO: React.FC = () => {
     }[block]();
     return <p className="v2-byo__hint" data-testid="byo-no-connectors">{text}</p>;
   };
+  // F662: a wrapped Claude Code or Codex agent runs every turn on its owner's
+  // own login or key. Said before connecting, by the pod picked: in a public or
+  // listed pod it answers only its owner, anywhere else anyone can start a turn.
+  const accountUseLine = (harness: string) => {
+    if (harness !== 'claude' && harness !== 'codex') return null;
+    const pod = pods.find((p) => p._id === podId);
+    const openPod = Boolean(pod?.communityListed || pod?.publicRead);
+    const tool = harness === 'codex' ? 'Codex' : 'Claude Code';
+    return (
+      <p className="v2-byo__hint" data-testid="byo-account-use">
+        {t(openPod ? 'agentByo.accountUse.open' : 'agentByo.accountUse.team', { tool })}
+      </p>
+    );
+  };
   const opencodeName = sanitizeAgentName(name) || DEFAULT_AGENT_NAME;
   const opencodeLines = podId ? opencodeSnippet({ agentName: opencodeName, podId, model: model.trim() }) : '';
   const byoAlternative = mode === 'byo' && listenAdapter !== 'claude' && listenAdapter !== 'codex' ? (
@@ -2295,6 +2309,7 @@ const V2AgentBYO: React.FC = () => {
               cannot install into is replaced by their own, and that is the line
               above the button, so the click never lands somewhere unshown. */}
           {runnerPicker}
+          {accountUseLine(listenAdapter)}
           {!isOtherOwner && <button
             type="button"
             onClick={() => {
@@ -2470,6 +2485,8 @@ const V2AgentBYO: React.FC = () => {
           {/* No OS field on a machine: hostUnconfined is reported from native
               Windows only, so it stands for 'windows'; anything else is unknown. */}
           {mode === 'machine' && connectorLine(adapter, selectedMachine?.hostUnconfined === true ? 'windows' : null)}
+          {/* Auto-detect names no harness: the daemon picks claude, then codex. */}
+          {mode === 'machine' && accountUseLine(adapter || autoDetectedHarness(machineInventory))}
           {mode === 'machine' && (
             <V2HarnessChoice
               key={`machine:${adapter}`}
@@ -2630,6 +2647,7 @@ const V2AgentBYO: React.FC = () => {
               Under the button, it was the first and only Windows line a visitor read. */}
           {mode === 'byo' && (listenAdapter === 'claude' || listenAdapter === 'codex')
             && connectorLine(listenAdapter, setupOs)}
+          {mode === 'byo' && accountUseLine(listenAdapter)}
           {/* F448: the form and its button lead, and the daemon line follows as
               the next step. When it led the page (F370), no outside opener copied
               it in 14 days, and 4 of 9 left before copying anything. It stays

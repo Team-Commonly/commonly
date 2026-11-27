@@ -115,6 +115,19 @@ import {
   readPodFocus,
 } from '../lib/pod-focus.js';
 import { formatPodConventionsFrame } from '../lib/pod-conventions.js';
+import {
+  ACCOUNT_BOUND_ADAPTERS,
+  accountToolName,
+  accountUseNeedsFacts,
+  accountUseNoticeText,
+  accountUseVerdict,
+  factsFromFallback,
+  factsFromStamp,
+  otherRequesterOf,
+  podOpenToStrangers,
+  requesterMayBeAgent,
+  setupLine as accountUseSetupLine,
+} from '../lib/account-use-guard.js';
 import { claimReleaseFor, ackResultFor, EMPTY_OUTPUT } from '../lib/claim-outcome.js';
 import { createClaimedWorkGate } from '../lib/claimed-work-gate.js';
 import {
@@ -1712,6 +1725,19 @@ export const performAttach = async ({
     client, podId, environment, adapterName, log,
   });
 
+  // F662: a wrapped Claude Code or Codex agent runs on its owner's own login or
+  // key, so say whose account answers here before it connects. Never a refusal:
+  // the run loop refuses per turn. A pod that can't be read gets the team line.
+  if (ACCOUNT_BOUND_ADAPTERS.has(adapterName) && podId) {
+    let pod = null;
+    try {
+      pod = await client.get(`/api/pods/${podId}`);
+    } catch {
+      pod = null;
+    }
+    log(accountUseSetupLine({ tool: accountToolName(adapterName), open: podOpenToStrangers(pod) }));
+  }
+
   // Identity-bearing runtime tag from the adapter (e.g. 'codex', 'claude-
   // code'). Falls back to adapter.name for adapters that haven't been
   // updated to the two-field scheme. Paired with `host: 'byo'` below so a
@@ -2623,11 +2649,17 @@ export const performRun = ({
       const identity = await client.get('/api/agents/runtime/installations', {}, {
         signal: AbortSignal.timeout(5000),
       });
-      return { installations: Array.isArray(identity?.installations) ? identity.installations : [], readError: null };
+      return {
+        installations: Array.isArray(identity?.installations) ? identity.installations : [],
+        ownerUserId: identity?.ownerUserId ? String(identity.ownerUserId) : null,
+        readError: null,
+      };
     } catch (err) {
-      return { installations: null, readError: err };
+      return { installations: null, ownerUserId: null, readError: err };
     }
   };
+  // Said once per process: the guard can't tell the owner from anyone else.
+  let ownerMissingLogged = false;
   const placeTurn = async () => {
     await refreshSeatEnvironment();
     if (seatEnvironment?.sandbox?.trust !== 'workspace' && !codexUnconfined) {
@@ -2689,6 +2721,28 @@ export const performRun = ({
       ));
       return { outcome: 'no_action', reason: 'no-prompt' };
     }
+
+    // F662, as in the batch path. An ask has nobody else to answer it, so a
+    // refused one is answered with the refusal instead of waiting out its expiry.
+    const [{ verdict: accountVerdict, facts: accountFacts }] = await judgeAccountUse([event], eventPodId);
+    if (accountVerdict === 'refuse') {
+      if (event.type === 'agent.ask' && event.payload?.requestId) {
+        log(`[${event.type}] event ${event._id} was started by someone other than this agent's owner `
+          + 'in a pod where it answers only its owner — acked as refused, not run');
+        try {
+          await client.post(
+            `/api/agents/runtime/asks/${encodeURIComponent(event.payload.requestId)}/respond`,
+            { content: accountUseNoticeText({ verdict: 'refuse', adapterName: adapter.name, facts: accountFacts }) },
+          );
+        } catch (err) {
+          if (err?.status !== 409 || err?.body?.code !== 'already_responded') throw err;
+        }
+      } else {
+        await noticeAccountUseRefused(event, accountFacts, eventPodId);
+      }
+      return accountUseRefusedResult();
+    }
+    if (accountVerdict === 'warn') await noticeAccountUseWarn(accountFacts, eventPodId);
 
     // Snapshot the pod's recent messages so that, after the spawn, we can
     // tell whether the agent posted itself via commonly_post_message. If it
@@ -3820,7 +3874,11 @@ export const performRun = ({
   // pull, rather than being silently consumed here.
   // `unreadBodiesPodId` is set only for a turn a person's mention woke (ADR-018
   // D9.2): the unread messages this page carried go in as marked data.
-  const buildInboxPrompt = (entries, inboxCount = entries.length, { pod = null, unreadBodiesPodId = null } = {}) => {
+  const buildInboxPrompt = (allEntries, offeredCount = allEntries.length, { pod = null, unreadBodiesPodId = null } = {}) => {
+    // F662: an item refused because it isn't the owner's never reaches the
+    // model, not even as context, or the owner's account would act on it.
+    const entries = allEntries.filter((entry) => !entry.accountRefused);
+    const inboxCount = Math.max(entries.length, offeredCount - (allEntries.length - entries.length));
     const BODY_LIMIT = batchLimit;
     const wakeEntries = entries.filter((entry) => entry.event.deliveryMode !== 'digest' && !entry.pastCap);
     const digestEntries = entries.filter((entry) => entry.event.deliveryMode === 'digest' && !entry.pastCap);
@@ -3972,6 +4030,103 @@ export const performRun = ({
         handoff: mention ? handoffAgent : null,
         noticePosted: posted,
       };
+    }
+  };
+
+  // F662: a claude or codex seat runs every turn on its owner's own login or
+  // key (lib/account-use-guard.js). Judges each event before anything spawns:
+  // 'run', 'refuse', 'warn' or 'defer'. Facts come from the server's stamp; an
+  // event without one costs at most one /installations read per call, made
+  // only when an event needs it. A failed read defers by throwing, as the
+  // placement read does, so the event stays unacked and comes back through the
+  // spawn-retry backoff. Every other adapter returns 'run' with no read.
+  // The guard's read is its own: placement reads the pods fresh before the
+  // spawn, since the batch awaits other work in between and a pod can turn
+  // public meanwhile.
+  // `settled` holds events already handled here (a redelivery), which only
+  // ride along as context: one that can't be judged is kept out, not deferred.
+  const judgeAccountUse = async (events, eventPodId, { settled = new Set() } = {}) => {
+    if (!ACCOUNT_BOUND_ADAPTERS.has(adapter.name)) return events.map(() => ({ verdict: 'run', facts: null }));
+    let fallback = null;
+    const judged = [];
+    for (const event of events) {
+      let facts = factsFromStamp(event);
+      if (!facts && accountUseNeedsFacts({ event, adapterName: adapter.name })) {
+        // eslint-disable-next-line no-await-in-loop
+        if (!fallback) fallback = await readSeatPods();
+        const podOf = event.podId || eventPodId;
+        const installation = fallback.installations
+          ? fallback.installations.find((row) => String(row?.podId) === String(podOf)) || null
+          : null;
+        facts = factsFromFallback({ event, installation, ownerUserId: fallback.ownerUserId });
+      }
+      if (facts && !facts.ownerUserId && facts.requesterKind !== 'kernel' && !ownerMissingLogged) {
+        ownerMissingLogged = true;
+        log('No owner is on record for this agent, so it treats every message as someone else\'s. '
+          + `Run \`${CLI} agent attach\` again to fix it.`);
+      }
+      let verdict = accountUseVerdict({ event, adapterName: adapter.name, facts });
+      if (verdict === 'defer' && settled.has(event)) verdict = 'refuse';
+      if (verdict === 'defer') {
+        const cause = fallback?.readError;
+        throw Object.assign(
+          new Error(`turn deferred, because whether this agent may answer here could not be read${cause ? `: ${cause.message}` : ''}`,
+            cause ? { cause } : undefined),
+          { status: cause?.status },
+        );
+      }
+      judged.push({ verdict, facts });
+    }
+    return judged;
+  };
+  const accountUseRefusedResult = () => ({
+    outcome: 'no_action',
+    refused: { reason: 'delivery-refused' },
+    reason: 'account-not-owner',
+  });
+  // A refused turn tells the person only when someone is waiting, once per pod
+  // and requester per hour, so an ambient stranger in a public pod costs no post.
+  const noticeAccountUseRefused = async (event, facts, eventPodId) => {
+    log(`[${event.type}] event ${event._id} was started by someone other than this agent's owner `
+      + `in a pod where it answers only its owner — acked as refused, not run`);
+    // An agent told would answer, a paid turn on its own owner's account.
+    if (!someoneIsWaiting(event) || requesterMayBeAgent(event, facts)) return;
+    const key = `account-use-refused:${eventPodId}:${otherRequesterOf(facts)}`;
+    try {
+      if (!noticeDue(stateKey, key, CANT_ANSWER_NOTICE_WINDOW_MS)) return;
+      const delivery = await deliverTurnNotice({
+        client,
+        podId: eventPodId,
+        text: accountUseNoticeText({ verdict: 'refuse', adapterName: adapter.name, facts }),
+        limit: chatCharLimit,
+        maxChunks: maxChatChunks,
+        log: (line) => log(`[${event.type}] ${line}`),
+      });
+      if (!delivery.skipped && !delivery.refused) recordNotice(stateKey, key);
+    } catch (err) {
+      log(`[${event.type}] account notice failed: ${err.message}`);
+    }
+  };
+  // Once per pod, ever (a session reset forgets it): whose account runs here.
+  // True when the line was posted this time.
+  const noticeAccountUseWarn = async (facts, eventPodId) => {
+    const key = `account-use-warned:${eventPodId}`;
+    try {
+      if (!noticeDue(stateKey, key, Infinity)) return false;
+      const delivery = await deliverTurnNotice({
+        client,
+        podId: eventPodId,
+        text: accountUseNoticeText({ verdict: 'warn', adapterName: adapter.name, facts }),
+        limit: chatCharLimit,
+        maxChunks: maxChatChunks,
+        log: (line) => log(`[inbox.batch] ${line}`),
+      });
+      if (delivery.skipped || delivery.refused) return false;
+      recordNotice(stateKey, key);
+      return true;
+    } catch (err) {
+      log(`[inbox.batch] account notice failed: ${err.message}`);
+      return false;
     }
   };
 
@@ -4351,6 +4506,32 @@ export const performRun = ({
       }
     }
 
+    // F662: before anything spawns or claims. A refused item is acked and never
+    // retried; a warned one runs after the pod hears whose account it is. A
+    // redelivered item is judged too: one refused before, whose ack was lost,
+    // must stay out of this turn's prompt, ids and flags as well.
+    const isRedelivery = (entry) => entry.result?.reason === 'duplicate-delivery';
+    const unjudged = entries.filter((entry) => !entry.result || isRedelivery(entry));
+    const accountUse = await judgeAccountUse(unjudged.map((entry) => entry.event), eventPodId, {
+      settled: new Set(unjudged.filter(isRedelivery).map((entry) => entry.event)),
+    });
+    for (const [index, entry] of unjudged.entries()) {
+      const { verdict, facts } = accountUse[index];
+      if (isRedelivery(entry)) {
+        // Already acked or noticed once; only kept out of the turn.
+        if (verdict === 'refuse') entry.accountRefused = true;
+      } else if (verdict === 'refuse') {
+        entry.result = accountUseRefusedResult();
+        entry.accountRefused = true;
+        // eslint-disable-next-line no-await-in-loop
+        await noticeAccountUseRefused(entry.event, facts, eventPodId);
+      } else if (verdict === 'warn') {
+        // Posted once the item is sure to run (below), so a lost claim or the
+        // cascade cap doesn't spend the once-per-pod line.
+        entry.accountWarn = facts;
+      }
+    }
+
     // Null until the server says: a failed read or an older server is unknown,
     // not "alone" and not "with peers".
     let podAttendance = null;
@@ -4367,7 +4548,9 @@ export const performRun = ({
       }
     };
     const preSpawn = await snapshotMessages();
-    const preSpawnIds = preSpawn
+    // The reply-detection baseline. Retaken below if the account warning posts,
+    // or the warning would read as this turn's own post and drop its answer.
+    let preSpawnIds = preSpawn
       ? new Set(preSpawn.map((message) => String(message._id || message.id)))
       : null;
     const activeEntries = entries.filter((entry) => !entry.result);
@@ -4497,6 +4680,11 @@ export const performRun = ({
 
     const actionEntries = wakingEntries.filter((entry) => !entry.result && !entry.pastCap);
     if (actionEntries.length === 0) return { entries };
+    const accountWarnFacts = actionEntries.find((entry) => entry.accountWarn)?.accountWarn;
+    if (accountWarnFacts && await noticeAccountUseWarn(accountWarnFacts, eventPodId)) {
+      const afterWarn = await snapshotMessages();
+      preSpawnIds = afterWarn ? new Set(afterWarn.map((message) => String(message._id || message.id))) : null;
+    }
     const personMentioned = actionEntries.some((entry) => isPersonMention(entry.event, entry.trigger));
 
     const claimKeepers = actionEntries
@@ -4506,6 +4694,9 @@ export const performRun = ({
       isLost: () => claimKeepers.some((keeper) => keeper.isLost()),
       getHolder: () => claimKeepers.find((keeper) => keeper.isLost())?.getHolder(),
     } : null;
+    // What this turn carries: not past the cap, and not refused as someone
+    // else's on the owner's account (F662), which the model never sees.
+    const inThisTurn = (entry) => !entry.pastCap && !entry.accountRefused;
     const batchEvent = {
       ...actionEntries[0].event,
       _id: `batch-${actionEntries[0].event._id}`,
@@ -4513,11 +4704,11 @@ export const performRun = ({
       commentTarget: commentTargetOf(actionEntries[0].event),
       payload: {
         ...actionEntries[0].event.payload,
-        batchEventIds: entries.filter((entry) => !entry.pastCap).map((entry) => String(entry.event._id)),
-        hasHeartbeat: entries.some((entry) => !entry.pastCap && entry.event.type === 'heartbeat'),
-        onlyHeartbeat: entries.filter((entry) => !entry.pastCap)
+        batchEventIds: entries.filter(inThisTurn).map((entry) => String(entry.event._id)),
+        hasHeartbeat: entries.some((entry) => inThisTurn(entry) && entry.event.type === 'heartbeat'),
+        onlyHeartbeat: entries.filter(inThisTurn)
           .every((entry) => entry.event.type === 'heartbeat'),
-        someoneWaiting: entries.some((entry) => !entry.pastCap && someoneIsWaiting(entry.event)),
+        someoneWaiting: entries.some((entry) => inThisTurn(entry) && someoneIsWaiting(entry.event)),
       },
     };
     // One item, run as its own turn. Used only after the provider refused a
@@ -6386,6 +6577,10 @@ Docs:
       });
       // F262: a harness the seat's turns would refuse is named now, not on the
       // first mention. Fired, not awaited, like the update notice above.
+      // F662: once at boot, whose account this agent's turns run on.
+      if (ACCOUNT_BOUND_ADAPTERS.has(adapter.name)) {
+        console.log(`${stamp()} [${name}] ${accountUseSetupLine({ tool: accountToolName(adapter.name), open: false })}`);
+      }
       Promise.resolve(adapter.startNotice?.({ unconfined: hostUnconfined || codexUnconfined }))
         .then((notice) => { if (notice) console.warn(`${stamp()} [${name}] ${notice}`); })
         .catch(() => {});
