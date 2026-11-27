@@ -361,31 +361,69 @@ describe('the stalled-connect nudge is private to the installer (F666)', () => {
       $set: { createdAt: daysAgo, sourceCreatedAt: daysAgo, status: 'resolved', resolvedBy: 'acknowledged' },
     });
     const cursor = new Date(Date.now() - 60 * MINUTE);
-    // Whichever write carries createdAt is the one that fails.
+    // Whichever write carries createdAt is the one that fails. The episode
+    // sorts after any stored one, so this write is one that may reopen the row.
+    let failed = 0;
     const realCollectionUpdate = AttentionItem.collection.updateOne.bind(AttentionItem.collection);
     const collectionSpy = jest.spyOn(AttentionItem.collection, 'updateOne');
     collectionSpy.mockImplementation((filter, update, ...rest) => {
-      if (update?.$set?.createdAt) return Promise.reject(new Error('storage down'));
+      if (update?.$set?.createdAt) { failed += 1; return Promise.reject(new Error('storage down')); }
       return realCollectionUpdate(filter, update, ...rest);
     });
     const realModelUpdate = AttentionItem.updateOne.bind(AttentionItem);
     const modelSpy = jest.spyOn(AttentionItem, 'updateOne').mockImplementation((filter, update, options) => {
-      if (update?.$set?.createdAt) throw new Error('storage down');
+      if (update?.$set?.createdAt) { failed += 1; throw new Error('storage down'); }
       return realModelUpdate(filter, update, options);
     });
+    expect('f'.repeat(24) > String(first.stalledConnectEpisodeId)).toBe(true);
     try {
       await AttentionItemService.recordStalledConnect({
         recipientUserId: installer._id, podId: pod._id, installationId: install._id,
-        episodeId: '6560f0f0f0f0f0f0f0f0f0f0', title: "Ada Agent hasn't connected", detail: 'Open its panel.',
+        episodeId: 'f'.repeat(24), title: "Ada Agent hasn't connected", detail: 'Open its panel.',
       }).catch(() => {});
     } finally {
       collectionSpy.mockRestore();
       modelSpy.mockRestore();
     }
 
+    expect(failed).toBeGreaterThan(0);
     const row = await AttentionItem.findById(first._id).lean();
     if (row.status === 'open') expect(row.createdAt.getTime()).toBeGreaterThan(cursor.getTime());
     else expect(row.resolvedBy).toBe('acknowledged');
+  });
+
+  it('a row another pass inserts between the reopen and the insert is reopened and restamped', async () => {
+    const { installer, pod, install } = await world();
+    const notice = { recipientUserId: installer._id, podId: pod._id, installationId: install._id,
+      title: "Ada Agent hasn't connected", detail: 'Open its panel.' };
+    // The row an older episode's pass would insert, already acknowledged days ago.
+    await AttentionItemService.recordStalledConnect({ ...notice, episodeId: '6560f0f0f0f0f0f0f0f0f0f0' });
+    const raced = await AttentionItem.findOne({}).lean();
+    await AttentionItem.deleteMany({});
+    const daysAgo = new Date(Date.now() - 3 * 24 * 60 * MINUTE);
+    Object.assign(raced, { createdAt: daysAgo, sourceCreatedAt: daysAgo, status: 'resolved', resolvedBy: 'acknowledged' });
+    const cursor = new Date(Date.now() - 60 * MINUTE);
+
+    // That pass lands right after this one's reopen found no row.
+    let calls = 0;
+    const realModelUpdate = AttentionItem.updateOne.bind(AttentionItem);
+    const modelSpy = jest.spyOn(AttentionItem, 'updateOne').mockImplementation(async (filter, update, options) => {
+      calls += 1;
+      const result = await realModelUpdate(filter, update, options);
+      if (calls === 1) await AttentionItem.collection.insertOne(raced);
+      return result;
+    });
+    try {
+      await AttentionItemService.recordStalledConnect({ ...notice, episodeId: 'f'.repeat(24) });
+    } finally {
+      modelSpy.mockRestore();
+    }
+
+    const rows = await AttentionItem.find({}).lean();
+    expect(rows).toHaveLength(1);
+    expect(rows[0].status).toBe('open');
+    expect(rows[0].stalledConnectEpisodeId).toBe('f'.repeat(24));
+    expect(rows[0].createdAt.getTime()).toBeGreaterThan(cursor.getTime());
   });
 
   it('a retry of the same episode after the row was written keeps the acknowledgement', async () => {

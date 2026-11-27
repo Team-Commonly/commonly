@@ -772,53 +772,52 @@ export const recordStalledConnect = async (notice: {
   const sourceId = sourceKey('stalled_connect', notice.installationId);
   const episodeId = String(notice.episodeId);
   const at = new Date();
-  const write = (upsert: boolean) => AttentionItem.updateOne(
+  const fields = {
+    status: 'open',
+    title: compact(notice.title, 200),
+    detail: compact(notice.detail, 600),
+    podName: pod?.name || 'Pod',
+    createdAt: at,
+    updatedAt: at,
+    sourceCreatedAt: at,
+    stalledConnectEpisodeId: episodeId,
+    ...(notice.agentUserId ? { actorUserId: notice.agentUserId } : {}),
+  };
+  // A row this episode may take: reopened and restamped in this one write.
+  // `createdAt` is immutable under timestamps. On a plain update, mongoose
+  // 7.8 drops a $set of it unless the cast is non-strict (it never hands
+  // overwriteImmutable to the cast), and its timestamp hook drops it again
+  // unless timestamps are off; so both are off, and the update stamps both
+  // times itself. Every path in it is a schema path, so nothing unknown rides
+  // in on the non-strict cast. An upsert would move it to $setOnInsert
+  // whatever the options (measured), so no write here is an upsert.
+  const reopen = () => AttentionItem.updateOne(
     {
       recipientUserId: recipient._id,
       'source.type': 'stalled_connect',
       'source.id': sourceId,
       $or: [{ stalledConnectEpisodeId: null }, { stalledConnectEpisodeId: { $lt: episodeId } }],
     },
-    {
-      $set: {
-        status: 'open',
-        title: compact(notice.title, 200),
-        detail: compact(notice.detail, 600),
-        podName: pod?.name || 'Pod',
-        createdAt: at,
-        updatedAt: at,
-        sourceCreatedAt: at,
-        stalledConnectEpisodeId: episodeId,
-        ...(notice.agentUserId ? { actorUserId: notice.agentUserId } : {}),
-      },
-      $unset: { resolvedAt: 1, resolvedBy: 1 },
-      $setOnInsert: {
-        recipientUserId: recipient._id,
-        podId: notice.podId,
-        kind: 'blocked',
-        source: { type: 'stalled_connect', id: sourceId },
-      },
-    },
-    // `createdAt` is immutable under timestamps. On a plain update, mongoose
-    // 7.8 drops a $set of it unless the cast is non-strict (it never hands
-    // overwriteImmutable to the cast), and its timestamp hook drops it again
-    // unless timestamps are off; so both are off, and the update stamps both
-    // times itself. Every path in it is a schema path, so nothing unknown
-    // rides in on the non-strict cast. On an upsert the cast moves it to
-    // $setOnInsert whatever the options (measured), which is right for an
-    // insert and is why a reopen never goes through the upsert.
-    { upsert, strict: false, timestamps: false },
+    { $set: fields, $unset: { resolvedAt: 1, resolvedBy: 1 } },
+    { strict: false, timestamps: false },
   );
-  // A row this episode may take: reopened and restamped in this one write.
-  const reopened = await write(false);
-  if (reopened.matchedCount) return { recorded: true };
+  if ((await reopen()).matchedCount) return { recorded: true };
   try {
-    // No row yet: insert it.
-    await write(true);
+    // No row yet: insert it. Insert-only, so it never updates a row another
+    // pass wrote in between, which an upsert would do without the restamp.
+    await new AttentionItem({
+      recipientUserId: recipient._id,
+      podId: notice.podId,
+      kind: 'blocked',
+      source: { type: 'stalled_connect', id: sourceId },
+      ...fields,
+    }).save({ timestamps: false });
   } catch (error: any) {
-    // The row exists and the filter missed it: this episode or a newer one
-    // already wrote it, and it reached them.
     if (error?.code !== 11000) throw error;
+    // The row exists now. If another pass inserted it for an older episode,
+    // this reopens and restamps it; if this episode or a newer one wrote it,
+    // nothing matches and it already reached them.
+    await reopen();
   }
   return { recorded: true };
 };
