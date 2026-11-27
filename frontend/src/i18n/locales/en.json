@@ -2235,6 +2235,11 @@
       "controlsOtherHarness": "{{name}} runs {{harness}}, so a model for another runner can’t be saved here, and nothing was reconnected. Pick {{harness}} as the runner, or change the runner in Settings, then How it runs.",
       "controlsNotEditable": "Only the person who installed {{name}}, or an admin, can change its model and effort, so nothing was reconnected. Clear them to reconnect."
     },
+    "keepRunning": {
+      "title": "Keep it running on this computer",
+      "body": "{{name}} is listening, but only while this Terminal window stays open. Run this line once to add this computer: the daemon starts when you log in and brings your agents back if they stop. Then choose On my computer for your agent.",
+      "bodyWindows": "{{name}} is listening, but only while this PowerShell window stays open. Run this line once to add this computer: the daemon starts when you log in and brings your agents back if they stop. Then choose On my computer for your agent."
+    },
     "listen": {
       "title": "Run this in Terminal",
       "titleWindows": "Run this in PowerShell",

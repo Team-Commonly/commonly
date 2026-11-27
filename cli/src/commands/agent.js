@@ -1,5 +1,5 @@
 import { createOwnKeyResolver, createMachineReportClient } from '../lib/own-key-launch.js';
-import { foregroundDaemonHint } from '../lib/daemon-hint.js';
+import { createFirstAnswerNotice, foregroundDaemonHint } from '../lib/daemon-hint.js';
 import { loadDaemonRecord } from '../lib/daemon-store.js';
 import { daemonSeatLogPath, logSize, readAppended, readLogTail } from '../lib/daemon-logs.js';
 import { WALKED_HARNESSES } from '../lib/runtime-inventory.js';
@@ -2312,6 +2312,10 @@ export const performRun = ({
   // (lib/long-poll.js). Undefined derives it from the read timeout; 0 turns
   // the long-poll off. Tests pin a small value.
   longPollWaitMs: longPollWaitOverride,
+  // F642: called after each turn that delivered an answer to a person who was
+  // waiting on one. `agent run` uses it to say once how to keep the agent
+  // running. A throw here never fails the turn.
+  onAnswered = null,
 }) => {
   const stateKey = localKey || agentName;
   const supervising = superviseRuns ?? superviseRunsByDefault(adapter?.name);
@@ -3728,6 +3732,9 @@ export const performRun = ({
       }
     }
     turn.finish(turnOutcome);
+    if (onAnswered && delivered && (event.type === 'agent.ask' || someoneIsWaiting(event))) {
+      try { onAnswered(); } catch { /* a notice never fails the turn */ }
+    }
     if (result.memorySummary && !memoryWriteWithheld) {
       try {
         await syncBack(client, { summary: result.memorySummary });
@@ -5603,6 +5610,17 @@ const stamp = () => new Date().toISOString();
 // hint only chooses between the two steps, so it must not throw on it.
 const hasDaemonRecord = () => { try { return Boolean(loadDaemonRecord()); } catch { return true; } };
 
+// F642: `agent run`'s first-answer notice. The daemon spawns its seats with
+// COMMONLY_MANAGED_RUNNER=1 (commands/daemon.js); such a seat is already kept
+// running, so it never prints.
+export const foregroundAnswerNotice = ({
+  env = process.env, instanceUrl, log, daemonRegistered = hasDaemonRecord,
+}) => createFirstAnswerNotice({
+  managed: env.COMMONLY_MANAGED_RUNNER === '1',
+  hintArgs: () => ({ daemonRegistered: daemonRegistered(), instanceUrl }),
+  log,
+});
+
 /**
  * Map `agent run`'s cascade flags onto resolveCascadeSettings' override keys.
  *
@@ -6416,6 +6434,11 @@ Docs:
         // TASK-338: a wedged poll ends the process, so tmux-keepalive or
         // launchd KeepAlive, which act only on exit, start a clean one.
         onPollStalled: () => process.exit(1),
+        // F642: once, after the first answer, say how to keep it running.
+        onAnswered: foregroundAnswerNotice({
+          instanceUrl: record.instanceUrl,
+          log: (line) => console.log(`${stamp()} [${name}] ${line}`),
+        }),
       });
 
       // SIGTERM is the daemon's idle-boundary handoff signal. `stop()` stops

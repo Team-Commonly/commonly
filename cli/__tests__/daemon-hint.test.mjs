@@ -1,4 +1,4 @@
-import { foregroundDaemonHint } from '../src/lib/daemon-hint.js';
+import { createFirstAnswerNotice, foregroundDaemonHint, keepRunningStep } from '../src/lib/daemon-hint.js';
 
 // The foreground hint must tell the truth for both states: with no daemon, the
 // full add-this-computer path; with one, only the placement step. Neither may
@@ -41,4 +41,79 @@ test('with a daemon registered, the hint names only the placement step', () => {
   expect(hint).toContain('Agents → Bring your own → On my computer');
   expect(hint).not.toContain('commonly daemon');
   expect(hint).not.toMatch(/reboot|restart|log ?in/i);
+});
+
+// F642: a foreground run says how to keep the agent running once, right after
+// its first answer, when the person has just seen it work. Never twice, never
+// under the daemon (which already keeps it running), and it reuses the same
+// keep-it-running step the start-time hint names.
+describe('createFirstAnswerNotice', () => {
+  const notice = (overrides = {}) => {
+    const lines = [];
+    const onAnswered = createFirstAnswerNotice({
+      managed: false,
+      hintArgs: () => ({
+        daemonRegistered: false, platform: 'darwin', entry: NPX_ENTRY, instanceUrl: 'https://api.commonly.me',
+      }),
+      log: (line) => lines.push(line),
+      ...overrides,
+    });
+    return { lines, onAnswered };
+  };
+
+  test('after the first answer it says the agent answered, that the run stops with the terminal, and the setup step', () => {
+    const { lines, onAnswered } = notice();
+    onAnswered();
+    const text = lines.join('\n');
+    expect(text).toMatch(/your agent just answered/i);
+    expect(text).toContain('stops when the terminal closes');
+    expect(text).toContain('npx -y @commonlyai/cli@latest daemon setup --instance https://api.commonly.me');
+    expect(text).toContain('Agents → Bring your own → On my computer');
+  });
+
+  test('a second answer prints nothing more', () => {
+    const { lines, onAnswered } = notice();
+    onAnswered();
+    const after = lines.length;
+    onAnswered();
+    onAnswered();
+    expect(after).toBeGreaterThan(0);
+    expect(lines).toHaveLength(after);
+  });
+
+  test('a run the daemon supervises never prints it', () => {
+    const { lines, onAnswered } = notice({ managed: true });
+    onAnswered();
+    expect(lines).toEqual([]);
+  });
+
+  test('on Windows from npx, the setup line carries --unsandboxed', () => {
+    const { lines, onAnswered } = notice({
+      hintArgs: () => ({
+        daemonRegistered: false, platform: 'win32', entry: NPX_ENTRY_WIN, instanceUrl: 'https://api.commonly.me',
+      }),
+    });
+    onAnswered();
+    expect(lines.join('\n')).toContain('npx.cmd -y @commonlyai/cli@latest daemon setup --instance https://api.commonly.me --unsandboxed');
+  });
+
+  test('on Windows from a global install, each daemon step is on its own line, never joined with &&', () => {
+    const { lines, onAnswered } = notice({
+      hintArgs: () => ({
+        daemonRegistered: false, platform: 'win32', entry: 'C:\\npm\\node_modules\\@commonlyai\\cli\\src\\index.js',
+      }),
+    });
+    onAnswered();
+    const text = lines.join('\n');
+    expect(text).not.toContain('&&');
+    expect(text).toMatch(/\n\s*commonly\.cmd daemon register\n\s*commonly\.cmd daemon install/);
+  });
+
+  test('the block reuses the start-time hint step, not a copy of its logic', () => {
+    const args = { daemonRegistered: true, platform: 'darwin' };
+    const { lines, onAnswered } = notice({ hintArgs: () => args });
+    onAnswered();
+    expect(lines.join('\n')).toContain(keepRunningStep(args));
+    expect(foregroundDaemonHint(args)).toContain(keepRunningStep(args));
+  });
 });

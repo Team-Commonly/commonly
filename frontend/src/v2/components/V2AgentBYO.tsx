@@ -1836,7 +1836,7 @@ const V2AgentBYO: React.FC = () => {
       if (key === 'claude') byoStep('mcp-command-copied', 'mcp-claude');
       else if (key === 'cursor') byoStep('mcp-command-copied', 'mcp-cursor');
       else if (key === 'listen') byoStep('cli-command-copied', 'listen');
-      else if (key === 'daemon-setup') byoStep('daemon-command-copied', 'daemon');
+      else if (key === 'daemon-setup' || key === 'keep-running') byoStep('daemon-command-copied', 'daemon');
       else if (key === 'tok') byoStep('token-copied', 'token');
     } catch {
       // Clipboard may be unavailable (non-HTTPS, sandbox); user can select manually.
@@ -1852,6 +1852,12 @@ const V2AgentBYO: React.FC = () => {
   // One line, run through npx — nothing to install first. It works as is in
   // PowerShell, so there is no per-line split any more (Windows form: the util).
   const daemonCommand = daemonSetupCommandFor(setupOs === 'windows' ? 'windows' : 'unix', apiUrl);
+  // F642: the foreground listener stops when its window closes, and the push to
+  // keep it running lands best right after the person sees it work. Once the
+  // listener is green, the result leads with the same setup line the CLI prints
+  // from npx. Someone who already added a computer places the agent there
+  // instead, so they get no second setup line.
+  const showKeepRunning = Boolean(issued) && listenerAvailable && listenState === 'listening' && machines.length === 0;
   // F641: a computer revoked with a reason gets ITS line (its OS, its sandbox
   // choice), not this browser's; with no OS on record, the browser's.
   const revokedSetup = hasDaemonRevokedReasonText(selectedMachine?.revokedReason)
@@ -2833,6 +2839,24 @@ const V2AgentBYO: React.FC = () => {
         <div className="v2-byo__result" data-testid="byo-issued-result" ref={resultRef}>
           <h2>{t('agentByo.result.heading')} <code>{issued.agentName}</code></h2>
 
+          {showKeepRunning && (
+            <div className="v2-byo__snippet" data-testid="byo-keep-running">
+              <h3 className="v2-byo__snippet-head">{t('agentByo.keepRunning.title')}</h3>
+              <p className="v2-byo__needs">
+                {t(setupOs === 'windows' ? 'agentByo.keepRunning.bodyWindows' : 'agentByo.keepRunning.body', { name: issued.agentName })}
+              </p>
+              <div className="v2-byo__command">
+                <pre className="v2-byo__pre">{daemonCommand}</pre>
+                <button
+                  type="button"
+                  onClick={() => copy('keep-running', daemonCommand)}
+                  className="v2-byo__copy"
+                >
+                  {copied === 'keep-running' ? t('agentByo.actions.copied') : t('agentByo.actions.copy')}
+                </button>
+              </div>
+            </div>
+          )}
 
           {/*
             Above the copy sits only what the paste needs: where, what it needs,
@@ -3026,7 +3050,8 @@ const V2AgentBYO: React.FC = () => {
             )}
             {/* No npm-permission hint any more: the line runs through npx, so
                 there is no global install to stop with EACCES (F570). */}
-            {listenerAvailable && !machinesNeedUpdate && (
+            {/* Once the keep-running block leads the result, it says this already. */}
+            {listenerAvailable && !machinesNeedUpdate && !showKeepRunning && (
               <p className="v2-byo__listen-note" data-testid="byo-listen-stops-on-close">
                 {t(setupOs === 'windows'
                   ? (placeableMachines.length === 0 ? 'agentByo.listen.stopsOnCloseWindows' : 'agentByo.listen.stopsOnCloseWithComputerWindows')
