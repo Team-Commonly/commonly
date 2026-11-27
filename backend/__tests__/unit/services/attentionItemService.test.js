@@ -566,7 +566,7 @@ describe('attentionItemService', () => {
       expect.objectContaining({
         recipientUserId: 'sam',
         podId: 'pod-1',
-        kind: 'mention',
+        kind: { $in: ['mention', 'blocked'] },
         status: 'open',
         $and: [{ $or: [{ threadRootId: '40' }, { messageId: '42' }] }],
         $or: [

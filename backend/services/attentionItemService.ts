@@ -286,7 +286,11 @@ export const resolveMentionAttentionForReply = async ({
       {
         recipientUserId,
         podId,
-        kind: 'mention',
+        // F648: an agent's [BLOCKED] post is answered the way a mention is, so
+        // the person's reply in its thread clears it too. Only message-sourced
+        // blocked rows carry a thread or message id (task and hosted-MCP rows
+        // have neither), so no other blocked row can match.
+        kind: { $in: ['mention', 'blocked'] },
         status: 'open',
         $and: [{ $or: targets }],
         // sourceCreatedAt is written on all new rows. The createdAt fallback
@@ -420,6 +424,49 @@ export const sweepMissedAgentMentions = async (
     { $set: { status: 'resolved', resolvedAt: now, resolvedBy: 'missed' } },
   );
   return { scanned: rows.length, eligible: ids.length, missed: Number(result.modifiedCount || 0) };
+};
+
+/**
+ * F648: an agent's `[BLOCKED]` post opens a row for its installer, and until
+ * now only "Mark handled" closed it, so one sat in Needs you for 19 days. The
+ * person's reply in its thread now clears it (resolveMentionAttentionForReply);
+ * one nobody answers leaves the queue after BLOCKED_STALE_DAYS as `missed`:
+ * resolved, never counted as acted on, kept in the store, its message still in
+ * the pod.
+ *
+ * Seven days, the same window as AGENT_MENTION_MISSED_DAYS, because the
+ * evidence is the same: an agent post nobody answered in a week. An agent
+ * still stuck after that posts again, and each post is its own row, so the
+ * age-out retires the old report, never the current one.
+ *
+ * Only message-sourced rows age out. A blocked TASK closes when its status
+ * leaves `blocked` (tasksApi), so while it is open the block is still true; a
+ * hosted-MCP drift stays until its operator acknowledges it, by design.
+ */
+export const BLOCKED_STALE_DAYS = 7;
+
+export const sweepStaleBlockedAttention = async (
+  { now = new Date(), apply = true }: { now?: Date; apply?: boolean } = {},
+) => {
+  const cutoff = new Date(now.getTime() - BLOCKED_STALE_DAYS * 24 * 60 * 60 * 1000);
+  const filter = {
+    kind: 'blocked',
+    'source.type': 'message',
+    status: 'open',
+    $or: [
+      { sourceCreatedAt: { $lt: cutoff } },
+      { sourceCreatedAt: { $exists: false }, createdAt: { $lt: cutoff } },
+    ],
+  };
+  const eligible = await AttentionItem.countDocuments(filter);
+  if (!apply || !eligible) return { eligible, aged: 0 };
+  // The filter is re-applied at write time, so a reply or an acknowledgement
+  // that lands during the sweep keeps its own resolution.
+  const result = await AttentionItem.updateMany(
+    filter,
+    { $set: { status: 'resolved', resolvedAt: now, resolvedBy: 'missed' } },
+  );
+  return { eligible, aged: Number(result.modifiedCount || 0) };
 };
 
 /**
@@ -806,6 +853,29 @@ const decisionBackedMessages = async (recipientUserId: unknown, rows: any[]): Pr
     .map((row: any) => `${String(row.podId)}:${String(row.messageId)}`));
 };
 
+// F648: chooseDecision closes every recipient's row the moment a decision is
+// ruled, but that close is best-effort (resolve swallows a storage failure),
+// so a row can still read open for a settled decision. The queue checks the
+// source and keeps such rows out, for every reader of this API.
+const settledDecisionSources = async (rows: any[]): Promise<Set<string>> => {
+  const ids = [...new Set(rows
+    .filter((row: any) => row.kind === 'decision' && row.source?.type === 'decision_request')
+    .map((row: any) => String(row.source.id))
+    .filter((id: string) => /^[a-f\d]{24}$/i.test(id)))];
+  if (!ids.length) return new Set();
+  try {
+    // eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
+    const DecisionRequest = require('../models/DecisionRequest');
+    const settled = await DecisionRequest.find({ _id: { $in: ids }, status: { $ne: 'pending' } })
+      .select('_id').lean();
+    return new Set(settled.map((row: any) => String(row._id)));
+  } catch (error) {
+    // Showing a possibly settled card beats hiding an open one.
+    console.warn('[attention] decision state check failed; keeping rows:', (error as Error).message);
+    return new Set();
+  }
+};
+
 interface OpenQueueOptions {
   podId?: unknown;
   messageIds?: unknown;
@@ -893,11 +963,18 @@ export const getOpenQueue = async (recipientUserId: unknown, options: OpenQueueO
   // Counts include every accessible open item. The selected pod scope is
   // applied before pagination so a scoped list cannot show a positive count
   // with zero rows merely because its rows fell beyond the global page.
-  const rows = await AttentionItem.find({
+  const fetched = await AttentionItem.find({
     recipientUserId,
     status: 'open',
     ...(hasMessageFilter ? { messageId: { $in: messageIds } } : {}),
   }).sort({ createdAt: -1 }).lean();
+  const settledDecisions = await settledDecisionSources(fetched);
+  const rows = settledDecisions.size
+    ? fetched.filter((row: any) => !(row.source?.type === 'decision_request'
+        && settledDecisions.has(String(row.source.id))))
+    : fetched;
+  // Close them in the store too, so the counts and emails that read it agree.
+  if (settledDecisions.size) await resolveMany('decision_request', [...settledDecisions]);
   // Suppressed before anything is counted, so every number the caller reads —
   // per-pod, per-kind, total, remaining — counts rows the person can actually
   // see, in every scope. Keyed on a decision row existing in any state: hiding
@@ -1027,6 +1104,6 @@ export const hasEverHadAttention = async (recipientUserId: unknown): Promise<boo
 // excluding true decisions and approvals.
 export const acknowledgeMention = acknowledgeAttention;
 
-export default { recordMentionedUsers, resolveMentionAttentionForReply, sweepResolvedMentionAttention, auditRepliedMentionAttention, sweepMissedAgentMentions, sweepDoneTaskHandoffs, recordApproval, recordActionApproval, recordDecision, recordTaskAttention, resolveTaskAttention, recordHostedMcpDrift, resolve, resolveActioned, resolveMany, getOpenQueue, hasEverHadAttention, acknowledgeAttention, acknowledgeMention };
+export default { recordMentionedUsers, resolveMentionAttentionForReply, sweepResolvedMentionAttention, auditRepliedMentionAttention, sweepMissedAgentMentions, sweepStaleBlockedAttention, sweepDoneTaskHandoffs, recordApproval, recordActionApproval, recordDecision, recordTaskAttention, resolveTaskAttention, recordHostedMcpDrift, resolve, resolveActioned, resolveMany, getOpenQueue, hasEverHadAttention, acknowledgeAttention, acknowledgeMention };
 // eslint-disable-next-line @typescript-eslint/no-require-imports
-module.exports = { recordMentionedUsers, resolveMentionAttentionForReply, sweepResolvedMentionAttention, auditRepliedMentionAttention, sweepMissedAgentMentions, AGENT_MENTION_MISSED_DAYS, sweepDoneTaskHandoffs, recordApproval, recordActionApproval, recordDecision, recordTaskAttention, resolveTaskAttention, recordHostedMcpDrift, resolve, resolveActioned, resolveMany, getOpenQueue, hasEverHadAttention, acknowledgeAttention, acknowledgeMention, TASK_HANDOFF_CANDIDATE_RE, isHandoffRequest, handoffRecipients };
+module.exports = { recordMentionedUsers, resolveMentionAttentionForReply, sweepResolvedMentionAttention, auditRepliedMentionAttention, sweepMissedAgentMentions, AGENT_MENTION_MISSED_DAYS, sweepStaleBlockedAttention, BLOCKED_STALE_DAYS, sweepDoneTaskHandoffs, recordApproval, recordActionApproval, recordDecision, recordTaskAttention, resolveTaskAttention, recordHostedMcpDrift, resolve, resolveActioned, resolveMany, getOpenQueue, hasEverHadAttention, acknowledgeAttention, acknowledgeMention, TASK_HANDOFF_CANDIDATE_RE, isHandoffRequest, handoffRecipients };

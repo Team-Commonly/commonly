@@ -510,13 +510,21 @@ class SchedulerService {
     const missedAgentMentionJob: CronJob = cron.schedule(
       '17 * * * *',
       async () => {
+        // eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
+        const { sweepMissedAgentMentions, sweepStaleBlockedAttention } = require('./attentionItemService');
         try {
-          // eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
-          const { sweepMissedAgentMentions } = require('./attentionItemService');
           const r = await sweepMissedAgentMentions();
           console.log(`[attention] missed-mention pass scanned=${r.scanned} eligible=${r.eligible} missed=${r.missed}`);
         } catch (error) {
           logOutboundFailure('[attention] missed-mention pass failed:', error);
+        }
+        // F648: an agent's [BLOCKED] post nobody answered in a week, same
+        // window. Its own try, so neither sweep's failure skips the other.
+        try {
+          const b = await sweepStaleBlockedAttention();
+          console.log(`[attention] stale-blocked pass eligible=${b.eligible} aged=${b.aged}`);
+        } catch (error) {
+          logOutboundFailure('[attention] stale-blocked pass failed:', error);
         }
       },
       { scheduled: false, timezone: 'UTC' },

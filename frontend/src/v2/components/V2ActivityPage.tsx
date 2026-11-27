@@ -432,7 +432,16 @@ const V2ActivityPage: React.FC = () => {
   const [settledQueueDecisions, setSettledQueueDecisions] = useState<Record<string, NeedsYouItem>>({});
   const [queue, setQueue] = useState<NeedsYouItem[]>([]);
   const queueRef = useRef<NeedsYouItem[]>([]);
-  const [queueCount, setQueueCount] = useState<number | null>(null);
+  const [serverQueueCount, setQueueCount] = useState<number | null>(null);
+  // F648: a card ruled here leaves Needs you at once, so the count drops with
+  // it rather than waiting for the refetch. Only rows still in the loaded queue
+  // are subtracted, so a refetch that has already dropped the row (or a slow or
+  // stale one that still carries it) gives the same number.
+  const queueCount = useMemo(() => {
+    if (serverQueueCount === null) return null;
+    const ruledHere = queue.filter((item) => item.kind === 'decision' && ruledDecisions[item.id]).length;
+    return Math.max(serverQueueCount - ruledHere, 0);
+  }, [serverQueueCount, queue, ruledDecisions]);
   const [queueCountsByPod, setQueueCountsByPod] = useState<Record<string, number>>({});
   const [queueRemaining, setQueueRemaining] = useState(0);
   // True while another page is expected to load itself. The way-back control
@@ -719,8 +728,6 @@ const V2ActivityPage: React.FC = () => {
           return;
         }
         setQueueFailed(false);
-        setQueueCount(queueResponse!.data.count);
-        setQueueCountsByPod(queueResponse!.data.countsByPod || {});
         const mapQueueItems = (items: QueueResponse['items']) => items.map((item) => ({
           ...item,
           detail: item.detail || '',
@@ -750,10 +757,19 @@ const V2ActivityPage: React.FC = () => {
             ? nextResponse.data.remaining
             : Math.max((nextResponse.data?.count || 0) - nextOffset, 0);
         }
+        // The later pages were awaited after the check above, so a newer
+        // refresh may own the page by now; a superseded one publishes nothing.
+        if (!active) return;
         revalidationExtentRef.current = 0;
         revalidationScopeRef.current = null;
+        // The count and the queue are one pair: publish them together, only
+        // after every loaded page revalidated. A failed later page lands in the
+        // catch with the previous pair intact, so the F648 subtraction never
+        // takes the new count from the old rows.
         queueRef.current = queueItems;
         setQueue(queueItems);
+        setQueueCount(queueResponse!.data.count);
+        setQueueCountsByPod(queueResponse!.data.countsByPod || {});
         setQueueRemaining(Math.max(queueResponse!.data.count - queueItems.length, 0));
         setQueueAutoPending(Math.max(queueResponse!.data.count - queueItems.length, 0) > 0);
         // The initial destination is an account-level global fact computed by
@@ -1068,17 +1084,21 @@ const V2ActivityPage: React.FC = () => {
       .filter((ms) => Number.isFinite(ms));
     return times.length ? new Date(Math.max(...times)).toISOString() : null;
   }, [podId, settledQueueDecisions]);
+  // F648: Needs you holds only what still needs this person. A settled decision
+  // is history, so it renders under Decided, never in this list.
+  // A row ruled here leaves at once, before the queue refresh drops it.
   const visibleQueue = useMemo(() => {
-    const settled = Object.values(settledQueueDecisions)
-      .filter((item) => podId === 'all' || item.podId === podId)
-      .filter((item) => !queue.some((open) => open.id === item.id));
     // Ruling 66311: Needs you never folds and runs oldest waiting first —
-    // the ask that has waited longest sits at the top. Settled cards follow.
-    const open = [...queue].sort((a, b) => (
-      new Date(a.timestamp || 0).getTime() - new Date(b.timestamp || 0).getTime()
-    ));
-    return [...open, ...settled];
-  }, [podId, queue, settledQueueDecisions]);
+    // the ask that has waited longest sits at the top.
+    return queue
+      .filter((item) => !(item.kind === 'decision' && ruledDecisions[item.id]))
+      .sort((a, b) => (
+        new Date(a.timestamp || 0).getTime() - new Date(b.timestamp || 0).getTime()
+      ));
+  }, [queue, ruledDecisions]);
+  const decidedItems = useMemo(() => Object.values(settledQueueDecisions)
+    .filter((item) => podId === 'all' || item.podId === podId)
+    .filter((item) => !visibleQueue.some((open) => open.id === item.id)), [podId, visibleQueue, settledQueueDecisions]);
 
   const openPod = (targetPodId: string | null, messageId?: number | string) => {
     if (!targetPodId) return;
@@ -1089,7 +1109,10 @@ const V2ActivityPage: React.FC = () => {
         podId,
         recap,
         queue,
-        queueCount,
+        // The raw server count pairs with the raw queue; the restored page
+        // subtracts its own rulings again (F648), so the adjusted count would
+        // subtract them twice.
+        queueCount: serverQueueCount,
         queueRemaining,
         queueCountsByPod,
         replyDrafts,
@@ -1725,6 +1748,83 @@ const V2ActivityPage: React.FC = () => {
                     </button>
                   </div>
                 )}
+                {visibleQueue.length === 0 && queueMoreError && !queueFailed && (
+                  <div className="v2-activity__foot">
+                    <button type="button" className="v2p-b v2p-b-s v2p-b-sm v2-activity__queue-more" onClick={() => setReloadKey((value) => value + 1)}>{t('activity.needsYou.retry', { defaultValue: 'Retry' })}</button>
+                  </div>
+                )}
+              </section>
+
+              {/* F648: a ruled decision is history, not something that needs you. */}
+              {(decidedItems.length > 0 || historyRemaining > 0 || historyMoreError) && (
+              <section className="v2-activity__section v2-activity__decided" aria-labelledby="activity-decided">
+                <div className="v2-activity__gtitle">
+                  <ShellGlyph name="check" size={13} />
+                  <h2 id="activity-decided">{t('activity.decided.title')}</h2>
+                  {decidedItems.length > 0 && <span className="v2-activity__gtitle-r">{decidedItems.length}</span>}
+                </div>
+                <div className="v2-activity__list v2-activity__queue">
+                  {/* The settled-card markup Needs you rendered before F648, element for
+                      element, so the v2-activity__queue-* CSS still applies. */}
+                  {decidedItems.map((item) => {
+                    const ruled = ruledDecisions[item.id];
+                    const titleId = `${rowDomId(item)}-title`;
+                    return (
+                      <article key={item.id} data-activity-item-id={item.id} data-attention-id={item.attentionItemId} tabIndex={-1} className={`v2-activity__queue-row v2-activity__queue-row--${item.kind}${ruled ? ' v2-activity__queue-row--settled' : ''}`}>
+                        <span className="v2-activity__queue-mark" role="img" aria-label={t(`activity.needsYou.kinds.${item.kind}`)} title={t(`activity.needsYou.kinds.${item.kind}`)}>
+                          <KindGlyph kind={item.kind} />
+                        </span>
+                        <div className="v2-activity__queue-copy">
+                          <div className="v2-activity__queue-line">
+                            <strong id={titleId} className="v2-activity__queue-name">{item.title}</strong>
+                            <span className="v2-activity__queue-meta">{shortPodName(item.podName)}{item.timestamp ? ` · ${relativeTime(item.timestamp)}` : ''}</span>
+                          </div>
+                          {item.detail && (
+                            <button
+                              type="button"
+                              className={`v2-activity__queue-detail${expandedDetailIds.has(item.id) ? ' v2-activity__queue-detail--expanded' : ''}${dismissedDetailIds.has(item.id) ? ' v2-activity__queue-detail--dismissed' : ''}`}
+                              aria-expanded={expandedDetailIds.has(item.id)}
+                              onClick={() => {
+                                const collapsing = expandedDetailIds.has(item.id);
+                                setExpandedDetailIds((current) => {
+                                  const next = new Set(current);
+                                  if (next.has(item.id)) next.delete(item.id);
+                                  else next.add(item.id);
+                                  return next;
+                                });
+                                setDismissedDetailIds((current) => {
+                                  const next = new Set(current);
+                                  if (collapsing) next.add(item.id);
+                                  else next.delete(item.id);
+                                  return next;
+                                });
+                              }}
+                              onBlur={() => setDismissedDetailIds((current) => {
+                                if (!current.has(item.id)) return current;
+                                const next = new Set(current);
+                                next.delete(item.id);
+                                return next;
+                              })}
+                            >
+                              {item.detail}
+                            </button>
+                          )}
+                          {ruled && (
+                            <span className="v2-activity__decision-ruled" role="status">
+                              {t(ruled.reason ? 'activity.decision.ruledWithReason' : 'activity.decision.ruled', ruled)}
+                            </span>
+                          )}
+                          {actionErrorItemId === item.id && actionError && (
+                            <div className="v2-activity__row-action-error v2-activity__action-error" role="alert">{actionError}</div>
+                          )}
+                        </div>
+                        <div className="v2-activity__acts">
+                          {primaryKey(item)}
+                        </div>
+                      </article>
+                    );
+                  })}
+                </div>
                 {(historyRemaining > 0 || historyMoreError) && (
                   <div className="v2-activity__foot">
                     <button
@@ -1742,12 +1842,8 @@ const V2ActivityPage: React.FC = () => {
                     </button>
                   </div>
                 )}
-                {visibleQueue.length === 0 && queueMoreError && !queueFailed && (
-                  <div className="v2-activity__foot">
-                    <button type="button" className="v2p-b v2p-b-s v2p-b-sm v2-activity__queue-more" onClick={() => setReloadKey((value) => value + 1)}>{t('activity.needsYou.retry', { defaultValue: 'Retry' })}</button>
-                  </div>
-                )}
               </section>
+              )}
 
               <section className="v2-activity__section v2-activity__moved" aria-labelledby="activity-moved-forward">
                 <div className="v2-activity__gtitle">
