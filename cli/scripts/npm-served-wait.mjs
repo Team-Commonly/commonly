@@ -123,10 +123,11 @@ export const waitForNpmServed = async ({
  * timeout-minutes are what bound that case.
  */
 export const npmBinFor = (platform = process.platform) => (platform === 'win32' ? 'npm.cmd' : 'npm');
-export const runNpm = (bin, args) => {
+// `spawn` and `platform` are seams for tests only.
+export const runNpm = (bin, args, { spawn = spawnSync, platform = process.platform } = {}) => {
   const options = { encoding: 'utf8', timeout: CALL_TIMEOUT_MS, stdio: ['ignore', 'pipe', 'pipe'], windowsHide: true };
-  const result = process.platform === 'win32'
-    ? spawnSync('cmd.exe', ['/d', '/s', '/c', `"${bin} ${args.join(' ')}"`], { ...options, windowsVerbatimArguments: true })
-    : spawnSync(bin, args, options);
+  const result = platform === 'win32'
+    ? spawn('cmd.exe', ['/d', '/s', '/c', `"${bin} ${args.join(' ')}"`], { ...options, windowsVerbatimArguments: true })
+    : spawn(bin, args, options);
   return { status: result.status ?? 1, stdout: result.stdout || '', stderr: result.stderr || String(result.error?.message || '') };
 };

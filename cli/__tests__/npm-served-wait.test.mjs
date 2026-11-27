@@ -2,7 +2,9 @@ import { readFileSync } from 'fs';
 import { dirname, resolve } from 'path';
 import { fileURLToPath } from 'url';
 
-import { CALL_TIMEOUT_MS, npmWaitSettings, waitForNpmServed } from '../scripts/npm-served-wait.mjs';
+import {
+  CALL_TIMEOUT_MS, npmWaitSettings, runNpm, waitForNpmServed,
+} from '../scripts/npm-served-wait.mjs';
 
 const SCRIPTS = resolve(dirname(fileURLToPath(import.meta.url)), '..', 'scripts');
 const PKG = '@commonlyai/cli';
@@ -100,6 +102,20 @@ describe('the env settings', () => {
   });
   test('a call is cut off at 30 s', () => {
     expect(CALL_TIMEOUT_MS).toBe(30_000);
+  });
+  // The real runner, with spawnSync replaced: every npm call it makes carries
+  // the cut-off, on POSIX and through cmd.exe on Windows.
+  test.each(['linux', 'win32'])('runNpm passes the 30 s cut-off to the spawn on %s', (platform) => {
+    const spawns = [];
+    const spawn = (cmd, args, options) => {
+      spawns.push({ cmd, args, options });
+      return { status: 0, stdout: '0.1.403\n', stderr: '' };
+    };
+    const result = runNpm(platform === 'win32' ? 'npm.cmd' : 'npm', ['view', PKG, 'version'], { spawn, platform });
+    expect(result).toEqual({ status: 0, stdout: '0.1.403\n', stderr: '' });
+    expect(spawns).toHaveLength(1);
+    expect(spawns[0].options.timeout).toBe(30_000);
+    expect(spawns[0].cmd).toBe(platform === 'win32' ? 'cmd.exe' : 'npm');
   });
 });
 
