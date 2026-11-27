@@ -68,6 +68,17 @@ describe('mcp grants 500s', () => {
     expectFixed(res, 500, { error: 'broker_error', message: 'Tool call failed' });
   });
 
+  // F680: the twin of the MCP tools/call case in mcpGrants.test.js.
+  it('cli: a driver error thrown by the tool call answers fixed text and logs the cause', async () => {
+    mockListToolsForGrant.mockResolvedValue([{ name: 'github.get_pull_request' }]);
+    mockReserveBudgetLineage.mockResolvedValue(true);
+    mockCallTool.mockRejectedValue(new Error(DRIVER_TEXT));
+    const res = await request(app).post('/api/mcp/grants/g1/cli')
+      .send({ operation: 'pr.view', args: { pullNumber: 12 } });
+    expectFixed(res, 500, { error: 'broker_error', message: 'Tool call failed' });
+    expect(JSON.stringify(errorSpy.mock.calls)).toContain('MCP grant call failed:');
+  });
+
   it('cli: an error with its own statusCode keeps its status and message', async () => {
     mockListToolsForGrant.mockRejectedValue(Object.assign(new Error('Grant revoked'), { statusCode: 403, code: 'grant_revoked' }));
     const res = await request(app).post('/api/mcp/grants/g1/cli')

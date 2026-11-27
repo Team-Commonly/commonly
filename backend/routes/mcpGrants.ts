@@ -7,6 +7,7 @@ import { callTool, listToolsForGrant } from '../services/toolBrokerService';
 import { agentFacingRefusal } from '../services/agentFacingRefusal';
 import { PENDING_APPROVAL_NOTE, untrustedConnectorMarker } from '../services/brokerResultMarker';
 import { isLimitedUseTool } from '../services/limitedUseConnectors';
+import { HostedMcpCredentialError, type HostedMcpCredentialErrorCode } from '../services/hostedMcpCredentialError';
 import { reserveBudgetLineage } from '../models/ToolCall';
 
 // The SDK is CommonJS-compatible, but its package exports use subpath entry
@@ -80,15 +81,102 @@ const untrustedField = (title: string | undefined): { untrusted?: string } => (
   title ? { untrusted: untrustedConnectorMarker(title) } : {}
 );
 
-// A typed refusal (a RoomGrantError carries a statusCode) is written for the
-// agent and keeps its message. An error with no statusCode is a driver's or a
-// transport's: fixed text to the agent, the cause to the server log.
-const replyBrokerFailure = (res: any, error: unknown, statusCode: unknown, label: string) => {
+/**
+ * Every HostedMcpCredentialError code, as an agent may read it (F680). Never
+ * the error's own message: `refresh_unreachable` can wrap a raw refresh error.
+ *
+ * Statuses follow `executionErrorOutcome`'s split. The two refusals take 403,
+ * the status the broker already gives these same codes when it raises them as
+ * a RoomGrantError (`hostedMcpToolDefinitions` assess, the connection checks
+ * in `toolBrokerService`), so one code never answers with two statuses. The
+ * failures take 502, as a typed `provider_error` does: the upstream side of
+ * the call failed, not the agent's request.
+ */
+const CREDENTIAL_FAILURES: Record<HostedMcpCredentialErrorCode, { status: number; message: string }> = {
+  reconnect_required: {
+    status: 403,
+    message: 'This connection needs its owner to reconnect it in Commonly.',
+  },
+  connection_mismatch: {
+    status: 403,
+    message: 'This connection is no longer connected or was removed. '
+      + 'Ask the person who connected it to check it in Commonly.',
+  },
+  credential_missing: {
+    status: 502,
+    message: 'This connection’s access has expired and cannot be renewed. Its owner needs to reconnect it in Commonly.',
+  },
+  connection_error: {
+    status: 502,
+    message: 'The provider refused to renew this connection’s access. Its owner needs to reconnect it in Commonly.',
+  },
+  refresh_unreachable: {
+    status: 502,
+    message: 'The provider could not renew this connection’s access just now. Try the call again later.',
+  },
+  credential_refreshing: {
+    status: 502,
+    message: 'Another call is renewing this connection’s access. Try the call again shortly.',
+  },
+};
+
+const credentialFailureOf = (error: unknown): { status: number; message: string } | undefined => {
+  if (!(error instanceof HostedMcpCredentialError)) return undefined;
+  return Object.prototype.hasOwnProperty.call(CREDENTIAL_FAILURES, error.code)
+    ? CREDENTIAL_FAILURES[error.code] : undefined;
+};
+
+interface BrokerFailure {
+  status: number;
+  /** Set only on a typed failure whose message may hold the provider's words. */
+  untrustedTitle?: string;
+  payload: Record<string, unknown>;
+}
+
+/**
+ * What an agent is told when a broker call throws, on REST and MCP alike (F680).
+ *
+ * A typed refusal (a RoomGrantError or SeatPushError carries a statusCode) is
+ * written for the agent and keeps its message; a typed provider failure
+ * (`provider_error`, 502) also carries the untrusted marker, because the
+ * definition put the vendor's words in it on purpose.
+ *
+ * An error with no statusCode is a driver's, a transport's or an unwrapped
+ * library error: fixed text to the agent, the cause to the server log. That
+ * holds even when `callTool` stamped `untrustedSourceTitle` on it. The stamp
+ * only says the error was thrown during the provider call; nothing vetted its
+ * message, which can name a host, a path or a request URL of ours (a fetch
+ * failure, or a HostedMcpCredentialError wrapping a refresh error's message).
+ * The marker tells an agent the text is not instructions, not that it carries
+ * nothing internal. Vendor text meant for the agent arrives typed.
+ *
+ * One untyped class is answered by code: a HostedMcpCredentialError is how an
+ * agent learns the owner must reconnect, so it keeps its code with the fixed
+ * text below, and its message is only logged. An unknown code falls through to
+ * the fixed broker_error text.
+ */
+const brokerFailure = (error: unknown, label: string): BrokerFailure => {
+  const statusCode = (error as { statusCode?: unknown } | null)?.statusCode;
   if (typeof statusCode === 'number') {
-    return res.status(statusCode).json({ ...untrustedField(untrustedTitleOf(error)), ...errorPayload(error) });
+    return { status: statusCode, untrustedTitle: untrustedTitleOf(error), payload: errorPayload(error) };
   }
   logOutboundFailure(label, error);
-  return res.status(500).json({ error: 'broker_error', message: 'Tool call failed' });
+  const credential = credentialFailureOf(error);
+  if (credential) {
+    return {
+      status: credential.status,
+      // The text is ours, but the marker is kept for any typed answer to a
+      // provider call, so the agent meets one rule for the same stamp.
+      untrustedTitle: untrustedTitleOf(error),
+      payload: { error: (error as HostedMcpCredentialError).code, message: credential.message },
+    };
+  }
+  return { status: 500, payload: { error: 'broker_error', message: 'Tool call failed' } };
+};
+
+const replyBrokerFailure = (res: any, error: unknown, label: string) => {
+  const failure = brokerFailure(error, label);
+  return res.status(failure.status).json({ ...untrustedField(failure.untrustedTitle), ...failure.payload });
 };
 
 // This host-seat surface is deliberately smaller than the grant's MCP tool
@@ -148,7 +236,7 @@ router.post('/:grantId/push', brokerRateLimit, agentRuntimeAuth, async (
       tool: 'github.push_branch', args });
     return res.json({ callId: result.callId, outcome: result.outcome, result: result.result });
   } catch (error) {
-    const e = error as { statusCode?: number; code?: string; details?: { approvalId?: string } };
+    const e = error as { code?: string; details?: { approvalId?: string } };
     // Every push parks for the owner (TASK-783). The shipped git remote helper
     // prints `error` for any non-200 answer, so it names the wait, not a fault.
     if (e.code === 'approval_required') {
@@ -159,7 +247,7 @@ router.post('/:grantId/push', brokerRateLimit, agentRuntimeAuth, async (
         message: PENDING_APPROVAL_NOTE,
       });
     }
-    return replyBrokerFailure(res, error, e.statusCode, 'MCP grant call failed:');
+    return replyBrokerFailure(res, error, 'MCP grant call failed:');
   }
 });
 
@@ -218,13 +306,13 @@ router.post('/:grantId/cli', brokerRateLimit, agentRuntimeAuth, async (req: expr
       result: response,
     });
   } catch (error) {
-    const e = error as { statusCode?: number; code?: string; details?: { approvalId?: string } };
+    const e = error as { code?: string; details?: { approvalId?: string } };
     if (e.code === 'approval_required') {
       return res.status(202).json({
         status: 'pending_approval', approvalId: e.details?.approvalId || null, message: PENDING_APPROVAL_NOTE,
       });
     }
-    return replyBrokerFailure(res, error, e.statusCode, 'MCP grant call failed:');
+    return replyBrokerFailure(res, error, 'MCP grant call failed:');
   }
 });
 
@@ -324,12 +412,13 @@ router.post('/:grantId', brokerRateLimit, agentRuntimeAuth, async (req: express.
           }) }],
         };
       }
-      const title = untrustedTitleOf(error);
+      // The same split REST makes (F680): see `brokerFailure`.
+      const failure = brokerFailure(error, 'MCP grant call failed:');
       return {
         isError: true,
         content: [
-          ...(title ? [{ type: 'text', text: untrustedConnectorMarker(title) }] : []),
-          { type: 'text', text: JSON.stringify(errorPayload(error)) },
+          ...(failure.untrustedTitle ? [{ type: 'text', text: untrustedConnectorMarker(failure.untrustedTitle) }] : []),
+          { type: 'text', text: JSON.stringify(failure.payload) },
         ],
       };
     }
