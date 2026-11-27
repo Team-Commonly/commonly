@@ -161,8 +161,14 @@ export const createServer = (config, {
   handle.connect = async (transport) => {
     if (events) {
       server.onclose = () => handle.events.stop();
+      // Wrap the transport after the SDK sets its callbacks and before it starts
+      // reading, so a request delivered from start() is tracked too.
+      const start = transport.start.bind(transport);
+      transport.start = async () => {
+        markModernResults(transport);
+        return start();
+      };
       await server.connect(transport);
-      markModernResults(transport);
       return;
     }
     if (!channel) {

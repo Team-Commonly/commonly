@@ -337,6 +337,24 @@ export const createEventsHub = ({
     return delivered.has(id);
   };
 
+  // One ordered path for everything that takes a cursor position or reads
+  // the replay buffer into a stream: a live or held write, and a resuming
+  // stream's replay plus its registration. Without it, two writes could take
+  // the same cursor, or an event committed during a replay could reach the
+  // other streams but not the resuming one, whose heartbeat cursor then
+  // passes it.
+  //
+  // One path assumes one transport (stdio today): a slow replay to one stream
+  // delays live writes to the others. If an HTTP transport with independent
+  // clients is added, the replay should run outside this lock, and only the
+  // catch-up past the replay and the registration inside it.
+  let ordered = Promise.resolve();
+  const inOrder = (fn) => {
+    const run = ordered.then(fn);
+    ordered = run.catch(() => {});
+    return run;
+  };
+
   const cursorAt = (position) => `${epoch}:${position}`;
   const parseCursor = (cursor) => {
     if (cursor === undefined || cursor === null) return { from: seq, truncated: false };
@@ -392,6 +410,7 @@ export const createEventsHub = ({
         _meta: { [SUBSCRIPTION_ID]: stream.id },
       },
     });
+    stream.last = Math.max(stream.last, entry.seq);
     stream.beat();
   };
 
@@ -401,12 +420,21 @@ export const createEventsHub = ({
    * fails is closed: it is broken, and the client reopens it from its cursor.
    */
   const writeToStreams = async (occurrence) => {
-    const targets = [...streams].filter((stream) => matches(stream, occurrence));
-    if (!targets.length) return { targets: 0, written: 0 };
     const id = occurrence.eventId;
+    // A write of this id is already queued or in flight (a drain and a
+    // redelivery, or two drains, passed their checks together): share its
+    // outcome rather than write it twice.
+    if (writing.has(id)) return writing.get(id);
+    if (![...streams].some((stream) => matches(stream, occurrence))) return { targets: 0, written: 0 };
     remember(id);
-    let settle;
-    writing.set(id, new Promise((resolve) => { settle = resolve; }));
+    const run = inOrder(() => writeInOrder(occurrence, id));
+    writing.set(id, run.catch(() => ({ targets: 0, written: 0 })));
+    return run;
+  };
+
+  const writeInOrder = async (occurrence, id) => {
+    // Chosen once it is this write's turn: the streams open now.
+    const targets = [...streams].filter((stream) => matches(stream, occurrence));
     const entry = { seq: seq + 1, occurrence };
     let written = 0;
     try {
@@ -430,7 +458,6 @@ export const createEventsHub = ({
         delivered.delete(id);
       }
       writing.delete(id);
-      settle();
     }
     return { targets: targets.length, written };
   };
@@ -475,12 +502,18 @@ export const createEventsHub = ({
         held.delete(id);
       } else if (occurrence && [...streams].some((stream) => matches(stream, occurrence))) {
         // eslint-disable-next-line no-await-in-loop
-        const { written } = await writeToStreams(occurrence);
+        const { targets, written } = await writeToStreams(occurrence);
         if (written) {
           held.delete(id);
           say(`delivered held ${occurrence.name} ${id} to ${written} stream(s)`);
           // eslint-disable-next-line no-await-in-loop
           await ack(event, { outcome: 'acknowledged', reason: 'delivered as an MCP event' });
+        } else if (targets) {
+          // Every write failed, as in deliver: hand it back now rather than
+          // leave it to the lease.
+          held.delete(id);
+          // eslint-disable-next-line no-await-in-loop
+          await release([event]);
         }
       }
     }
@@ -605,14 +638,25 @@ export const createEventsHub = ({
     const id = extra.requestId;
     const heartbeatMs = grantHeartbeat(params.heartbeatMs);
     const { from, truncated } = parseCursor(params.cursor);
-    const send = (notification) => extra.sendNotification(notification);
+    let closed = false;
+    // The SDK fulfils a notification on a cancelled request without sending
+    // it, so a write to a closed stream must fail here, not count as written.
+    const send = (notification) => (closed
+      ? Promise.reject(new Error('the stream is closed'))
+      : extra.sendNotification(notification));
 
     return new Promise((resolve) => {
       let beatTimer = null;
+      // `last` is the highest cursor written to this stream, starting at its
+      // resume point. A cursor sent to the client never passes an event that
+      // the stream has not received yet: until it is registered (during the
+      // replay) it is `last`; after that the head, since every later write
+      // includes it.
+      let registered = false;
       const stream = {
-        id, name: type.name, args, send, beat: () => {},
+        id, name: type.name, args, send, beat: () => {}, last: from,
       };
-      let closed = false;
+      const cursorNow = () => cursorAt(registered ? Math.max(seq, stream.last) : stream.last);
       const close = (graceful) => {
         if (closed) return;
         closed = true;
@@ -624,9 +668,10 @@ export const createEventsHub = ({
       };
       stream.close = close;
       stream.beat = () => {
+        if (closed) return;
         if (beatTimer) clearTimeout(beatTimer);
         beatTimer = setTimeout(() => {
-          send({ method: 'notifications/events/heartbeat', params: { cursor: cursorAt(seq), _meta: { [SUBSCRIPTION_ID]: id } } })
+          send({ method: 'notifications/events/heartbeat', params: { cursor: cursorNow(), _meta: { [SUBSCRIPTION_ID]: id } } })
             .then(() => stream.beat(), () => close(false));
         }, heartbeatMs);
         beatTimer.unref?.();
@@ -637,21 +682,45 @@ export const createEventsHub = ({
         await send({
           method: 'notifications/events/active',
           params: {
-            cursor: cursorAt(seq), truncated, heartbeatMs, _meta: { [SUBSCRIPTION_ID]: id },
+            // The resume point: the replay that follows starts after it.
+            cursor: cursorAt(from), truncated, heartbeatMs, _meta: { [SUBSCRIPTION_ID]: id },
           },
         });
         const floor = typeof params.maxAgeMs === 'number' && params.cursor ? now() - params.maxAgeMs : null;
-        const replay = buffer.filter((entry) => entry.seq > from && matches(stream, entry.occurrence)
-          && (floor === null || Date.parse(entry.occurrence.timestamp) >= floor));
-        for (const entry of replay) {
-          // eslint-disable-next-line no-await-in-loop
-          await writeEvent(stream, entry);
-        }
-        if (closed || extra.signal.aborted || !running) {
+        // Replay and registration take the ordered path, so no event can be
+        // written to the other streams between the replay and streams.add.
+        const outcome = await inOrder(async () => {
+          const replay = buffer.filter((entry) => entry.seq > from && matches(stream, entry.occurrence)
+            && (floor === null || Date.parse(entry.occurrence.timestamp) >= floor));
+          for (const entry of replay) {
+            // eslint-disable-next-line no-await-in-loop
+            await writeEvent(stream, entry);
+          }
+          if (closed || extra.signal.aborted || !running) return 'closed';
+          // A 401 that landed during the awaits above: terminateAll did not
+          // see this stream, so it gets the termination notice here.
+          if (refused) return 'refused';
+          streams.add(stream);
+          registered = true;
+          return 'open';
+        });
+        if (outcome === 'closed') {
           close(!running);
           return;
         }
-        streams.add(stream);
+        if (outcome === 'refused') {
+          try {
+            await send({
+              method: 'notifications/events/terminated',
+              params: {
+                error: { code: FORBIDDEN, message: 'Forbidden', data: { reason: refused } },
+                _meta: { [SUBSCRIPTION_ID]: id },
+              },
+            });
+          } catch { /* the stream is gone either way */ }
+          close(true);
+          return;
+        }
         stream.beat();
         say(`stream ${id} open for ${type.name}`);
         await drainHeld();

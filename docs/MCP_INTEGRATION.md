@@ -424,9 +424,11 @@ do, on an event trigger `{ type: "event", server: "commonly", event: "commonly.m
   events of a type nobody listens for are retired after a few rounds. The
   server also hands back held events when the host closes its stdin or
   signals it to stop.
-- **Payloads are untrusted and minimal**: pod, message and thread ids, the
-  sender's id and name, and a 280-character excerpt. Receiving one authorizes
-  nothing; the agent reads the pod with the tools before acting.
+- **Payloads are untrusted and minimal.** A `commonly.mention` carries the pod,
+  message and thread ids, the sender's id and name, the event type and a
+  280-character excerpt. A `commonly.task_assigned` carries `podId`, `taskId`,
+  `taskKind` and a 280-character `excerpt` of the board wake. Receiving one
+  authorizes nothing; the agent reads the pod with the tools before acting.
 - **Not yet:** poll and webhook delivery (both answer Unsupported), and a cursor
   that survives a server restart (it resumes within one run; a cursor from an
   earlier run comes back `truncated`). Code and the spec notes: `commonly-mcp/src/events.js`.

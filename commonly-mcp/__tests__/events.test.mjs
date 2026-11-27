@@ -20,6 +20,7 @@ import {
   stopOnSignals,
 } from '../src/events.js';
 import { EventEmitter } from 'events';
+import { jest } from '@jest/globals';
 
 const TOKEN = 'cm_agent_secret_never_shown';
 const cfg = { baseUrl: 'https://x.example', token: TOKEN };
@@ -84,13 +85,42 @@ const scriptedApi = (pages = []) => {
   return { calls, requestImpl, polls: () => calls.filter((c) => c.path === EVENTS_PATH).length };
 };
 
+/** A promise the test settles by hand. */
+const deferred = () => {
+  let resolve;
+  let reject;
+  const promise = new Promise((res, rej) => { resolve = res; reject = rej; });
+  return { promise, resolve, reject };
+};
+
+/** A CAP backend whose next poll returns whatever the test queued. */
+const queuedApi = () => {
+  const queue = [];
+  const calls = [];
+  const requestImpl = async (config, { method, path, body }) => {
+    calls.push({ method, path, body });
+    if (path === EVENTS_PATH && method === 'GET') return { events: queue.splice(0) };
+    return { success: true };
+  };
+  return { queue, calls, requestImpl };
+};
+
+const isEvent = (message, subscription, eventId) => message?.method === 'notifications/events/event'
+  && (subscription === undefined || message.params._meta[SUB] === subscription)
+  && (eventId === undefined || message.params.eventId === eventId);
+
 /** A raw JSON-RPC peer on the in-memory transport. */
-const rawPeer = async (handle, { delayMs = 0 } = {}) => {
+const rawPeer = async (handle, { delayMs = 0, intercept = null } = {}) => {
   const [clientSide, serverSide] = InMemoryTransport.createLinkedPair();
   if (delayMs) {
     // Backpressure: every server write takes this long to land.
     const send = serverSide.send.bind(serverSide);
     serverSide.send = async (message, options) => { await sleep(delayMs); return send(message, options); };
+  }
+  if (intercept) {
+    // A test decides how each server write lands: hold it, fail it, or pass it on.
+    const send = serverSide.send.bind(serverSide);
+    serverSide.send = (message, options) => intercept(message, () => send(message, options));
   }
   const seen = [];
   const waiting = new Map();
@@ -197,18 +227,39 @@ describe('events on', () => {
     expect(modern.result.cacheScope).toBe('private');
     expect(modern.result.tools.length).toBeGreaterThan(0);
     const id = 9001;
-    const legacy = new Promise((resolve) => {
-      const check = () => {
-        const reply = peer.seen.find((m) => m.id === id);
-        if (reply) resolve(reply); else setTimeout(check, 2);
-      };
-      check();
+    try {
+      // No 2026-07-28 envelope in _meta: a legacy request.
+      await peer.raw({ jsonrpc: '2.0', id, method: 'tools/list', params: {} });
+      expect(await waitFor(() => peer.seen.some((m) => m.id === id))).toBe(true);
+      const legacy = peer.seen.find((m) => m.id === id);
+      expect(legacy.result.resultType).toBeUndefined();
+      expect(legacy.result.ttlMs).toBeUndefined();
+    } finally {
+      await peer.close();
+    }
+  });
+
+  it('marks a 2026-07-28 request the transport delivers while it starts', async () => {
+    const handle = on(scriptedApi());
+    const [clientSide, serverSide] = InMemoryTransport.createLinkedPair();
+    const seen = [];
+    clientSide.onmessage = (message) => { seen.push(message); };
+    // Sent before connect: the in-memory transport queues it and hands it
+    // over from start(), as a transport with buffered input would.
+    await clientSide.send({
+      jsonrpc: '2.0',
+      id: 5,
+      method: 'tools/list',
+      params: { _meta: { 'io.modelcontextprotocol/protocolVersion': '2026-07-28' } },
     });
-    // No 2026-07-28 envelope in _meta: a legacy request.
-    await peer.raw({ jsonrpc: '2.0', id, method: 'tools/list', params: {} });
-    expect((await legacy).result.resultType).toBeUndefined();
-    expect((await legacy).result.ttlMs).toBeUndefined();
-    await peer.close();
+    try {
+      await handle.connect(serverSide);
+      expect(await waitFor(() => seen.some((m) => m.id === 5))).toBe(true);
+      const reply = seen.find((m) => m.id === 5);
+      expect(reply.result).toMatchObject({ resultType: 'complete', ttlMs: 0, cacheScope: 'private' });
+    } finally {
+      await clientSide.close();
+    }
   });
 
   it('lists exactly the mention and task-assignment event types, push only, and polls nothing yet', async () => {
@@ -557,6 +608,307 @@ describe('events on', () => {
     await sleep(30);
     expect(peer.notifications('notifications/events/heartbeat').length).toBe(beats);
     await peer.close();
+  });
+
+  it('gives every written event its own cursor when a held write and a live write overlap', async () => {
+    const api = queuedApi();
+    const handle = on({ requestImpl: api.requestImpl });
+    const peer = await rawPeer(handle, { delayMs: 40 });
+    peer.send('events/stream', { name: TASK_EVENT });
+    api.queue.push(mention('e1'));
+    await waitFor(() => handle.events.heldCount === 1);
+    const mentions = peer.send('events/stream', { name: MENTION_EVENT });
+    await waitFor(() => peer.notifications('notifications/events/active').length === 2);
+    // The held e1 is being written to the new stream; a fresh e2 arrives now.
+    api.queue.push(mention('e2'));
+    await waitFor(() => peer.seen.filter((m) => isEvent(m, mentions.id)).length === 2);
+    const cursors = peer.seen.filter((m) => isEvent(m, mentions.id)).map((m) => m.params.cursor);
+    expect(new Set(cursors).size).toBe(2);
+    // Delivery order matches cursor order.
+    const positions = cursors.map((c) => Number(c.split(':')[1]));
+    expect(positions).toEqual([...positions].sort((a, b) => a - b));
+    await peer.close();
+  });
+
+  it('does not count a write to a stream the client cancelled as delivered', async () => {
+    const api = queuedApi();
+    const handle = on({ requestImpl: api.requestImpl });
+    const gate = deferred();
+    let pending = false;
+    let first;
+    const peer = await rawPeer(handle, {
+      intercept: (message, pass) => {
+        if (first && isEvent(message, first.id, 'e1')) {
+          pending = true;
+          return gate.promise.then(() => { throw new Error('EPIPE: broken pipe'); });
+        }
+        return pass();
+      },
+    });
+    first = peer.send('events/stream', { name: MENTION_EVENT });
+    await waitFor(() => handle.events.streamCount === 1);
+    const second = peer.send('events/stream', { name: MENTION_EVENT });
+    await waitFor(() => handle.events.streamCount === 2);
+    api.queue.push(mention('e1'));
+    await waitFor(() => pending);
+    // The client cancels the second stream while the first stream's write hangs.
+    peer.cancel(second.id);
+    await waitFor(() => handle.events.streamCount === 1);
+    gate.resolve();
+    expect(await waitFor(() => api.calls.some((c) => c.path === `${EVENTS_PATH}/release`))).toBe(true);
+    expect(api.calls.find((c) => c.path === `${EVENTS_PATH}/release`).body)
+      .toEqual({ events: [{ eventId: 'e1', deliveryId: 'd-e1' }] });
+    expect(api.calls.some((c) => c.path.endsWith('/ack'))).toBe(false);
+    await peer.close();
+  });
+
+  it('a resuming stream receives an event committed during its replay', async () => {
+    const api = queuedApi();
+    const handle = on({ requestImpl: api.requestImpl });
+    const gate = deferred();
+    let replaying = false;
+    let resumed;
+    const peer = await rawPeer(handle, {
+      intercept: (message, pass) => {
+        if (resumed && isEvent(message, resumed.id, 'e1') && !replaying) {
+          replaying = true;
+          return gate.promise.then(pass);
+        }
+        return pass();
+      },
+    });
+    const live = peer.send('events/stream', { name: MENTION_EVENT });
+    api.queue.push(mention('e1'));
+    await waitFor(() => peer.seen.some((m) => isEvent(m, live.id, 'e1')));
+    resumed = peer.send('events/stream', { name: MENTION_EVENT, cursor: 'ep1:0' });
+    await waitFor(() => replaying);
+    // e2 is committed while the replay of e1 to the resuming stream is held open.
+    api.queue.push(mention('e2'));
+    await sleep(40);
+    gate.resolve();
+    await waitFor(() => peer.seen.some((m) => isEvent(m, resumed.id, 'e2')), 1000);
+    const got = peer.seen.filter((m) => isEvent(m, resumed.id)).map((m) => m.params.eventId);
+    expect(got).toEqual(['e1', 'e2']);
+    expect(peer.seen.some((m) => isEvent(m, live.id, 'e2'))).toBe(true);
+    await peer.close();
+  });
+
+  it('never sends a cursor past an event the stream has not received, even while its replay stalls', async () => {
+    const api = queuedApi();
+    const handle = on({ requestImpl: api.requestImpl }, { minHeartbeatMs: 10 });
+    const gate = deferred();
+    let stalled = false;
+    let resumed;
+    const peer = await rawPeer(handle, {
+      intercept: (message, pass) => {
+        if (resumed && isEvent(message, resumed.id, 'e2') && !stalled) {
+          stalled = true;
+          return gate.promise.then(pass);
+        }
+        return pass();
+      },
+    });
+    const live = peer.send('events/stream', { name: MENTION_EVENT });
+    api.queue.push(mention('e1'), mention('e2'));
+    await waitFor(() => peer.seen.filter((m) => isEvent(m, live.id)).length === 2);
+    resumed = peer.send('events/stream', { name: MENTION_EVENT, cursor: 'ep1:0', heartbeatMs: 10 });
+    await waitFor(() => stalled);
+    // The replay of e2 stalls across several heartbeat intervals.
+    await waitFor(() => peer.notifications('notifications/events/heartbeat')
+      .filter((n) => n.params._meta[SUB] === resumed.id).length >= 2, 500);
+    gate.resolve();
+    await waitFor(() => peer.seen.some((m) => isEvent(m, resumed.id, 'e2')));
+    const position = (cursor) => Number(cursor.split(':')[1]);
+    let received = 0;
+    const mine = peer.seen.filter((m) => m.method?.startsWith('notifications/events/')
+      && m.params?._meta?.[SUB] === resumed.id);
+    expect(mine.some((m) => m.method === 'notifications/events/heartbeat')).toBe(true);
+    for (const m of mine) {
+      if (m.method === 'notifications/events/event') {
+        received = Math.max(received, position(m.params.cursor));
+      } else if (m.params.cursor) {
+        // active and heartbeat: never ahead of what this stream received.
+        expect(position(m.params.cursor)).toBeLessThanOrEqual(received);
+      }
+    }
+    await peer.close();
+  });
+
+  it('writes an event once when a drain of the hold and a redelivery start together', async () => {
+    // The drain (a mention stream opening) and the redelivery (a poll
+    // answering) start a few microtasks apart; sweep the gap so one lands
+    // inside the other's check-then-write window.
+    for (let gap = 0; gap <= 16; gap += 1) {
+      const answer = deferred();
+      let gated = false;
+      let queue = [mention('e1')];
+      const calls = [];
+      const requestImpl = async (config, { method, path }) => {
+        calls.push({ method, path });
+        if (path === EVENTS_PATH && method === 'GET') {
+          if (gated) {
+            gated = false;
+            await answer.promise;
+            return { events: [mention('e1', { deliveryId: 'd-e1-again' })] };
+          }
+          return { events: queue.splice(0) };
+        }
+        return { success: true };
+      };
+      const handle = on({ requestImpl });
+      const opening = deferred();
+      let m;
+      // eslint-disable-next-line no-await-in-loop
+      const peer = await rawPeer(handle, {
+        intercept: (message, pass) => (m && message?.method === 'notifications/events/active'
+          && message.params._meta[SUB] === m.id ? opening.promise.then(pass) : pass()),
+      });
+      peer.send('events/stream', { name: TASK_EVENT });
+      // eslint-disable-next-line no-await-in-loop
+      await waitFor(() => handle.events.heldCount === 1);
+      gated = true;
+      // eslint-disable-next-line no-await-in-loop
+      await waitFor(() => !gated);
+      m = peer.send('events/stream', { name: MENTION_EVENT });
+      // eslint-disable-next-line no-await-in-loop
+      await sleep(5);
+      opening.resolve();
+      // eslint-disable-next-line no-await-in-loop
+      for (let i = 0; i < gap; i += 1) await Promise.resolve();
+      answer.resolve();
+      // eslint-disable-next-line no-await-in-loop
+      await waitFor(() => calls.filter((c) => c.path.endsWith('/e1/ack')).length >= 1);
+      // eslint-disable-next-line no-await-in-loop
+      await sleep(20);
+      expect(peer.seen.filter((msg) => isEvent(msg, m.id, 'e1')).length).toBe(1);
+      queue = [];
+      // eslint-disable-next-line no-await-in-loop
+      await peer.close();
+    }
+  });
+
+  it('hands a held event back at once when every write to the stream that opens for it fails', async () => {
+    const api = queuedApi();
+    const handle = on({ requestImpl: api.requestImpl });
+    const peer = await rawPeer(handle, {
+      intercept: (message, pass) => (isEvent(message, undefined, 'e1')
+        ? Promise.reject(new Error('EPIPE: broken pipe'))
+        : pass()),
+    });
+    peer.send('events/stream', { name: TASK_EVENT });
+    api.queue.push(mention('e1'));
+    await waitFor(() => handle.events.heldCount === 1);
+    peer.send('events/stream', { name: MENTION_EVENT });
+    // Still running: the hand-back comes from the failed fan-out, not from stop().
+    expect(await waitFor(() => api.calls.some((c) => c.path === `${EVENTS_PATH}/release`), 1000)).toBe(true);
+    expect(api.calls.find((c) => c.path === `${EVENTS_PATH}/release`).body)
+      .toEqual({ events: [{ eventId: 'e1', deliveryId: 'd-e1' }] });
+    expect(handle.events.heldCount).toBe(0);
+    expect(api.calls.some((c) => c.path.endsWith('/ack'))).toBe(false);
+    await peer.close();
+  });
+
+  it('acks a held event only after its write to the new stream completes', async () => {
+    const api = queuedApi();
+    const handle = on({ requestImpl: api.requestImpl });
+    const gate = deferred();
+    let pending = false;
+    const peer = await rawPeer(handle, {
+      intercept: (message, pass) => {
+        if (isEvent(message, undefined, 'e1')) {
+          pending = true;
+          return gate.promise.then(pass);
+        }
+        return pass();
+      },
+    });
+    peer.send('events/stream', { name: TASK_EVENT });
+    api.queue.push(mention('e1'));
+    await waitFor(() => handle.events.heldCount === 1);
+    peer.send('events/stream', { name: MENTION_EVENT });
+    await waitFor(() => pending);
+    await sleep(30);
+    expect(api.calls.some((c) => c.path === `${EVENTS_PATH}/e1/ack`)).toBe(false);
+    gate.resolve();
+    expect(await waitFor(() => api.calls.some((c) => c.path === `${EVENTS_PATH}/e1/ack`))).toBe(true);
+    await peer.close();
+  });
+
+  it('sends a 401 termination to a stream that was still opening when the token was refused', async () => {
+    const gate = deferred();
+    let polled = false;
+    const requestImpl = async (_config, { method, path }) => {
+      if (path === EVENTS_PATH && method === 'GET') {
+        polled = true;
+        await gate.promise;
+        const error = new Error('Unauthorized');
+        error.status = 401;
+        throw error;
+      }
+      return { success: true };
+    };
+    const handle = on({ requestImpl });
+    const opening = deferred();
+    const terminating = deferred();
+    let second;
+    let holdTermination = true;
+    const peer = await rawPeer(handle, {
+      intercept: (message, pass) => {
+        if (second && message?.method === 'notifications/events/active'
+          && message.params._meta[SUB] === second.id) {
+          return opening.promise.then(pass);
+        }
+        if (holdTermination && message?.method === 'notifications/events/terminated') {
+          // terminateAll is still sending to the first stream when the second registers.
+          holdTermination = false;
+          return terminating.promise.then(pass);
+        }
+        return pass();
+      },
+    });
+    const first = peer.send('events/stream', { name: MENTION_EVENT });
+    await waitFor(() => polled);
+    second = peer.send('events/stream', { name: MENTION_EVENT });
+    await sleep(10);
+    gate.resolve();
+    await sleep(10);
+    opening.resolve();
+    await sleep(20);
+    terminating.resolve();
+    expect(await waitFor(() => peer.notifications('notifications/events/terminated').length === 2, 1000)).toBe(true);
+    const ids = peer.notifications('notifications/events/terminated').map((n) => n.params._meta[SUB]);
+    expect(ids.sort()).toEqual([first.id, second.id].sort());
+    expect(handle.events.streamCount).toBe(0);
+    await peer.close();
+  });
+
+  it('does not rearm the heartbeat after the stream closes', async () => {
+    const handle = on(scriptedApi(), { minHeartbeatMs: 10 });
+    const beat = deferred();
+    let pending = false;
+    const peer = await rawPeer(handle, {
+      intercept: (message, pass) => {
+        if (message?.method === 'notifications/events/heartbeat' && !pending) {
+          pending = true;
+          return beat.promise.then(pass);
+        }
+        return pass();
+      },
+    });
+    const HEARTBEAT = 37;
+    const stream = peer.send('events/stream', { name: MENTION_EVENT, heartbeatMs: HEARTBEAT });
+    await waitFor(() => pending);
+    peer.cancel(stream.id);
+    await waitFor(() => handle.events.streamCount === 0);
+    const spy = jest.spyOn(global, 'setTimeout');
+    try {
+      beat.resolve();
+      await sleep(20);
+      expect(spy.mock.calls.filter(([, ms]) => ms === HEARTBEAT)).toHaveLength(0);
+    } finally {
+      spy.mockRestore();
+      await peer.close();
+    }
   });
 
   it('waits out Retry-After on a 429 before polling again', async () => {
