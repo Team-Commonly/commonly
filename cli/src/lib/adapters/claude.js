@@ -1528,7 +1528,9 @@ export const claudeLoginProbeLaunch = async (args, {
   platform = process.platform,
   _prepareState = preparePublicClaudeState,
 } = {}) => {
-  const sandbox = environment?.sandbox;
+  // Normalized as `spawn` does: a saved `internal` seat's turn runs as `public`,
+  // so its probe must too, or it reports signed in without the jail's view.
+  const sandbox = normalizeSandboxTrust(environment?.sandbox);
   if (platform !== 'darwin' || !isConfinedTrust(sandbox?.trust)
     || !PUBLIC_SANDBOX_MODES.has(resolvePublicSandboxMode(sandbox, platform))) return null;
   // The turn's own state folder, keyed on the same name, with its keychain link.

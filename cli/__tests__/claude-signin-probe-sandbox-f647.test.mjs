@@ -86,6 +86,20 @@ describe('the Claude sign-in probe runs inside the seat\'s sandbox (F647)', () =
     expect(calls[0].command).toBe('/usr/bin/sandbox-exec');
   });
 
+  onMac('a saved legacy `internal` seat is confined, as its turn is', async () => {
+    const { calls, spawnFn } = recordingSpawn(0);
+    await runHarnessLoginStatus('claude', ARGS, {
+      env,
+      environment: { sandbox: { trust: 'internal' } },
+      agentName: 'f647-seat',
+      spawnFn,
+      _prepareClaudeState: prepareState,
+    });
+    expect(calls).toHaveLength(1);
+    expect(calls[0].command).toBe('/usr/bin/sandbox-exec');
+    expect(calls[0].options.env.HOME).toBe(state);
+  });
+
   test('an unconfined seat keeps the plain probe', async () => {
     const { calls, spawnFn } = recordingSpawn(0);
     const code = await runHarnessLoginStatus('claude', ARGS, {
