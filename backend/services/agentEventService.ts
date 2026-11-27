@@ -2352,7 +2352,11 @@ class AgentEventService {
           });
           return { status: 'drained' };
         }
-        const result = await runAgent(nativeInstallation, { type, eventId: eventIdStr, payload });
+        // storedPayload: the row before rendering, for the out-of-turns
+        // hand-off (nativeRuntimeService NativeRunTrigger). Not the model's.
+        const result = await runAgent(nativeInstallation, {
+          type, eventId: eventIdStr, payload, storedPayload: event.payload,
+        });
         // The model is done even if a digest/ack write stalls. Leave that
         // delivery for succeeded-run recovery instead of replaying its output.
         turnFinished();

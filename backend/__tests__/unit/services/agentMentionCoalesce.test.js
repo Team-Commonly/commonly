@@ -811,6 +811,12 @@ describe('a hosted target, whose row is claimed at creation', () => {
     await waitFor(() => runAgent.mock.calls.length === 1);
     await flush();
     expect(prompts()[0]).toContain('joined while it waited');
+    // The turn also gets the stored row it was rendered from, for a hand-off
+    // that must rebuild the ask without doubling what joined.
+    const [, trigger] = runAgent.mock.calls[0];
+    expect(trigger.storedPayload.rawContent).toBe('first');
+    expect(trigger.storedPayload.coalesced).toHaveLength(1);
+    expect(trigger.payload.rawContent).toContain('joined while it waited');
   });
 
   test('a row a drain or requeue returned to pending is not joined: its message gets its own turn', async () => {

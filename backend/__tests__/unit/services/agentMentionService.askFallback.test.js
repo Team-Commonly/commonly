@@ -68,6 +68,8 @@ const { noteStoppedMention } = require('../../../services/stoppedMentionService'
 const { deriveAgentState } = require('../../../services/agentStateService');
 const { hostedStoppedAt } = require('../../../services/hostedEngine');
 const { handOffToHost, hostInstallFor, resetHandoffsForTest } = require('../../../services/askFallbackService');
+const { carriesOtherAuthors, withCoalesced } = require('../../../services/mentionCoalesce');
+const { stampAccountUse } = require('../../../services/accountUseStamp');
 
 const human = { _id: 'user-1', username: 'priya', isBot: false };
 const nova = {
@@ -211,24 +213,96 @@ describe('an ask to an agent that can\'t run goes to the host (F390 A)', () => {
     expect(events('scout').filter((e) => e.payload?.handoffFrom)).toHaveLength(0);
   });
 
-  it('a joined row hands the host all the person\'s words', async () => {
-    setup({ state: 'gone-dark' });
-    await handOffToHost({
+  // Authority and the account-use stamp both follow who wrote each message, so
+  // a hand-off keeps the authorship of every joined message whose words it
+  // carries. The real caller is the native out-of-turns path: its trigger
+  // payload is the delivered one (withCoalesced already folded every joined
+  // message into rawContent), and the stored row rides beside it.
+  describe('a hand-off keeps who wrote each joined message', () => {
+    const ASKER = '64b000000000000000000011';
+    const OTHER = '64b000000000000000000012';
+    const THIRD = '64b000000000000000000013';
+    const storedRow = (coalesced) => ({
+      messageId: '910', userId: ASKER, username: 'priya', rawContent: '@nova first', content: '@nova first',
+      coalesced,
+    });
+    // As nativeRuntimeService hands off: the delivered payload, plus the stored row.
+    const handOffAsNative = (stored, { withStored = true } = {}) => handOffToHost({
       podId: 'pod-1',
       from: { agentName: 'nova' },
       label: 'Nova',
       reason: 'out-of-turns',
-      sender: human,
-      payload: {
-        messageId: '903',
-        userId: 'user-1',
-        rawContent: '@nova first',
-        coalesced: [{ rawContent: 'and second' }, { rawContent: 'not to nova', notAnAsk: true }],
-      },
+      sender: { isBot: false },
+      payload: withCoalesced(stored),
+      ...(withStored ? { storedPayload: stored } : {}),
     });
-    const [toScout] = events('scout');
-    expect(toScout.payload.rawContent).toBe('@nova first\n\nand second');
-    expect(toScout.payload.coalesced).toBeUndefined();
+    const stampHostRow = async (payload) => {
+      User.find.mockImplementation(() => chain([
+        { _id: ASKER, username: 'priya', isBot: false },
+        { _id: OTHER, username: 'cy', isBot: false },
+        { _id: THIRD, username: 'di', isBot: false },
+      ]));
+      const served = { type: 'chat.mention', podId: 'pod-1', payload: { ...payload } };
+      await stampAccountUse([served], {
+        agentUser: { _id: '64b000000000000000000019', isBot: true, botMetadata: { ownerUserId: ASKER } },
+        installations: [{ config: { runtime: { runtimeType: 'webhook', host: 'byo' } } }],
+      });
+      return served.payload.accountUse;
+    };
+    const mixed = () => storedRow([
+      { messageId: '911', userId: OTHER, username: 'cy', rawContent: 'and mine', handoffCue: '[old cue]' },
+      { messageId: '912', userId: THIRD, username: 'di', rawContent: 'not to nova', notAnAsk: true },
+    ]);
+
+    it('the host reads each message once, each under its own author, and not the notAnAsk one', async () => {
+      setup({ state: 'gone-dark' });
+      await handOffAsNative(mixed());
+      const [toScout] = events('scout');
+      const delivered = withCoalesced(toScout.payload);
+      expect(delivered.rawContent).toBe('@nova first\n\nand mine');
+      expect(delivered.content).toMatch(/^\[Nova can't answer this right now/);
+      expect(delivered.content.match(/@nova first/g)).toHaveLength(1);
+      expect(delivered.content.match(/and mine/g)).toHaveLength(1);
+      expect(delivered.content).toContain('[From @cy, message 911]');
+      expect(delivered.content).not.toContain('not to nova');
+      expect(delivered.content).not.toContain('[old cue]');
+    });
+
+    it('the second author is on the row, so it carries other authors and the stamp names both', async () => {
+      setup({ state: 'gone-dark' });
+      await handOffAsNative(mixed());
+      const [toScout] = events('scout');
+      expect(toScout.payload.coalesced).toEqual([
+        { messageId: '911', userId: OTHER, username: 'cy', rawContent: 'and mine' },
+      ]);
+      expect(carriesOtherAuthors(toScout.payload)).toBe(true);
+      const stamp = await stampHostRow(toScout.payload);
+      expect(stamp.requesterUserIds).toEqual([ASKER, OTHER]);
+      expect(stamp.requesterKind).toBe('human');
+    });
+
+    it('a joined message whose words are left out (notAnAsk) adds no author', async () => {
+      setup({ state: 'gone-dark' });
+      await handOffAsNative(storedRow([
+        { messageId: '912', userId: THIRD, username: 'di', rawContent: 'not to nova', notAnAsk: true },
+      ]));
+      const [toScout] = events('scout');
+      expect(toScout.payload.coalesced).toBeUndefined();
+      expect(carriesOtherAuthors(toScout.payload)).toBe(false);
+      expect(withCoalesced(toScout.payload).rawContent).toBe('@nova first');
+    });
+
+    it('a delivered payload with no stored row is never doubled: its text as is, no joined entries', async () => {
+      setup({ state: 'gone-dark' });
+      const stored = mixed();
+      await handOffAsNative(stored, { withStored: false });
+      const [toScout] = events('scout');
+      expect(toScout.payload.coalesced).toBeUndefined();
+      const delivered = withCoalesced(toScout.payload);
+      expect(delivered.rawContent).toBe(withCoalesced(stored).rawContent);
+      expect(delivered.content.match(/and mine/g)).toHaveLength(1);
+      expect(delivered.content.match(/@nova first/g)).toHaveLength(1);
+    });
   });
 
   it('with two people\'s guides in the pod, the asker\'s own gets it', async () => {

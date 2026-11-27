@@ -88,6 +88,10 @@ interface NativeRunTrigger {
   type: string;
   eventId?: string;
   payload?: unknown;
+  // The stored row `payload` was rendered from (agentEventService runWithDigest:
+  // before withCoalesced folded joined messages into its text). Read only by
+  // the out-of-turns hand-off, which rebuilds the ask from it; never the model's.
+  storedPayload?: unknown;
 }
 
 export interface NativeRunResult {
@@ -2769,6 +2773,10 @@ export async function runAgent(
               // personAddressedThisTurn above: the asker is a person.
               sender: { isBot: false },
               payload: (trigger.payload || {}) as Record<string, unknown>,
+              // The delivered payload already holds every joined message in its
+              // text; the host's ask is built from the row it was rendered from.
+              ...(trigger.storedPayload && typeof trigger.storedPayload === 'object'
+                ? { storedPayload: trigger.storedPayload as Record<string, unknown> } : {}),
             });
           } catch (err) {
             console.warn('[native-runtime] out-of-turns hand-off failed:', (err as Error).message);

@@ -980,6 +980,18 @@ describe('a hosted turn the guard stops, or that fails', () => {
         expect(handOff.mock.calls[0][0].payload.threadRootId).toBe(4242);
       });
 
+      // The trigger payload is the delivered text; the host's ask is built from
+      // the stored row, so each joined message reaches it once, with its author.
+      test('the hand-off gets the stored row the turn was rendered from', async () => {
+        AgentRun.countDocuments.mockResolvedValueOnce(100000);
+        const storedPayload = {
+          ...inThread.payload, coalesced: [{ messageId: 'm2', userId: 'u2', rawContent: 'and mine' }],
+        };
+        await runAgent(nativeInstall(), { ...inThread, storedPayload });
+        expect(handOff).toHaveBeenCalledTimes(1);
+        expect(handOff.mock.calls[0][0].storedPayload).toBe(storedPayload);
+      });
+
       test('an ambient message that answers the agent\'s question counts as addressed', () => {
         const { wasDirectlyAddressed } = require('../../../services/nativeRuntimeService');
         expect(wasDirectlyAddressed({ type: 'message.posted', payload: { answersYourQuestion: true } })).toBe(true);
