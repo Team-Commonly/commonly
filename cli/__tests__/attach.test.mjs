@@ -930,6 +930,55 @@ describe('performAttach', () => {
     );
   });
 
+  // F662: a wrapped Claude Code or Codex agent runs on its owner's account, so
+  // attach says so before it connects. It never refuses.
+  describe('the account line', () => {
+    const attachAs = async (name, pod = null, environment = null) => {
+      const client = makeClient({ runtimeToken: 'cm_agent_acct' });
+      let envPath = null;
+      if (environment) {
+        envPath = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'cli-acct-env-')), 'environment.json');
+        fs.writeFileSync(envPath, JSON.stringify({ version: 1, ...environment }));
+      }
+      if (pod) {
+        const baseGet = client.get;
+        client.get = jest.fn(async (route) => (/^\/api\/pods\/[^/]+$/.test(route) ? pod : baseGet(route)));
+      }
+      const logs = [];
+      await performAttach({
+        client, adapterName: name, agentName: `${name}-seat`, podId: 'pod-acct', envPath,
+        log: (line) => logs.push(line),
+        seatbelt: () => ({ available: true }),
+        bwrap: () => ({ available: true }),
+        adapterRegistry: {
+          getAdapter: () => ({ name, detect: async () => ({ path: `/bin/${name}`, version: '1' }) }),
+          listAdapterNames: () => [name],
+        },
+      });
+      return logs;
+    };
+
+    test.each([['claude', 'Claude Code'], ['codex', 'Codex']])('%s attach prints the team line', async (name, tool) => {
+      const logs = await attachAs(name);
+      expect(logs).toContain(`${tool} runs on your own login or API key, and anyone in this pod can start a turn on it. `
+        + 'For a team, use an API key or a team plan. In public or listed pods it answers only you.');
+    });
+
+    test('a listed pod gets the open line', async () => {
+      // A listed pod takes a seat that declares public trust.
+      const logs = await attachAs('claude', {
+        publicRead: false, communityListed: true, joinPolicy: 'invite-only',
+      }, { sandbox: { trust: 'public' } });
+      expect(logs).toContain('This pod is open to people outside your team, so this agent will answer only you here. '
+        + 'Others can bring their own agent on their own login or key.');
+    });
+
+    test('other adapters print neither line', async () => {
+      const logs = await attachAs('stub');
+      expect(logs.join('\n')).not.toMatch(/login or API key|open to people outside your team/);
+    });
+  });
+
   test('attach sends the handoff in the install request and consumes its result', async () => {
     const client = makeClient({ runtimeToken: 'cm_agent_local' });
     const post = client.post;

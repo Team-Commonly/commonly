@@ -1,4 +1,5 @@
 import { jest } from '@jest/globals';
+import { ownerStampedAll } from '../test-support/owner-stamp.mjs';
 import os from 'os';
 import path from 'path';
 import fs from 'fs';
@@ -45,10 +46,10 @@ const runOneTurn = async ({
   const get = jest.fn(async (route) => {
     if (route === '/api/agents/runtime/events') {
       return {
-        events: [{
+        events: ownerStampedAll([{
           _id: eventId, type: eventType, podId: 'pod-ws', agentName: 'workspace-stub',
           payload: eventPayload,
-        }],
+        }]),
       };
     }
     if (route === '/api/agents/runtime/installations') {
