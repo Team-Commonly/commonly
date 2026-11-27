@@ -1,6 +1,6 @@
 // @ts-nocheck
 import React from 'react';
-import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import V2AgentRuntimeBody, { V2AgentConnectorsRow, describeRuntime } from '../components/V2AgentRuntimeGrants';
 import { AuthContext } from '../../context/AuthContext';
@@ -206,6 +206,40 @@ test.each([
   const select = await screen.findByLabelText('Run on');
   expect(Array.from(select.querySelectorAll('option')).map((option) => option.value)).toEqual(['new']);
   expect(select).toHaveValue('new');
+});
+
+// Placement reads overlap and aren't ordered, so an older one finishing late
+// must not replace a newer snapshot: only the newest read writes the page.
+test('an older placement read that finishes after a newer one does not take back the newly added computer', async () => {
+  const revoked = (activeMachines) => ({
+    boundMachineId: 'old', requestedMachineId: null, boundMachineRevoked: true, boundMachineRevokedReason: 'cli_duplicate_daemons',
+    boundMachineHost: { platform: 'darwin', unsandboxedOptIn: false }, activeMachines,
+  });
+  const held = [];
+  let reads = 0;
+  axios.get.mockImplementation((url) => {
+    if (!url.includes('/agent-binding/placement')) return Promise.resolve({ data: response });
+    reads += 1;
+    if (reads === 1) return Promise.resolve({ data: revoked([]) });
+    // Each later read waits until the test releases it.
+    return new Promise((resolve) => { held.push(resolve); });
+  });
+  renderSection();
+  await screen.findByTestId('agent-machine-revoked-setup');
+
+  fireEvent(window, new Event('focus')); // older read
+  fireEvent(window, new Event('focus')); // newer read
+  await waitFor(() => expect(held).toHaveLength(2));
+  held[1]({ data: revoked([{ machineId: 'new', name: 'New Mac' }]) });
+  const select = await screen.findByLabelText('Run on');
+  expect(select).toHaveValue('new');
+
+  // act flushes whatever the late read would write before the check.
+  await act(async () => {
+    held[0]({ data: revoked([]) });
+    await new Promise((resolve) => { setTimeout(resolve, 20); });
+  });
+  expect(screen.getByLabelText('Run on')).toHaveValue('new');
 });
 
 test('a revoke without a reason keeps the generic line and no connect link', async () => {

@@ -113,9 +113,17 @@ const V2AgentRuntimeBody: React.FC<Props> = ({
     return data?.code && key[data.code] ? t(`agentManage.runtime.${key[data.code]}`) : t(fallback);
   };
 
+  // Placement reads can overlap (mount, focus, visibility, a move's recheck),
+  // and the requests are not ordered or cancelled. Only the newest read writes
+  // state, so an older one finishing late can't drop a newly added computer.
+  // Every read still returns its own snapshot for the caller's check.
+  const placementRead = useRef(0);
   const loadPlacement = useCallback(async () => {
+    placementRead.current += 1;
+    const read = placementRead.current;
     const response = await api.get<Placement>('/api/agent-binding/placement', { params: { agentName: name, instanceId } });
     const next = { ...response, activeMachines: response.activeMachines || [] };
+    if (read !== placementRead.current) return next;
     setPlacement(next);
     setMachineChoice((current) => next.activeMachines.some((machine) => machine.machineId === current)
       ? current : next.activeMachines.find((machine) => machine.machineId !== next.boundMachineId)?.machineId || '');
