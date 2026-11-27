@@ -680,5 +680,7 @@ if (require.main === module) {
   require('./services/eventLoopLagMonitor').startEventLoopLagMonitor();
   // CPU_PROFILE_ON_SIGNAL=1 only: SIGUSR2 writes a CPU profile (docs/runbooks/cpu-profile-on-signal.md).
   require('./services/cpuProfileOnSignal').startCpuProfileOnSignal();
+  // LOOP_STALL_PROFILE=1 only: rolling CPU profiles, kept only around a loop stall (same runbook).
+  require('./services/loopStallProfiler').startLoopStallProfiler();
   app.locals.httpServer.listen(port, () => console.log(`Server running on port ${port}`));
 }
